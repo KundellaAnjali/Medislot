@@ -1,0 +1,79 @@
+name: Network Stack Deployment
+
+on:
+  push:
+    branches:
+      - main
+      - feature/**
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  STACK_NAME: medislot-network-stack
+  TEMPLATE_FILE: cloudformation/network-stack.yaml
+  PARAMETERS_FILE: parameters/network-parameters.json
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install cfn-lint
+        run: |
+          python -m pip install --upgrade pip
+          pip install cfn-lint
+
+      - name: Lint Network Stack
+        run: |
+          cfn-lint ${{ env.TEMPLATE_FILE }}
+
+  deploy-network:
+    needs: validate
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Validate CloudFormation Template
+        run: |
+          aws cloudformation validate-template \
+            --template-body file://${{ env.TEMPLATE_FILE }}
+
+      - name: Deploy Network Stack
+        run: |
+          aws cloudformation deploy \
+            --template-file ${{ env.TEMPLATE_FILE }} \
+            --stack-name $STACK_NAME \
+            --parameter-overrides \
+            $(jq -r '.[] | "\(.ParameterKey)=\(.ParameterValue)"' ${{ env.PARAMETERS_FILE }}) \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset
+
+      - name: Verify Stack Status
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name $STACK_NAME \
+            --query "Stacks[0].StackStatus"
+
+      - name: Display Outputs
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name $STACK_NAME \
+            --query "Stacks[0].Outputs"
