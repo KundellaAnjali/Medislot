@@ -1,4 +1,4 @@
-name: Network Stack Deployment
+name: Infrastructure Deployment
 
 on:
   push:
@@ -10,12 +10,8 @@ permissions:
   id-token: write
   contents: read
 
-env:
-  STACK_NAME: medislot-network-stack
-  TEMPLATE_FILE: cloudformation/network-stack.yaml
-  PARAMETERS_FILE: parameters/network-parameters.json
-
 jobs:
+
   validate:
     runs-on: ubuntu-latest
 
@@ -35,11 +31,20 @@ jobs:
 
       - name: Lint Network Stack
         run: |
-          cfn-lint ${{ env.TEMPLATE_FILE }}
+          cfn-lint cloudformation/network-stack.yaml
+
+      - name: Lint Data Stack
+        run: |
+          cfn-lint cloudformation/data-stack.yaml
 
   deploy-network:
     needs: validate
     runs-on: ubuntu-latest
+
+    env:
+      STACK_NAME: dev-medislot-network-stack
+      TEMPLATE_FILE: cloudformation/network-stack.yaml
+      PARAMETERS_FILE: parameters/network-parameters.json
 
     steps:
       - name: Checkout Repository
@@ -51,7 +56,7 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Validate CloudFormation Template
+      - name: Validate Network Stack
         run: |
           aws cloudformation validate-template \
             --template-body file://${{ env.TEMPLATE_FILE }}
@@ -64,16 +69,68 @@ jobs:
             --parameter-overrides \
             $(jq -r '.[] | "\(.ParameterKey)=\(.ParameterValue)"' ${{ env.PARAMETERS_FILE }}) \
             --capabilities CAPABILITY_NAMED_IAM \
-            --no-fail-on-empty-changeset
+            --no-fail-on-empty-changeset \
+            --region ${{ secrets.AWS_REGION }}
 
-      - name: Verify Stack Status
+      - name: Verify Network Stack
         run: |
           aws cloudformation describe-stacks \
             --stack-name $STACK_NAME \
+            --region ${{ secrets.AWS_REGION }} \
             --query "Stacks[0].StackStatus"
 
-      - name: Display Outputs
+      - name: Display Network Outputs
         run: |
           aws cloudformation describe-stacks \
             --stack-name $STACK_NAME \
+            --region ${{ secrets.AWS_REGION }} \
+            --query "Stacks[0].Outputs"
+
+  deploy-data:
+    needs: deploy-network
+    runs-on: ubuntu-latest
+
+    env:
+      STACK_NAME: dev-medislot-data-stack
+      TEMPLATE_FILE: cloudformation/data-stack.yaml
+      PARAMETERS_FILE: parameters/data-parameters.json
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Validate Data Stack
+        run: |
+          aws cloudformation validate-template \
+            --template-body file://${{ env.TEMPLATE_FILE }}
+
+      - name: Deploy Data Stack
+        run: |
+          aws cloudformation deploy \
+            --template-file ${{ env.TEMPLATE_FILE }} \
+            --stack-name $STACK_NAME \
+            --parameter-overrides \
+            $(jq -r '.[] | "\(.ParameterKey)=\(.ParameterValue)"' ${{ env.PARAMETERS_FILE }}) \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --no-fail-on-empty-changeset \
+            --region ${{ secrets.AWS_REGION }}
+
+      - name: Verify Data Stack
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name $STACK_NAME \
+            --region ${{ secrets.AWS_REGION }} \
+            --query "Stacks[0].StackStatus"
+
+      - name: Display Data Outputs
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name $STACK_NAME \
+            --region ${{ secrets.AWS_REGION }} \
             --query "Stacks[0].Outputs"
