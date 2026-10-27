@@ -1,0 +1,183 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: MediSlot Data Stack
+
+Parameters:
+
+  EnvironmentName:
+    Type: String
+
+  DBName:
+    Type: String
+
+  MasterUsername:
+    Type: String
+
+Resources:
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: MediSlot DB Subnet Group
+
+      SubnetIds:
+        - Fn::ImportValue:
+            !Sub "${EnvironmentName}-PrivateSubnetAId"
+
+        - Fn::ImportValue:
+            !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-db-subnet-group"
+
+  MySQLDatabase:
+    Type: AWS::RDS::DBInstance
+    Properties:
+
+      DBInstanceIdentifier:
+        !Sub "${EnvironmentName}-medislot-db"
+
+      Engine: mysql
+
+      EngineVersion: "8.0"
+
+      DBInstanceClass: db.t3.micro
+
+      AllocatedStorage: 20
+
+      StorageType: gp3
+
+      DBName:
+        !Ref DBName
+
+      MasterUsername:
+        !Ref MasterUsername
+
+      MasterUserPassword:
+        !Sub "{{resolve:ssm-secure:/medislot/${EnvironmentName}/rds-password}}"
+
+      PubliclyAccessible: false
+
+      MultiAZ: false
+
+      BackupRetentionPeriod: 0
+
+      DeletionProtection: false
+
+      DBSubnetGroupName:
+        !Ref DBSubnetGroup
+
+      VPCSecurityGroups:
+        - Fn::ImportValue:
+            !Sub "${EnvironmentName}-RDSSecurityGroupId"
+
+  UserSessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${EnvironmentName}-user-sessions"
+
+      BillingMode: PAY_PER_REQUEST
+
+      AttributeDefinitions:
+        - AttributeName: session_id
+          AttributeType: S
+
+      KeySchema:
+        - AttributeName: session_id
+          KeyType: HASH
+
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
+  IdempotencyKeysTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${EnvironmentName}-idempotency-keys"
+
+      BillingMode: PAY_PER_REQUEST
+
+      AttributeDefinitions:
+        - AttributeName: idempotency_key
+          AttributeType: S
+
+      KeySchema:
+        - AttributeName: idempotency_key
+          KeyType: HASH
+
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
+  WaitlistHoldsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${EnvironmentName}-waitlist-holds"
+
+      BillingMode: PAY_PER_REQUEST
+
+      AttributeDefinitions:
+        - AttributeName: hold_id
+          AttributeType: S
+
+      KeySchema:
+        - AttributeName: hold_id
+          KeyType: HASH
+
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
+  AssetsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName:
+        !Sub "${EnvironmentName}-medislot-assets-${AWS::AccountId}"
+
+Outputs:
+
+  DBEndpoint:
+    Description: MySQL Endpoint
+
+    Value:
+      !GetAtt MySQLDatabase.Endpoint.Address
+
+    Export:
+      Name: !Sub "${EnvironmentName}-RDSEndpoint"
+
+  DBPort:
+    Description: MySQL Port
+
+    Value:
+      !GetAtt MySQLDatabase.Endpoint.Port
+
+    Export:
+      Name: !Sub "${EnvironmentName}-RDSPort"
+
+  UserSessionsTableName:
+    Value:
+      !Ref UserSessionsTable
+
+    Export:
+      Name: !Sub "${EnvironmentName}-UserSessionsTable"
+
+  IdempotencyTableName:
+    Value:
+      !Ref IdempotencyKeysTable
+
+    Export:
+      Name: !Sub "${EnvironmentName}-IdempotencyKeysTable"
+
+  WaitlistTableName:
+    Value:
+      !Ref WaitlistHoldsTable
+
+    Export:
+      Name: !Sub "${EnvironmentName}-WaitlistHoldsTable"
+
+  AssetsBucketName:
+    Value:
+      !Ref AssetsBucket
+
+    Export:
+      Name: !Sub "${EnvironmentName}-AssetsBucket"
