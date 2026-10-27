@@ -128,6 +128,82 @@ Resources:
             Path: /auth/login
             Method: post
 
+  RefreshTokenFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+
+      FunctionName: !Sub "${EnvironmentName}-refresh-token"
+
+      Handler: app.lambda_handler
+
+      CodeUri: ../lambdas/auth/refresh-token/
+
+      Role:
+        Fn::ImportValue:
+          !Sub "${EnvironmentName}-AuthLambdaRoleArn"
+
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+
+        SubnetIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetAId"
+
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+      Events:
+        RefreshApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ServerlessApi
+            Path: /auth/refresh
+            Method: post
+
+  LogoutUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+
+      FunctionName: !Sub "${EnvironmentName}-logout-user"
+
+      Handler: app.lambda_handler
+
+      CodeUri: ../lambdas/auth/logout-user/
+
+      Role:
+        Fn::ImportValue:
+          !Sub "${EnvironmentName}-AuthLambdaRoleArn"
+
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+
+        SubnetIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetAId"
+
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+      Events:
+        LogoutApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ServerlessApi
+            Path: /auth/logout
+            Method: post
+
 Outputs:
 
   ApiGatewayUrl:
@@ -157,3 +233,19 @@ Outputs:
   LoginUserFunctionName:
     Description: Login User Lambda Name
     Value: !Ref LoginUserFunction
+
+  RefreshTokenFunctionArn:
+    Description: Refresh Token Lambda ARN
+    Value: !GetAtt RefreshTokenFunction.Arn
+
+  RefreshTokenFunctionName:
+    Description: Refresh Token Lambda Name
+    Value: !Ref RefreshTokenFunction
+
+  LogoutUserFunctionArn:
+    Description: Logout User Lambda ARN
+    Value: !GetAtt LogoutUserFunction.Arn
+
+  LogoutUserFunctionName:
+    Description: Logout User Lambda Name
+    Value: !Ref LogoutUserFunction
