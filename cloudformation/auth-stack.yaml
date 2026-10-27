@@ -20,6 +20,7 @@ Resources:
   SchemaInitFunction:
     Type: AWS::Serverless::Function
     Properties:
+
       FunctionName: !Sub "${EnvironmentName}-schema-init"
 
       Handler: app.lambda_handler
@@ -34,9 +35,22 @@ Resources:
         Variables:
           ENVIRONMENT_NAME: !Ref EnvironmentName
 
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+
+        SubnetIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetAId"
+
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetBId"
+
   RegisterUserFunction:
     Type: AWS::Serverless::Function
     Properties:
+
       FunctionName: !Sub "${EnvironmentName}-register-user"
 
       Handler: app.lambda_handler
@@ -51,12 +65,24 @@ Resources:
         Variables:
           ENVIRONMENT_NAME: !Ref EnvironmentName
 
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+
+        SubnetIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetAId"
+
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetBId"
+
 Outputs:
 
   SchemaInitFunctionArn:
+    Description: Schema Initialization Lambda ARN
     Value: !GetAtt SchemaInitFunction.Arn
 
   RegisterUserFunctionArn:
+    Description: Register User Lambda ARN
     Value: !GetAtt RegisterUserFunction.Arn
-
-  
