@@ -39,7 +39,7 @@ Resources:
 
       Engine: mysql
 
-      EngineVersion: "8.0.39"
+      EngineVersion: "8.4.11"
 
       DBInstanceClass: db.t3.micro
 
