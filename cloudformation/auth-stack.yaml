@@ -91,6 +91,43 @@ Resources:
             Path: /auth/register
             Method: post
 
+  LoginUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-login-user"
+
+      Handler: app.lambda_handler
+
+      CodeUri: ../lambdas/auth/login-user/
+
+      Role:
+        Fn::ImportValue:
+          !Sub "${EnvironmentName}-AuthLambdaRoleArn"
+
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+
+        SubnetIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetAId"
+
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+      Events:
+        LoginApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ServerlessApi
+            Path: /auth/login
+            Method: post
+
 Outputs:
 
   ApiGatewayUrl:
@@ -101,6 +138,22 @@ Outputs:
     Description: Schema Initialization Lambda ARN
     Value: !GetAtt SchemaInitFunction.Arn
 
+  SchemaInitFunctionName:
+    Description: Schema Initialization Lambda Name
+    Value: !Ref SchemaInitFunction
+
   RegisterUserFunctionArn:
     Description: Register User Lambda ARN
     Value: !GetAtt RegisterUserFunction.Arn
+
+  RegisterUserFunctionName:
+    Description: Register User Lambda Name
+    Value: !Ref RegisterUserFunction
+
+  LoginUserFunctionArn:
+    Description: Login User Lambda ARN
+    Value: !GetAtt LoginUserFunction.Arn
+
+  LoginUserFunctionName:
+    Description: Login User Lambda Name
+    Value: !Ref LoginUserFunction
