@@ -1,0 +1,166 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: MediSlot IAM Stack
+
+Parameters:
+
+  EnvironmentName:
+    Type: String
+
+Resources:
+
+  SchemaInitLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${EnvironmentName}-schema-init-role"
+
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+      Policies:
+
+        - PolicyName: SchemaInitLambdaPolicy
+
+          PolicyDocument:
+            Version: "2012-10-17"
+
+            Statement:
+
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/medislot/*"
+
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: "*"
+
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: "*"
+
+  AuthLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${EnvironmentName}-auth-lambda-role"
+
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+      Policies:
+
+        - PolicyName: AuthLambdaPolicy
+
+          PolicyDocument:
+            Version: "2012-10-17"
+
+            Statement:
+
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/medislot/*"
+
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: "*"
+
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                Resource:
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-user-sessions"
+
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: "*"
+
+  AuthorizerLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${EnvironmentName}-authorizer-role"
+
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+      Policies:
+
+        - PolicyName: AuthorizerLambdaPolicy
+
+          PolicyDocument:
+            Version: "2012-10-17"
+
+            Statement:
+
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/medislot/*"
+
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: "*"
+
+Outputs:
+
+  SchemaInitLambdaRoleArn:
+    Description: Schema Initialization Lambda Role ARN
+    Value: !GetAtt SchemaInitLambdaRole.Arn
+    Export:
+      Name: !Sub "${EnvironmentName}-SchemaInitLambdaRoleArn"
+
+  AuthLambdaRoleArn:
+    Description: Authentication Lambda Role ARN
+    Value: !GetAtt AuthLambdaRole.Arn
+    Export:
+      Name: !Sub "${EnvironmentName}-AuthLambdaRoleArn"
+
+  AuthorizerLambdaRoleArn:
+    Description: Authorizer Lambda Role ARN
+    Value: !GetAtt AuthorizerLambdaRole.Arn
+    Export:
+      Name: !Sub "${EnvironmentName}-AuthorizerLambdaRoleArn"

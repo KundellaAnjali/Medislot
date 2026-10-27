@@ -134,50 +134,94 @@ Resources:
       BucketName:
         !Sub "${EnvironmentName}-medislot-assets-${AWS::AccountId}"
 
+  RDSHostParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/rds-host"
+      Type: String
+      Value: !GetAtt MySQLDatabase.Endpoint.Address
+
+  RDSPortParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/rds-port"
+      Type: String
+      Value: !GetAtt MySQLDatabase.Endpoint.Port
+
+  RDSDatabaseParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/rds-database"
+      Type: String
+      Value: !Ref DBName
+
+  RDSUserParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/rds-user"
+      Type: String
+      Value: !Ref MasterUsername
+
+  AccessTokenExpiryParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/access-token-expiry"
+      Type: String
+      Value: "15"
+
+  RefreshTokenExpiryParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/refresh-token-expiry"
+      Type: String
+      Value: "7"
 Outputs:
+  DBSubnetGroupName:
+    Description: Database Subnet Group Name
+    Value: !Ref DBSubnetGroup
+    Export:
+      Name: !Sub "${EnvironmentName}-DBSubnetGroup"
 
   DBEndpoint:
     Description: MySQL Endpoint
-
     Value:
       !GetAtt MySQLDatabase.Endpoint.Address
-
     Export:
       Name: !Sub "${EnvironmentName}-RDSEndpoint"
 
   DBPort:
     Description: MySQL Port
-
     Value:
       !GetAtt MySQLDatabase.Endpoint.Port
-
     Export:
       Name: !Sub "${EnvironmentName}-RDSPort"
 
   UserSessionsTableName:
     Value:
       !Ref UserSessionsTable
-
     Export:
       Name: !Sub "${EnvironmentName}-UserSessionsTable"
 
   IdempotencyTableName:
     Value:
       !Ref IdempotencyKeysTable
-
     Export:
       Name: !Sub "${EnvironmentName}-IdempotencyKeysTable"
 
   WaitlistTableName:
     Value:
       !Ref WaitlistHoldsTable
-
     Export:
       Name: !Sub "${EnvironmentName}-WaitlistHoldsTable"
 
   AssetsBucketName:
     Value:
       !Ref AssetsBucket
-
     Export:
       Name: !Sub "${EnvironmentName}-AssetsBucket"
+
+  RDSIdentifier:
+    Description: RDS Database Identifier
+    Value: !Ref MySQLDatabase
+    Export:
+      Name: !Sub "${EnvironmentName}-RDSIdentifier"

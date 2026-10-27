@@ -1,0 +1,62 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: MediSlot Authentication Stack
+
+Parameters:
+
+  EnvironmentName:
+    Type: String
+
+Globals:
+
+  Function:
+    Runtime: python3.12
+    Timeout: 60
+    MemorySize: 512
+
+Resources:
+
+  SchemaInitFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-schema-init"
+
+      Handler: app.lambda_handler
+
+      CodeUri: ../lambdas/database/schema-init/
+
+      Role:
+        Fn::ImportValue:
+          !Sub "${EnvironmentName}-SchemaInitLambdaRoleArn"
+
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+
+  RegisterUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-register-user"
+
+      Handler: app.lambda_handler
+
+      CodeUri: ../lambdas/auth/register-user/
+
+      Role:
+        Fn::ImportValue:
+          !Sub "${EnvironmentName}-AuthLambdaRoleArn"
+
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+
+Outputs:
+
+  SchemaInitFunctionArn:
+    Value: !GetAtt SchemaInitFunction.Arn
+
+  RegisterUserFunctionArn:
+    Value: !GetAtt RegisterUserFunction.Arn
+
+  
