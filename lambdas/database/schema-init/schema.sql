@@ -35,8 +35,8 @@ CREATE TABLE IF NOT EXISTS patients (
     patient_id CHAR(36) PRIMARY KEY,
     user_id CHAR(36) NOT NULL,
     full_name VARCHAR(255) NOT NULL,
-    phone_number VARCHAR(20) NOT NULL,
-    date_of_birth DATE NOT NULL,
+    phone_number VARCHAR(20) NULL,
+    date_of_birth DATE NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ON UPDATE CURRENT_TIMESTAMP,
