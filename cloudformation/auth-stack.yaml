@@ -17,6 +17,12 @@ Globals:
 
 Resources:
 
+  ServerlessApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub "${EnvironmentName}-medislot-api"
+      StageName: !Ref EnvironmentName
+
   SchemaInitFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -77,7 +83,19 @@ Resources:
           - Fn::ImportValue:
               !Sub "${EnvironmentName}-PrivateSubnetBId"
 
+      Events:
+        RegisterApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ServerlessApi
+            Path: /auth/register
+            Method: post
+
 Outputs:
+
+  ApiGatewayUrl:
+    Description: API Gateway Base URL
+    Value: !Sub "https://${ServerlessApi}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentName}"
 
   SchemaInitFunctionArn:
     Description: Schema Initialization Lambda ARN
