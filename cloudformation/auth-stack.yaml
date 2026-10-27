@@ -1,0 +1,251 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: MediSlot Authentication Stack
+
+Parameters:
+
+  EnvironmentName:
+    Type: String
+
+Globals:
+
+  Function:
+    Runtime: python3.12
+    Timeout: 60
+    MemorySize: 512
+
+Resources:
+
+  ServerlessApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub "${EnvironmentName}-medislot-api"
+      StageName: !Ref EnvironmentName
+
+  SchemaInitFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+
+      FunctionName: !Sub "${EnvironmentName}-schema-init"
+
+      Handler: app.lambda_handler
+
+      CodeUri: ../lambdas/database/schema-init/
+
+      Role:
+        Fn::ImportValue:
+          !Sub "${EnvironmentName}-SchemaInitLambdaRoleArn"
+
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+
+        SubnetIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetAId"
+
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+  RegisterUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+
+      FunctionName: !Sub "${EnvironmentName}-register-user"
+
+      Handler: app.lambda_handler
+
+      CodeUri: ../lambdas/auth/register-user/
+
+      Role:
+        Fn::ImportValue:
+          !Sub "${EnvironmentName}-AuthLambdaRoleArn"
+
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+
+        SubnetIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetAId"
+
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+      Events:
+        RegisterApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ServerlessApi
+            Path: /auth/register
+            Method: post
+
+  LoginUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-login-user"
+
+      Handler: app.lambda_handler
+
+      CodeUri: ../lambdas/auth/login-user/
+
+      Role:
+        Fn::ImportValue:
+          !Sub "${EnvironmentName}-AuthLambdaRoleArn"
+
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+
+        SubnetIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetAId"
+
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+      Events:
+        LoginApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ServerlessApi
+            Path: /auth/login
+            Method: post
+
+  RefreshTokenFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+
+      FunctionName: !Sub "${EnvironmentName}-refresh-token"
+
+      Handler: app.lambda_handler
+
+      CodeUri: ../lambdas/auth/refresh-token/
+
+      Role:
+        Fn::ImportValue:
+          !Sub "${EnvironmentName}-AuthLambdaRoleArn"
+
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+
+        SubnetIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetAId"
+
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+      Events:
+        RefreshApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ServerlessApi
+            Path: /auth/refresh
+            Method: post
+
+  LogoutUserFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+
+      FunctionName: !Sub "${EnvironmentName}-logout-user"
+
+      Handler: app.lambda_handler
+
+      CodeUri: ../lambdas/auth/logout-user/
+
+      Role:
+        Fn::ImportValue:
+          !Sub "${EnvironmentName}-AuthLambdaRoleArn"
+
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+
+        SubnetIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetAId"
+
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+      Events:
+        LogoutApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ServerlessApi
+            Path: /auth/logout
+            Method: post
+
+Outputs:
+
+  ApiGatewayUrl:
+    Description: API Gateway Base URL
+    Value: !Sub "https://${ServerlessApi}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentName}"
+
+  SchemaInitFunctionArn:
+    Description: Schema Initialization Lambda ARN
+    Value: !GetAtt SchemaInitFunction.Arn
+
+  SchemaInitFunctionName:
+    Description: Schema Initialization Lambda Name
+    Value: !Ref SchemaInitFunction
+
+  RegisterUserFunctionArn:
+    Description: Register User Lambda ARN
+    Value: !GetAtt RegisterUserFunction.Arn
+
+  RegisterUserFunctionName:
+    Description: Register User Lambda Name
+    Value: !Ref RegisterUserFunction
+
+  LoginUserFunctionArn:
+    Description: Login User Lambda ARN
+    Value: !GetAtt LoginUserFunction.Arn
+
+  LoginUserFunctionName:
+    Description: Login User Lambda Name
+    Value: !Ref LoginUserFunction
+
+  RefreshTokenFunctionArn:
+    Description: Refresh Token Lambda ARN
+    Value: !GetAtt RefreshTokenFunction.Arn
+
+  RefreshTokenFunctionName:
+    Description: Refresh Token Lambda Name
+    Value: !Ref RefreshTokenFunction
+
+  LogoutUserFunctionArn:
+    Description: Logout User Lambda ARN
+    Value: !GetAtt LogoutUserFunction.Arn
+
+  LogoutUserFunctionName:
+    Description: Logout User Lambda Name
+    Value: !Ref LogoutUserFunction
