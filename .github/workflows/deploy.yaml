@@ -31,7 +31,7 @@ jobs:
 
       - name: Install Test Dependencies
         run: |
-          pip install -r requirements-dev.txt
+          pip install -r requirements-test.txt
 
       - name: Run Unit Tests
         run: |
