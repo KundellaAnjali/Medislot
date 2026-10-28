@@ -98,6 +98,8 @@ Resources:
             RestApiId: !Ref ServerlessApi
             Path: /auth/register
             Method: post
+            Auth:
+              Authorizer: NONE
 
   LoginUserFunction:
     Type: AWS::Serverless::Function
@@ -135,6 +137,8 @@ Resources:
             RestApiId: !Ref ServerlessApi
             Path: /auth/login
             Method: post
+            Auth:
+              Authorizer: NONE
 
   RefreshTokenFunction:
     Type: AWS::Serverless::Function
@@ -173,6 +177,8 @@ Resources:
             RestApiId: !Ref ServerlessApi
             Path: /auth/refresh
             Method: post
+            Auth:
+              Authorizer: NONE
 
   LogoutUserFunction:
     Type: AWS::Serverless::Function
@@ -211,6 +217,10 @@ Resources:
             RestApiId: !Ref ServerlessApi
             Path: /auth/logout
             Method: post
+            Auth:
+              Authorizer: NONE
+
+
   AuthorizerFunction:
     Type: AWS::Serverless::Function
     Properties:
