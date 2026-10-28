@@ -19,8 +19,10 @@ CREATE TABLE IF NOT EXISTS doctors (
     specialization VARCHAR(255) NULL,
     experience_years INT NULL,
     qualification VARCHAR(255) NULL,
+    
     profile_image_key VARCHAR(500) NULL,
     bio TEXT NULL,
+    profile_completed BOOLEAN DEFAULT FALSE,
     is_verified BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
