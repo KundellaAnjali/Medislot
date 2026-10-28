@@ -23,6 +23,14 @@ Resources:
       Name: !Sub "${EnvironmentName}-medislot-api"
       StageName: !Ref EnvironmentName
 
+      Auth:
+        Authorizers:
+          JwtAuthorizer:
+            FunctionArn: !GetAtt AuthorizerFunction.Arn
+            FunctionPayloadType: TOKEN
+            Identity:
+              Header: Authorization
+
   SchemaInitFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -203,6 +211,77 @@ Resources:
             RestApiId: !Ref ServerlessApi
             Path: /auth/logout
             Method: post
+  AuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+
+      FunctionName: !Sub "${EnvironmentName}-authorizer"
+
+      Handler: app.lambda_handler
+
+      CodeUri: ../lambdas/auth/authorizer/
+
+      Role:
+        Fn::ImportValue:
+          !Sub "${EnvironmentName}-AuthorizerLambdaRoleArn"
+
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+
+        SubnetIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetAId"
+
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+  DoctorTestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+
+      FunctionName: !Sub "${EnvironmentName}-doctor-test"
+
+      Handler: app.lambda_handler
+
+      CodeUri: ../lambdas/auth/doctor-test/
+
+      Role:
+        Fn::ImportValue:
+          !Sub "${EnvironmentName}-AuthLambdaRoleArn"
+
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+
+        SubnetIds:
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetAId"
+
+          - Fn::ImportValue:
+              !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+
+      Events:
+        DoctorTestApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ServerlessApi
+            Path: /doctor/test
+            Method: get
+            Auth:
+              Authorizer: JwtAuthorizer
+  
 
 Outputs:
 
@@ -249,3 +328,16 @@ Outputs:
   LogoutUserFunctionName:
     Description: Logout User Lambda Name
     Value: !Ref LogoutUserFunction
+
+  AuthorizerFunctionName:
+    Description: Authorizer Lambda Name
+    Value: !Ref AuthorizerFunction
+
+
+  AuthorizerFunctionArn:
+    Description: Authorizer Lambda ARN
+    Value: !GetAtt AuthorizerFunction.Arn
+
+  DoctorTestFunctionArn:
+    Description: Doctor Test Lambda ARN
+    Value: !GetAtt DoctorTestFunction.Arn
