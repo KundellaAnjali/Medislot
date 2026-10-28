@@ -24,13 +24,15 @@ Resources:
       StageName: !Ref EnvironmentName
 
       Auth:
+        DefaultAuthorizer: JwtAuthorizer
+
         Authorizers:
           JwtAuthorizer:
             FunctionArn: !GetAtt AuthorizerFunction.Arn
             FunctionPayloadType: TOKEN
             Identity:
               Header: Authorization
-
+              
   SchemaInitFunction:
     Type: AWS::Serverless::Function
     Properties:
