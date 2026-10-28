@@ -27,15 +27,7 @@ jobs:
       - name: Install Validation Tools
         run: |
           python -m pip install --upgrade pip
-          pip install cfn-lint
-
-      - name: Install Test Dependencies
-        run: |
-          pip install -r requirements-test.txt
-
-      - name: Run Unit Tests
-        run: |
-          pytest tests -v
+          pip install cfn-lint pytest
 
       - name: Lint Network Stack
         run: |
@@ -52,6 +44,10 @@ jobs:
       - name: Lint Auth Stack
         run: |
           cfn-lint cloudformation/auth-stack.yaml
+
+      - name: Run Unit Tests
+        run: |
+          pytest tests/ -v
 
   deploy-network:
     needs: validate
