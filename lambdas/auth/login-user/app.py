@@ -152,7 +152,7 @@ def save_session(
     expiry = int(
         (
             datetime.utcnow()
-            + timedelta(days=refresh_expiry_days)
+            + timedelta(minutes=refresh_expiry_dayss)
         ).timestamp()
     )
 

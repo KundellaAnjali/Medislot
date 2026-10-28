@@ -29,6 +29,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install cfn-lint
 
+      - name: Install Test Dependencies
+        run: |
+          pip install -r requirements-dev.txt
+
+      - name: Run Unit Tests
+        run: |
+          pytest tests -v
+
       - name: Lint Network Stack
         run: |
           cfn-lint cloudformation/network-stack.yaml
