@@ -255,8 +255,11 @@ jobs:
 
       - name: Load Parameters
         run: |
-          echo "ENVIRONMENT=$(jq -r '.[] | select(.ParameterKey==\"EnvironmentName\") | .ParameterValue' ${{ env.PARAMETERS_FILE }})" >> $GITHUB_ENV
+          ENVIRONMENT=$(jq -r '.[] | select(.ParameterKey=="EnvironmentName") | .ParameterValue' parameters/doctor-parameters.json)
 
+          echo "ENVIRONMENT=$ENVIRONMENT" >> $GITHUB_ENV
+
+          echo "Loaded Environment: $ENVIRONMENT"
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
@@ -277,13 +280,11 @@ jobs:
 
           echo "ENVIRONMENT=${ENVIRONMENT}"
 
-          ASSETS_BUCKET=$(aws cloudformation describe-stacks \
-            --stack-name "${ENVIRONMENT}-medislot-data-stack" \
-            --region ${{ secrets.AWS_REGION }} \
-            --query "Stacks[0].Outputs[?OutputKey=='AssetsBucketName'].OutputValue | [0]" \
-            --output text)
+          ASSETS_BUCKET="dev-medislot-assets-735381631157"
 
           echo "ASSETS_BUCKET=${ASSETS_BUCKET}"
+
+         
 
           aws s3 cp doctor-portal.zip \
             "s3://${ASSETS_BUCKET}/doctor-portal/doctor-portal.zip" \
