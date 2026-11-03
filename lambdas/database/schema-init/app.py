@@ -128,6 +128,24 @@ def lambda_handler(event, context):
 
                     executed_statements += 1
 
+            cursor.execute(
+                "SHOW COLUMNS FROM doctors LIKE 'timezone_name'"
+            )
+            if not cursor.fetchone():
+                cursor.execute(
+                    "ALTER TABLE doctors ADD COLUMN timezone_name "
+                    "VARCHAR(64) NOT NULL DEFAULT 'UTC'"
+                )
+
+            cursor.execute(
+                "SHOW COLUMNS FROM appointments LIKE 'slot_id'"
+            )
+            slot_id_column = cursor.fetchone()
+            if slot_id_column and "bigint" not in slot_id_column[1].lower():
+                cursor.execute(
+                    "ALTER TABLE appointments MODIFY slot_id BIGINT NOT NULL"
+                )
+
         publish_metric(
             "SchemaInitializationSuccess",
             1

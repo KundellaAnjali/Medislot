@@ -297,9 +297,23 @@ Resources:
 
 Outputs:
 
+  ApiGatewayId:
+    Description: Existing REST API identifier for feature stacks
+    Value: !Ref ServerlessApi
+    Export:
+      Name: !Sub "${EnvironmentName}-MedislotApiId"
+
+  ApiGatewayRootResourceId:
+    Description: Existing REST API root resource for feature stacks
+    Value: !GetAtt ServerlessApi.RootResourceId
+    Export:
+      Name: !Sub "${EnvironmentName}-MedislotApiRootResourceId"
+
   ApiGatewayUrl:
     Description: API Gateway Base URL
     Value: !Sub "https://${ServerlessApi}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentName}"
+    Export:
+      Name: !Sub "${EnvironmentName}-MedislotApiUrl"
 
   SchemaInitFunctionArn:
     Description: Schema Initialization Lambda ARN
@@ -349,6 +363,8 @@ Outputs:
   AuthorizerFunctionArn:
     Description: Authorizer Lambda ARN
     Value: !GetAtt AuthorizerFunction.Arn
+    Export:
+      Name: !Sub "${EnvironmentName}-AuthorizerFunctionArn"
 
   DoctorTestFunctionArn:
     Description: Doctor Test Lambda ARN

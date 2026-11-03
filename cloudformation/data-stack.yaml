@@ -202,6 +202,8 @@ Resources:
           AttributeType: N
         - AttributeName: doctor_id
           AttributeType: N
+        - AttributeName: start_time
+          AttributeType: S
         - AttributeName: status
           AttributeType: N
 
@@ -214,6 +216,15 @@ Resources:
           KeySchema:
             - AttributeName: doctor_id
               KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+        - IndexName: DoctorStartIndex
+          KeySchema:
+            - AttributeName: doctor_id
+              KeyType: HASH
+            - AttributeName: start_time
+              KeyType: RANGE
           Projection:
             ProjectionType: ALL
 
