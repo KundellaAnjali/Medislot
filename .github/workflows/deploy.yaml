@@ -264,6 +264,10 @@ jobs:
 
       - name: Setup SAM CLI
         uses: aws-actions/setup-sam@v2
+            - name: Debug Environment
+        run: |
+          echo "ENVIRONMENT=${ENVIRONMENT}"
+          cat parameters/doctor-parameters.json
 
       - name: Upload Doctor Portal Artifact
         run: |
