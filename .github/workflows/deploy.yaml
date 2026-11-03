@@ -271,10 +271,13 @@ jobs:
           zip -r ../../doctor-portal.zip .
           cd ../..
 
-          ASSETS_BUCKET=$(aws cloudformation list-exports \
+          ASSETS_BUCKET=$(aws cloudformation describe-stacks \
+            --stack-name ${ENVIRONMENT}-medislot-data-stack \
             --region ${{ secrets.AWS_REGION }} \
-            --query "Exports[?Name=='${ENVIRONMENT}-AssetsBucket'].Value | [0]" \
+            --query "Stacks[0].Outputs[?OutputKey=='AssetsBucketName'].OutputValue | [0]" \
             --output text)
+
+          echo "ASSETS_BUCKET=$ASSETS_BUCKET"
 
           aws s3 cp doctor-portal.zip \
             "s3://${ASSETS_BUCKET}/doctor-portal/doctor-portal.zip" \
