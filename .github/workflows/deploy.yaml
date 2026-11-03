@@ -271,32 +271,36 @@ jobs:
           zip -r ../../doctor-portal.zip .
           cd ../..
 
+          echo "ENVIRONMENT=${ENVIRONMENT}"
+
           ASSETS_BUCKET=$(aws cloudformation describe-stacks \
-            --stack-name ${ENVIRONMENT}-medislot-data-stack \
+            --stack-name "${ENVIRONMENT}-medislot-data-stack" \
             --region ${{ secrets.AWS_REGION }} \
             --query "Stacks[0].Outputs[?OutputKey=='AssetsBucketName'].OutputValue | [0]" \
             --output text)
 
-          echo "ASSETS_BUCKET=$ASSETS_BUCKET"
+          echo "ASSETS_BUCKET=${ASSETS_BUCKET}"
 
           aws s3 cp doctor-portal.zip \
             "s3://${ASSETS_BUCKET}/doctor-portal/doctor-portal.zip" \
             --region ${{ secrets.AWS_REGION }}
-
       - name: Validate Doctor Stack
         run: |
-          sam validate --template-file ${{ env.TEMPLATE_FILE }}
+          sam validate \
+            --template-file ${{ env.TEMPLATE_FILE }}
 
       - name: Build Doctor Stack
         run: |
-          sam build --template-file ${{ env.TEMPLATE_FILE }}
+          sam build \
+            --template-file ${{ env.TEMPLATE_FILE }}
 
       - name: Deploy Doctor Stack
         run: |
           sam deploy \
             --template-file .aws-sam/build/template.yaml \
             --stack-name ${ENVIRONMENT}-medislot-doctor-stack \
-            --parameter-overrides EnvironmentName=${ENVIRONMENT} \
+            --parameter-overrides \
+            EnvironmentName=${ENVIRONMENT} \
             --capabilities CAPABILITY_NAMED_IAM \
             --resolve-s3 \
             --no-fail-on-empty-changeset \
