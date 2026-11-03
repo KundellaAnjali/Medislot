@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MediSlot | Patient dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body class="patient-page">
+  <header class="patient-topbar">
+    <a class="wordmark" href="/dashboard/patient">MediSlot<span>.</span></a>
+    <form method="post" action="{{ url_for('logout') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="button secondary" type="submit">Logout</button>
+    </form>
+  </header>
+  <main class="patient-content">
+    <p class="eyebrow">Patient portal</p>
+    <h1>Your care, in one place.</h1>
+    <p>Your patient account is signed in. Patient appointments and discovery views will appear here.</p>
+  </main>
+</body>
+</html>

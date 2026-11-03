@@ -10,6 +10,13 @@ import requests
 from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 from flask_session import Session
 
+CONSULTATION_TYPES = (
+    "Quick Consult",
+    "Standard Consult",
+    "Detailed Consult",
+    "Health Camp Session",
+)
+
 
 app = Flask(__name__)
 app.config.update(
@@ -55,7 +62,17 @@ def doctor_required(handler):
     @wraps(handler)
     def wrapped(*args, **kwargs):
         if not session.get("access_token") or session.get("role") != "DOCTOR":
-            return redirect(url_for("login"))
+            return redirect(url_for("auth", mode="login", role="DOCTOR"))
+        return handler(*args, **kwargs)
+
+    return wrapped
+
+
+def patient_required(handler):
+    @wraps(handler)
+    def wrapped(*args, **kwargs):
+        if not session.get("access_token") or session.get("role") != "PATIENT":
+            return redirect(url_for("auth", mode="login", role="PATIENT"))
         return handler(*args, **kwargs)
 
     return wrapped
@@ -94,9 +111,9 @@ def with_api_errors(handler):
             if error.status_code == 401:
                 session.clear()
                 flash("Your session expired. Please sign in again.", "error")
-                return redirect(url_for("login"))
+                return redirect(url_for("auth", mode="login"))
             flash(str(error), "error")
-            return redirect(request.referrer or url_for("dashboard"))
+            return redirect(request.referrer or url_for("doctor_dashboard"))
 
     return wrapped
 
@@ -104,44 +121,55 @@ def with_api_errors(handler):
 @app.get("/")
 def home():
     if session.get("role") == "DOCTOR":
-        return redirect(url_for("dashboard"))
-    return render_template("welcome.html")
+        return redirect(url_for("doctor_dashboard"))
+    if session.get("role") == "PATIENT":
+        return redirect(url_for("patient_dashboard"))
+    return redirect(url_for("auth"))
 
 
-@app.route("/doctor/register", methods=["GET", "POST"])
-def register():
+@app.route("/auth", methods=["GET", "POST"])
+def auth():
+    mode = request.values.get("mode", "login")
+    role = request.values.get("role", "DOCTOR").upper()
+    if mode not in {"login", "register"}:
+        mode = "login"
+    if role not in {"DOCTOR", "PATIENT"}:
+        role = "DOCTOR"
     if request.method == "GET":
-        return render_template("register.html")
+        return render_template("auth.html", mode=mode, role=role)
 
-    payload = {
-        "role": "DOCTOR",
-        "first_name": request.form.get("first_name", "").strip(),
-        "last_name": request.form.get("last_name", "").strip(),
-        "email": request.form.get("email", "").strip().lower(),
-        "password": request.form.get("password", ""),
-    }
-    if payload["password"] != request.form.get("confirm_password", ""):
-        flash("Passwords do not match.", "error")
-        return render_template("register.html"), 400
-    try:
-        api_request("POST", "/auth/register", json_body=payload, authenticated=False)
-    except ApiError as error:
-        flash(str(error), "error")
-        return render_template("register.html"), error.status_code
-
-    flash("Your doctor account is ready. Sign in to continue.", "success")
-    return redirect(url_for("login"))
-
-
-@app.route("/doctor/login", methods=["GET", "POST"])
-def login():
-    if request.method == "GET":
-        return render_template("login.html")
+    mode = request.form.get("mode", "login")
+    role = request.form.get("role", "DOCTOR").upper()
+    if mode not in {"login", "register"} or role not in {"DOCTOR", "PATIENT"}:
+        flash("Choose a valid account type and action.", "error")
+        return render_template("auth.html", mode="login", role="DOCTOR"), 400
     email = request.form.get("email", "").strip().lower()
     password = request.form.get("password", "")
     if not email or not password:
         flash("Enter your email and password.", "error")
-        return render_template("login.html"), 400
+        return render_template("auth.html", mode=mode, role=role), 400
+    if mode == "register":
+        payload = {
+            "role": role,
+            "first_name": request.form.get("first_name", "").strip(),
+            "last_name": request.form.get("last_name", "").strip(),
+            "email": email,
+            "password": password,
+        }
+        if not payload["first_name"] or not payload["last_name"]:
+            flash("Enter your first and last name.", "error")
+            return render_template("auth.html", mode=mode, role=role), 400
+        if password != request.form.get("confirm_password", ""):
+            flash("Passwords do not match.", "error")
+            return render_template("auth.html", mode=mode, role=role), 400
+        try:
+            api_request("POST", "/auth/register", json_body=payload, authenticated=False)
+        except ApiError as error:
+            flash(str(error), "error")
+            return render_template("auth.html", mode=mode, role=role), error.status_code
+        flash("Account created. Sign in to continue.", "success")
+        return redirect(url_for("auth", mode="login", role=role))
+
     try:
         result = api_request(
             "POST",
@@ -151,21 +179,39 @@ def login():
         )
     except ApiError as error:
         flash(str(error), "error")
-        return render_template("login.html"), error.status_code
-    if result.get("role") != "DOCTOR":
-        flash("This portal is for doctor accounts.", "error")
-        return render_template("login.html"), 403
+        return render_template("auth.html", mode=mode, role=role), error.status_code
+    if result.get("role", "").upper() != role:
+        flash("That account does not match the selected role.", "error")
+        return render_template("auth.html", mode=mode, role=role), 403
     session.clear()
     session["access_token"] = result["access_token"]
     session["refresh_token"] = result["refresh_token"]
-    session["role"] = result["role"]
+    session["role"] = role
     csrf_token()
-    return redirect(url_for("dashboard"))
+    endpoint = "doctor_dashboard" if role == "DOCTOR" else "patient_dashboard"
+    return redirect(url_for(endpoint))
+
+
+@app.get("/doctor/login")
+@app.get("/doctor/register")
+def doctor_auth_alias():
+    mode = "register" if request.path.endswith("/register") else "login"
+    return redirect(url_for("auth", mode=mode, role="DOCTOR"))
+
+
+@app.get("/patient/login")
+@app.get("/patient/register")
+def patient_auth_alias():
+    mode = "register" if request.path.endswith("/register") else "login"
+    return redirect(url_for("auth", mode=mode, role="PATIENT"))
 
 
 @app.post("/doctor/logout")
-@doctor_required
+@app.post("/logout")
 def logout():
+    if not session.get("refresh_token"):
+        session.clear()
+        return redirect(url_for("auth"))
     try:
         api_request(
             "POST",
@@ -176,19 +222,24 @@ def logout():
     except ApiError:
         pass
     session.clear()
-    return redirect(url_for("login"))
+    return redirect(url_for("auth"))
 
 
-@app.get("/doctor")
+@app.get("/dashboard/doctor")
 @doctor_required
 @with_api_errors
-def dashboard():
+def doctor_dashboard():
     profile = api_request("GET", "/doctors/me")
     consultations = api_request("GET", "/doctors/me/consultation-types").get(
         "consultation_types", []
     )
     availability = api_request("GET", "/doctors/me/availability").get("patterns", [])
     blackouts = api_request("GET", "/doctors/me/blackouts").get("blackouts", [])
+    active_names = {
+        item["consultation_name"]
+        for item in consultations
+        if item.get("is_active")
+    }
     try:
         schedule_date = request.args.get("date") or datetime.now(timezone.utc).date().isoformat()
         schedule = api_request(
@@ -203,10 +254,24 @@ def dashboard():
         "dashboard.html",
         profile=profile,
         consultations=consultations,
+        available_consultation_types=[
+            item for item in CONSULTATION_TYPES if item not in active_names
+        ],
         patterns=availability,
         blackouts=blackouts,
         schedule=schedule,
     )
+
+
+@app.get("/doctor")
+def old_doctor_dashboard():
+    return redirect(url_for("doctor_dashboard"))
+
+
+@app.get("/dashboard/patient")
+@patient_required
+def patient_dashboard():
+    return render_template("patient_dashboard.html")
 
 
 @app.post("/doctor/profile")
@@ -233,7 +298,7 @@ def update_profile():
     payload = {key: value for key, value in payload.items() if value != ""}
     api_request("PUT", "/doctors/me", json_body=payload)
     flash("Profile saved.", "success")
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("doctor_dashboard"))
 
 
 @app.post("/doctor/consultation-types")
@@ -251,7 +316,7 @@ def create_consultation_type():
         },
     )
     flash("Consultation type added.", "success")
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("doctor_dashboard"))
 
 
 @app.post("/doctor/consultation-types/<int:consultation_id>")
@@ -269,7 +334,7 @@ def update_consultation_type(consultation_id):
         },
     )
     flash("Consultation type updated.", "success")
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("doctor_dashboard"))
 
 
 @app.post("/doctor/consultation-types/<int:consultation_id>/deactivate")
@@ -278,7 +343,7 @@ def update_consultation_type(consultation_id):
 def deactivate_consultation_type(consultation_id):
     api_request("DELETE", f"/doctors/me/consultation-types/{consultation_id}")
     flash("Consultation type deactivated. Existing appointments are kept.", "success")
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("doctor_dashboard"))
 
 
 @app.post("/doctor/availability")
@@ -304,7 +369,7 @@ def save_availability():
             )
     api_request("PUT", "/doctors/me/availability", json_body={"patterns": patterns})
     flash("Weekly availability saved.", "success")
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("doctor_dashboard"))
 
 
 @app.post("/doctor/blackouts")
@@ -317,7 +382,7 @@ def add_blackout():
         json_body={"date": request.form.get("date", "")},
     )
     flash("Blackout day added.", "success")
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("doctor_dashboard"))
 
 
 @app.post("/doctor/blackouts/<int:blackout_id>/delete")
@@ -326,7 +391,7 @@ def add_blackout():
 def delete_blackout(blackout_id):
     api_request("DELETE", f"/doctors/me/blackouts/{blackout_id}")
     flash("Blackout day removed.", "success")
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("doctor_dashboard"))
 
 
 @app.post("/doctor/photo-url")

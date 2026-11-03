@@ -8,6 +8,13 @@ Parameters:
   WebAppArtifactKey:
     Type: String
     Default: doctor-portal/doctor-portal.zip
+  PortalKeyName:
+    Type: String
+    Default: ""
+    Description: Optional EC2 key pair name for SSH administration
+
+Conditions:
+  HasPortalKeyName: !Not [!Equals [!Ref PortalKeyName, ""]]
 
 Globals:
   Function:
@@ -179,6 +186,7 @@ Resources:
     Properties:
       ImageId: !Sub "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}"
       InstanceType: t3.micro
+      KeyName: !If [HasPortalKeyName, !Ref PortalKeyName, !Ref "AWS::NoValue"]
       IamInstanceProfile:
         Fn::ImportValue: !Sub "${EnvironmentName}-DoctorPortalInstanceProfileName"
       SubnetId:
@@ -194,7 +202,17 @@ Resources:
             - |
               #!/bin/bash
               set -euxo pipefail
-              dnf install -y python3 python3-pip nginx unzip
+              if command -v dnf >/dev/null 2>&1; then
+                dnf upgrade -y
+                dnf install -y python3 python3-pip nginx unzip mariadb105
+              elif command -v apt-get >/dev/null 2>&1; then
+                apt-get update
+                DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+                DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3-venv nginx unzip mysql-client
+              else
+                echo "Unsupported operating system package manager" >&2
+                exit 1
+              fi
               mkdir -p /opt/medislot /etc/medislot /var/lib/medislot/sessions
               aws s3 cp "s3://${AssetsBucket}/${WebAppArtifactKey}" /tmp/doctor-portal.zip
               mkdir -p /opt/medislot/doctor-portal

@@ -29,6 +29,11 @@ Parameters:
     Default: 0.0.0.0/0
     Description: Source CIDR permitted to access the doctor portal over HTTP
 
+  PortalSshCidr:
+    Type: String
+    Default: 127.0.0.1/32
+    Description: Restrict SSH access to the administrator's public IP range
+
 Resources:
 
   VPC:
@@ -145,6 +150,10 @@ Resources:
           FromPort: 3306
           ToPort: 3306
           SourceSecurityGroupId: !Ref LambdaSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          SourceSecurityGroupId: !Ref DoctorPortalSecurityGroup
 
   VPCEndpointSecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -169,6 +178,10 @@ Resources:
           FromPort: 80
           ToPort: 80
           CidrIp: !Ref PortalAccessCidr
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref PortalSshCidr
 
   S3Endpoint:
     Type: AWS::EC2::VPCEndpoint

@@ -45,7 +45,7 @@ jobs:
         run: |
           cd web/doctor-portal
           python -m unittest discover -s . -p 'test_*.py'
-          python -c "from app import app; client=app.test_client(); assert client.get('/').status_code == 200; assert client.get('/doctor/register').status_code == 200; assert client.get('/doctor/login').status_code == 200"
+          python -c "from app import app; client=app.test_client(); assert client.get('/auth').status_code == 200; assert client.get('/auth?mode=register&role=DOCTOR').status_code == 200; assert client.get('/auth?mode=login&role=PATIENT').status_code == 200"
 
       - name: Lint Network Stack
         run: |
@@ -257,8 +257,10 @@ jobs:
       - name: Load Parameters
         run: |
           ENVIRONMENT=$(jq -r '.[] | select(.ParameterKey=="EnvironmentName") | .ParameterValue' parameters/doctor-parameters.json)
+          PORTAL_KEY_NAME=$(jq -r '.[] | select(.ParameterKey=="PortalKeyName") | .ParameterValue' parameters/doctor-parameters.json)
 
           echo "ENVIRONMENT=$ENVIRONMENT" >> $GITHUB_ENV
+          echo "PORTAL_KEY_NAME=$PORTAL_KEY_NAME" >> $GITHUB_ENV
 
           echo "Loaded Environment: $ENVIRONMENT"
       - uses: aws-actions/configure-aws-credentials@v4
@@ -306,8 +308,7 @@ jobs:
           sam deploy \
             --template-file .aws-sam/build/template.yaml \
             --stack-name ${ENVIRONMENT}-medislot-doctor-stack \
-            --parameter-overrides \
-            EnvironmentName=${ENVIRONMENT} \
+            --parameter-overrides EnvironmentName=${ENVIRONMENT} PortalKeyName="${PORTAL_KEY_NAME}" \
             --capabilities CAPABILITY_NAMED_IAM \
             --resolve-s3 \
             --no-fail-on-empty-changeset \

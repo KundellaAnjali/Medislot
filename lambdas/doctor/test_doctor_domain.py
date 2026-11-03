@@ -32,36 +32,24 @@ class SlotMaterializationTests(unittest.TestCase):
             created = app.materialize_for_doctor_day(
                 self.doctor, [self.pattern], [], date(2027, 3, 14)
             )
-
         self.assertEqual(created, 2)
         starts = [call.kwargs["Item"]["start_time"] for call in put_item.call_args_list]
-        self.assertEqual(
-            starts,
-            ["2027-03-14T09:00:00Z", "2027-03-14T10:00:00Z"],
-        )
+        self.assertEqual(starts, ["2027-03-14T09:00:00Z", "2027-03-14T10:00:00Z"])
 
-    def test_rerunning_materialization_does_not_create_duplicate_slots(self):
+    def test_rerunning_materialization_does_not_duplicate_slots(self):
         slot_ids = set()
 
         def put_once(Item, ConditionExpression):
             if Item["slot_id"] in slot_ids:
                 raise ClientError(
-                    {"Error": {"Code": "ConditionalCheckFailedException"}},
-                    "PutItem",
+                    {"Error": {"Code": "ConditionalCheckFailedException"}}, "PutItem"
                 )
             slot_ids.add(Item["slot_id"])
 
         with patch.object(app.slots_table, "put_item", side_effect=put_once):
-            first_run = app.materialize_for_doctor_day(
-                self.doctor, [self.pattern], [], date(2027, 3, 14)
-            )
-            second_run = app.materialize_for_doctor_day(
-                self.doctor, [self.pattern], [], date(2027, 3, 14)
-            )
-
-        self.assertEqual(first_run, 2)
-        self.assertEqual(second_run, 0)
-        self.assertEqual(len(slot_ids), 2)
+            first = app.materialize_for_doctor_day(self.doctor, [self.pattern], [], date(2027, 3, 14))
+            second = app.materialize_for_doctor_day(self.doctor, [self.pattern], [], date(2027, 3, 14))
+        self.assertEqual((first, second, len(slot_ids)), (2, 0, 2))
 
     def test_blackout_suppresses_materialized_slots(self):
         blackout = {
@@ -69,10 +57,7 @@ class SlotMaterializationTests(unittest.TestCase):
             "end_datetime": datetime(2027, 3, 15),
         }
         with patch.object(app.slots_table, "put_item") as put_item:
-            created = app.materialize_for_doctor_day(
-                self.doctor, [self.pattern], [blackout], date(2027, 3, 14)
-            )
-
+            created = app.materialize_for_doctor_day(self.doctor, [self.pattern], [blackout], date(2027, 3, 14))
         self.assertEqual(created, 0)
         put_item.assert_not_called()
 
@@ -80,27 +65,17 @@ class SlotMaterializationTests(unittest.TestCase):
 class DoctorApiTests(unittest.TestCase):
     def complete_profile_row(self):
         return {
-            "first_name": "Asha",
-            "last_name": "Rao",
-            "phone_number": "+15550001111",
-            "license_number": "LIC-123",
-            "experience_years": 0,
-            "qualification": "MBBS",
-            "languages": "English",
-            "profile_image_key": "doctors/14/profile.jpg",
-            "hospital_name": "City Clinic",
-            "city": "Springfield",
-            "address": "1 Main Street",
+            "first_name": "Asha", "last_name": "Rao", "phone_number": "+15550001111",
+            "license_number": "LIC-123", "experience_years": 0, "qualification": "MBBS",
+            "languages": "English", "profile_image_key": "doctors/14/profile.jpg",
+            "hospital_name": "City Clinic", "city": "Springfield", "address": "1 Main Street",
             "specialization_count": 1,
         }
 
     def test_complete_profile_is_automatically_verified(self):
         cursor = MagicMock()
         cursor.fetchone.return_value = self.complete_profile_row()
-
-        verified = app.refresh_doctor_verification(cursor, 14)
-
-        self.assertTrue(verified)
+        self.assertTrue(app.refresh_doctor_verification(cursor, 14))
         self.assertEqual(cursor.execute.call_args.args[1], (True, 14))
 
     def test_missing_specialization_keeps_profile_unverified(self):
@@ -108,16 +83,12 @@ class DoctorApiTests(unittest.TestCase):
         profile = self.complete_profile_row()
         profile["specialization_count"] = 0
         cursor.fetchone.return_value = profile
-
-        verified = app.refresh_doctor_verification(cursor, 14)
-
-        self.assertFalse(verified)
+        self.assertFalse(app.refresh_doctor_verification(cursor, 14))
         self.assertEqual(cursor.execute.call_args.args[1], (False, 14))
 
     def test_unverified_doctor_cannot_configure_schedule(self):
         cursor = MagicMock()
         cursor.fetchone.return_value = {"is_verified": 0}
-
         with self.assertRaises(PermissionError):
             app.require_verified_doctor(cursor, 14)
 
@@ -126,36 +97,19 @@ class DoctorApiTests(unittest.TestCase):
             {
                 "httpMethod": "GET",
                 "pathParameters": {"proxy": "consultation-types"},
-                "requestContext": {
-                    "authorizer": {"role": "PATIENT", "userId": "25"}
-                },
+                "requestContext": {"authorizer": {"role": "PATIENT", "userId": "25"}},
             },
             None,
         )
-
         self.assertEqual(result["statusCode"], 403)
 
     def test_health_camp_capacity_is_bounded(self):
         with self.assertRaises(ValueError):
-            app.validate_consultation(
-                {
-                    "consultation_name": "Health Camp Session",
-                    "duration_minutes": 60,
-                    "capacity": 11,
-                    "fee": "25.00",
-                }
-            )
+            app.validate_consultation({"consultation_name": "Health Camp Session", "duration_minutes": 60, "capacity": 11, "fee": "25.00"})
 
     def test_fixed_consultation_capacity_cannot_be_changed(self):
         with self.assertRaises(ValueError):
-            app.validate_consultation(
-                {
-                    "consultation_name": "Quick Consult",
-                    "duration_minutes": 15,
-                    "capacity": 2,
-                    "fee": "25.00",
-                }
-            )
+            app.validate_consultation({"consultation_name": "Quick Consult", "duration_minutes": 15, "capacity": 2, "fee": "25.00"})
 
 
 if __name__ == "__main__":
