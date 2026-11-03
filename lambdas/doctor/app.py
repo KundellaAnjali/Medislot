@@ -4,7 +4,6 @@ import logging
 import os
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import boto3
 import pymysql
@@ -105,7 +104,7 @@ def get_profile(cursor, doctor_id):
         """
         SELECT d.doctor_id, d.first_name, d.last_name, d.phone_number,
                d.license_number, d.experience_years, d.qualification,
-               d.profile_image_key, d.languages, d.timezone_name,
+               d.profile_image_key, d.languages,
                h.hospital_name, h.city, h.address, h.phone_number AS hospital_phone
         FROM doctors d
         LEFT JOIN hospitals h ON h.hospital_id = d.hospital_id
@@ -163,10 +162,10 @@ def utc_iso(value):
     )
 
 
-def local_day_bounds(day, tz):
-    local_start = datetime.combine(day, time.min, tzinfo=tz)
-    local_end = datetime.combine(day + timedelta(days=1), time.min, tzinfo=tz)
-    return local_start.astimezone(timezone.utc), local_end.astimezone(timezone.utc)
+def utc_day_bounds(day):
+    start = datetime.combine(day, time.min, tzinfo=timezone.utc)
+    end = datetime.combine(day + timedelta(days=1), time.min, tzinfo=timezone.utc)
+    return start, end
 
 
 def set_slot_status_for_range(doctor_id, start_utc, end_utc, status):
@@ -260,14 +259,6 @@ def update_doctor_profile(connection, cursor, doctor_id, body):
         values["experience_years"] = int(values["experience_years"])
         if values["experience_years"] < 0:
             raise ValueError("Experience years cannot be negative")
-    if "timezone" in body:
-        timezone_name = str(body["timezone"])
-        try:
-            ZoneInfo(timezone_name)
-        except ZoneInfoNotFoundError:
-            raise ValueError("timezone must be a valid IANA timezone") from None
-        values["timezone_name"] = timezone_name
-
     hospital_fields = {"hospital_name", "city", "address", "hospital_phone"}
     if hospital_fields.intersection(body):
         name = str(body.get("hospital_name", "")).strip()
@@ -507,13 +498,8 @@ def blackouts_route(connection, cursor, doctor_id, method, tail, body):
         end_day = date.fromisoformat(body.get("end_date", body.get("date", "")))
         if end_day < start_day:
             raise ValueError("end_date must be on or after start_date")
-        cursor.execute(
-            "SELECT timezone_name FROM doctors WHERE doctor_id = %s",
-            (doctor_id,),
-        )
-        tz = ZoneInfo(cursor.fetchone()["timezone_name"])
-        start_utc, _ = local_day_bounds(start_day, tz)
-        _, end_utc = local_day_bounds(end_day, tz)
+        start_utc, _ = utc_day_bounds(start_day)
+        _, end_utc = utc_day_bounds(end_day)
         cursor.execute(
             """
             INSERT INTO blackout_dates (doctor_id, start_datetime, end_datetime)
@@ -527,9 +513,7 @@ def blackouts_route(connection, cursor, doctor_id, method, tail, body):
         )
         connection.commit()
         for day_offset in range((end_day - start_day).days + 1):
-            day_start, day_end = local_day_bounds(
-                start_day + timedelta(days=day_offset), tz
-            )
+            day_start, day_end = utc_day_bounds(start_day + timedelta(days=day_offset))
             set_slot_status_for_range(doctor_id, day_start, day_end, 0)
         return response(201, {"blackout_id": cursor.lastrowid})
     if len(tail) == 1 and method == "DELETE":
@@ -545,21 +529,14 @@ def blackouts_route(connection, cursor, doctor_id, method, tail, body):
         if not removed_blackout:
             raise LookupError("Blackout date not found")
         cursor.execute(
-            "SELECT timezone_name FROM doctors WHERE doctor_id = %s",
-            (doctor_id,),
-        )
-        tz = ZoneInfo(cursor.fetchone()["timezone_name"])
-        cursor.execute(
             "DELETE FROM blackout_dates WHERE blackout_id = %s AND doctor_id = %s",
             (blackout_id, doctor_id),
         )
         connection.commit()
-        removed_start = removed_blackout["start_datetime"].replace(
-            tzinfo=timezone.utc
-        )
-        removed_end = removed_blackout["end_datetime"].replace(tzinfo=timezone.utc)
-        first_day = removed_start.astimezone(tz).date()
-        last_day = (removed_end - timedelta(seconds=1)).astimezone(tz).date()
+        removed_start = removed_blackout["start_datetime"]
+        removed_end = removed_blackout["end_datetime"]
+        first_day = removed_start.date()
+        last_day = (removed_end - timedelta(seconds=1)).date()
         cursor.execute(
             "SELECT start_datetime, end_datetime FROM blackout_dates WHERE doctor_id = %s",
             (doctor_id,),
@@ -567,12 +544,10 @@ def blackouts_route(connection, cursor, doctor_id, method, tail, body):
         remaining_blackouts = cursor.fetchall()
         now_utc = datetime.now(timezone.utc)
         for day_offset in range((last_day - first_day).days + 1):
-            day_start, day_end = local_day_bounds(
-                first_day + timedelta(days=day_offset), tz
-            )
+            day_start, day_end = utc_day_bounds(first_day + timedelta(days=day_offset))
             still_blocked = any(
-                item["start_datetime"].replace(tzinfo=timezone.utc) < day_end
-                and item["end_datetime"].replace(tzinfo=timezone.utc) > day_start
+                item["start_datetime"] < day_end.replace(tzinfo=None)
+                and item["end_datetime"] > day_start.replace(tzinfo=None)
                 for item in remaining_blackouts
             )
             if not still_blocked:
@@ -587,12 +562,7 @@ def get_day_schedule(cursor, doctor_id, query):
     if not query.get("date"):
         raise ValueError("date query parameter is required (YYYY-MM-DD)")
     local_day = date.fromisoformat(query["date"])
-    cursor.execute(
-        "SELECT timezone_name FROM doctors WHERE doctor_id = %s",
-        (doctor_id,),
-    )
-    tz = ZoneInfo(cursor.fetchone()["timezone_name"])
-    start_utc, end_utc = local_day_bounds(local_day, tz)
+    start_utc, end_utc = utc_day_bounds(local_day)
     result = slots_table.query(
         IndexName="DoctorStartIndex",
         KeyConditionExpression=Key("doctor_id").eq(doctor_id)
@@ -625,7 +595,7 @@ def get_day_schedule(cursor, doctor_id, query):
         item["appointments"] = appointments_by_slot.get(int(item["slot_id"]), [])
         item["consultation_name"] = item.get("consultation_name", "")
     slots.sort(key=lambda item: item["start_time"])
-    return response(200, {"date": local_day.isoformat(), "timezone": tz.key, "slots": slots})
+    return response(200, {"date": local_day.isoformat(), "slots": slots})
 
 
 def lambda_handler(event, context):
@@ -652,18 +622,13 @@ def weekday_name(value):
     return name
 
 
-def is_valid_local_time(value, tz):
-    return value.astimezone(timezone.utc).astimezone(tz).replace(tzinfo=None) == value.replace(tzinfo=None)
-
-
 def build_slot_id(doctor_id, consultation_id, start_time):
     identity = f"{doctor_id}|{consultation_id}|{start_time}".encode("utf-8")
     return int(hashlib.sha256(identity).hexdigest()[:15], 16)
 
 
 def materialize_for_doctor_day(doctor, patterns, blackout_rows, local_day):
-    tz = ZoneInfo(doctor["timezone_name"])
-    day_start_utc, day_end_utc = local_day_bounds(local_day, tz)
+    day_start_utc, day_end_utc = utc_day_bounds(local_day)
     for blackout in blackout_rows:
         blackout_start = blackout["start_datetime"].replace(tzinfo=timezone.utc)
         blackout_end = blackout["end_datetime"].replace(tzinfo=timezone.utc)
@@ -677,43 +642,35 @@ def materialize_for_doctor_day(doctor, patterns, blackout_rows, local_day):
         start_time = parse_sql_time(pattern["start_time"])
         end_time = parse_sql_time(pattern["end_time"])
         duration = int(pattern["duration_minutes"])
-        slot_local = datetime.combine(local_day, start_time)
-        local_end = datetime.combine(local_day, end_time)
+        slot_local = datetime.combine(local_day, start_time, tzinfo=timezone.utc)
+        local_end = datetime.combine(local_day, end_time, tzinfo=timezone.utc)
         while slot_local + timedelta(minutes=duration) <= local_end:
-            zoned_start = slot_local.replace(tzinfo=tz, fold=0)
-            if is_valid_local_time(zoned_start, tz):
-                start_iso = utc_iso(zoned_start)
-                end_iso = utc_iso(
-                    zoned_start.astimezone(timezone.utc)
-                    + timedelta(minutes=duration)
+            start_iso = utc_iso(slot_local)
+            end_iso = utc_iso(slot_local + timedelta(minutes=duration))
+            slot_id = build_slot_id(
+                doctor["doctor_id"], pattern["consultation_type_id"], start_iso
+            )
+            try:
+                slots_table.put_item(
+                    Item={
+                        "slot_id": slot_id,
+                        "doctor_id": doctor["doctor_id"],
+                        "consultation_type_id": pattern["consultation_type_id"],
+                        "consultation_name": pattern["consultation_name"],
+                        "start_time": start_iso,
+                        "end_time": end_iso,
+                        "local_date": local_day.isoformat(),
+                        "capacity": int(pattern["capacity"]),
+                        "booked_count": 0,
+                        "version": 0,
+                        "status": 1,
+                    },
+                    ConditionExpression="attribute_not_exists(slot_id)",
                 )
-                slot_id = build_slot_id(
-                    doctor["doctor_id"],
-                    pattern["consultation_type_id"],
-                    start_iso,
-                )
-                try:
-                    slots_table.put_item(
-                        Item={
-                            "slot_id": slot_id,
-                            "doctor_id": doctor["doctor_id"],
-                            "consultation_type_id": pattern["consultation_type_id"],
-                            "consultation_name": pattern["consultation_name"],
-                            "start_time": start_iso,
-                            "end_time": end_iso,
-                            "local_date": local_day.isoformat(),
-                            "timezone": tz.key,
-                            "capacity": int(pattern["capacity"]),
-                            "booked_count": 0,
-                            "version": 0,
-                            "status": 1,
-                        },
-                        ConditionExpression="attribute_not_exists(slot_id)",
-                    )
-                    created += 1
-                except ClientError as error:
-                    if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
-                        raise
+                created += 1
+            except ClientError as error:
+                if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                    raise
             slot_local += timedelta(minutes=duration)
     return created
 
@@ -730,7 +687,7 @@ def materialize_handler(event, context):
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT d.doctor_id, d.timezone_name, ct.consultation_type_id,
+                SELECT d.doctor_id, ct.consultation_type_id,
                       ct.consultation_name, ct.duration_minutes, ct.capacity,
                       ap.day_of_week,
                        ap.start_time, ap.end_time
@@ -743,7 +700,7 @@ def materialize_handler(event, context):
                 """
             )
             pattern_rows = cursor.fetchall()
-            cursor.execute("SELECT doctor_id, timezone_name FROM doctors")
+            cursor.execute("SELECT doctor_id FROM doctors")
             doctors = cursor.fetchall()
             cursor.execute(
                 "SELECT doctor_id, start_datetime, end_datetime FROM blackout_dates"
@@ -761,12 +718,11 @@ def materialize_handler(event, context):
         created_count = 0
         processed_dates = 0
         for doctor in doctors:
-            tz = ZoneInfo(doctor["timezone_name"])
             if requested_date:
                 start_day = date.fromisoformat(requested_date)
                 days = 1
             else:
-                start_day = datetime.now(timezone.utc).astimezone(tz).date()
+                start_day = datetime.now(timezone.utc).date()
                 days = window_days
             patterns = patterns_by_doctor.get(doctor["doctor_id"], [])
             blackouts = blackouts_by_doctor.get(doctor["doctor_id"], [])

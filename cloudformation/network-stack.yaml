@@ -24,6 +24,11 @@ Parameters:
   AvailabilityZoneB:
     Type: String
 
+  PortalAccessCidr:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: Source CIDR permitted to access the doctor portal over HTTP
+
 Resources:
 
   VPC:
@@ -152,6 +157,18 @@ Resources:
           FromPort: 443
           ToPort: 443
           SourceSecurityGroupId: !Ref LambdaSecurityGroup
+
+  DoctorPortalSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: HTTP access to the MediSlot doctor portal
+      GroupName: !Sub "${EnvironmentName}-doctor-portal-sg"
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref PortalAccessCidr
 
   S3Endpoint:
     Type: AWS::EC2::VPCEndpoint
@@ -305,6 +322,12 @@ Outputs:
     Value: !Ref VPCEndpointSecurityGroup
     Export:
       Name: !Sub "${EnvironmentName}-VPCEndpointSecurityGroupId"
+
+  DoctorPortalSecurityGroupId:
+    Description: Doctor portal security group identifier
+    Value: !Ref DoctorPortalSecurityGroup
+    Export:
+      Name: !Sub "${EnvironmentName}-DoctorPortalSecurityGroupId"
 
   PrivateRouteTableId:
     Description: Private Route Table Identifier

@@ -44,7 +44,8 @@ jobs:
           MEDISLOT_API_BASE_URL: https://example.invalid/dev
         run: |
           cd web/doctor-portal
-          python -c "from app import app; assert app.test_client().get('/doctor/login').status_code == 200"
+          python -m unittest discover -s . -p 'test_*.py'
+          python -c "from app import app; client=app.test_client(); assert client.get('/').status_code == 200; assert client.get('/doctor/register').status_code == 200; assert client.get('/doctor/login').status_code == 200"
 
       - name: Lint Network Stack
         run: |
@@ -280,11 +281,12 @@ jobs:
 
           echo "ENVIRONMENT=${ENVIRONMENT}"
 
-          ASSETS_BUCKET="dev-medislot-assets-735381631157"
+          ASSETS_BUCKET=$(aws cloudformation list-exports \
+            --region ${{ secrets.AWS_REGION }} \
+            --query "Exports[?Name=='${ENVIRONMENT}-AssetsBucket'].Value | [0]" \
+            --output text)
 
           echo "ASSETS_BUCKET=${ASSETS_BUCKET}"
-
-         
 
           aws s3 cp doctor-portal.zip \
             "s3://${ASSETS_BUCKET}/doctor-portal/doctor-portal.zip" \

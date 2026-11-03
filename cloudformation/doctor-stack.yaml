@@ -5,10 +5,6 @@ Description: MediSlot Doctor Domain Stack
 Parameters:
   EnvironmentName:
     Type: String
-  WebAccessCidr:
-    Type: String
-    Default: 0.0.0.0/0
-    Description: Restrict HTTP access to the doctor portal to this CIDR
   WebAppArtifactKey:
     Type: String
     Default: doctor-portal/doctor-portal.zip
@@ -20,31 +16,6 @@ Globals:
     MemorySize: 512
 
 Resources:
-  ProfilePhotosBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Sub "${EnvironmentName}-medislot-doctor-photos-${AWS::AccountId}-${AWS::Region}"
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
-      BucketEncryption:
-        ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
-      CorsConfiguration:
-        CorsRules:
-          - AllowedHeaders:
-              - Content-Type
-            AllowedMethods:
-              - PUT
-            AllowedOrigins:
-              - "*"
-            ExposedHeaders:
-              - ETag
-            MaxAge: 300
-
   BookingWindowDaysParameter:
     Type: AWS::SSM::Parameter
     Properties:
@@ -53,59 +24,20 @@ Resources:
       Value: "30"
       Description: Rolling slot materialization window in days
 
-  DoctorLambdaRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub "${EnvironmentName}-doctor-domain-role"
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
-      Policies:
-        - PolicyName: DoctorDomainAccess
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - ssm:GetParameter
-                Resource:
-                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/medislot/${EnvironmentName}/*"
-              - Effect: Allow
-                Action:
-                  - kms:Decrypt
-                Resource: "*"
-              - Effect: Allow
-                Action:
-                  - dynamodb:PutItem
-                  - dynamodb:Query
-                  - dynamodb:UpdateItem
-                Resource:
-                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-slots"
-                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-slots/index/DoctorStartIndex"
-              - Effect: Allow
-                Action:
-                  - s3:PutObject
-                Resource: !Sub "${ProfilePhotosBucket.Arn}/*"
-
   DoctorApiFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub "${EnvironmentName}-doctor-api"
       Handler: app.lambda_handler
       CodeUri: ../lambdas/doctor/
-      Role: !GetAtt DoctorLambdaRole.Arn
+      Role:
+        Fn::ImportValue: !Sub "${EnvironmentName}-DoctorLambdaRoleArn"
       Environment:
         Variables:
           ENVIRONMENT_NAME: !Ref EnvironmentName
           SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots"
-          PHOTO_BUCKET_NAME: !Ref ProfilePhotosBucket
+          PHOTO_BUCKET_NAME:
+            Fn::ImportValue: !Sub "${EnvironmentName}-AssetsBucket"
       VpcConfig:
         SecurityGroupIds:
           - Fn::ImportValue: !Sub "${EnvironmentName}-LambdaSecurityGroupId"
@@ -121,12 +53,14 @@ Resources:
       CodeUri: ../lambdas/doctor/
       Timeout: 900
       MemorySize: 512
-      Role: !GetAtt DoctorLambdaRole.Arn
+      Role:
+        Fn::ImportValue: !Sub "${EnvironmentName}-DoctorLambdaRoleArn"
       Environment:
         Variables:
           ENVIRONMENT_NAME: !Ref EnvironmentName
           SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots"
-          PHOTO_BUCKET_NAME: !Ref ProfilePhotosBucket
+          PHOTO_BUCKET_NAME:
+            Fn::ImportValue: !Sub "${EnvironmentName}-AssetsBucket"
       VpcConfig:
         SecurityGroupIds:
           - Fn::ImportValue: !Sub "${EnvironmentName}-LambdaSecurityGroupId"
@@ -227,94 +161,30 @@ Resources:
           - ApiId:
               Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
 
-  SlotMaterializerScheduleRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: scheduler.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: InvokeSlotMaterializer
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - lambda:InvokeFunction
-                Resource: !GetAtt SlotMaterializerFunction.Arn
-
   SlotMaterializerSchedule:
     Type: AWS::Scheduler::Schedule
     Properties:
       Description: Materialize the rolling doctor slot window once per day
       ScheduleExpression: "cron(0 2 * * ? *)"
-      ScheduleExpressionTimezone: UTC
       FlexibleTimeWindow:
         Mode: "OFF"
       State: ENABLED
       Target:
         Arn: !GetAtt SlotMaterializerFunction.Arn
-        RoleArn: !GetAtt SlotMaterializerScheduleRole.Arn
-
-  DoctorPortalSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: HTTP access to the MediSlot doctor portal
-      VpcId:
-        Fn::ImportValue: !Sub "${EnvironmentName}-VpcId"
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: !Ref WebAccessCidr
-      SecurityGroupEgress:
-        - IpProtocol: -1
-          CidrIp: 0.0.0.0/0
-
-  DoctorPortalInstanceRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: ec2.amazonaws.com
-            Action: sts:AssumeRole
-      Policies:
-        - PolicyName: DownloadDoctorPortal
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - s3:GetObject
-                Resource:
-                  Fn::Sub:
-                    - "arn:aws:s3:::${AssetsBucket}/doctor-portal/*"
-                    - AssetsBucket:
-                        Fn::ImportValue: !Sub "${EnvironmentName}-AssetsBucket"
-
-  DoctorPortalInstanceProfile:
-    Type: AWS::IAM::InstanceProfile
-    Properties:
-      Roles:
-        - !Ref DoctorPortalInstanceRole
+        RoleArn:
+          Fn::ImportValue: !Sub "${EnvironmentName}-SlotMaterializerScheduleRoleArn"
 
   DoctorPortalInstance:
     Type: AWS::EC2::Instance
     Properties:
       ImageId: !Sub "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}"
       InstanceType: t3.micro
-      IamInstanceProfile: !Ref DoctorPortalInstanceProfile
+      IamInstanceProfile:
+        Fn::ImportValue: !Sub "${EnvironmentName}-DoctorPortalInstanceProfileName"
       SubnetId:
         Fn::ImportValue: !Sub "${EnvironmentName}-PublicSubnetId"
       SecurityGroupIds:
-        - !Ref DoctorPortalSecurityGroup
+        - Fn::ImportValue: !Sub "${EnvironmentName}-DoctorPortalSecurityGroupId"
       MetadataOptions:
         HttpTokens: required
         HttpEndpoint: enabled
@@ -380,7 +250,5 @@ Outputs:
     Value: !Ref DoctorApiFunction
   SlotMaterializerFunctionName:
     Value: !Ref SlotMaterializerFunction
-  ProfilePhotosBucketName:
-    Value: !Ref ProfilePhotosBucket
   DoctorPortalUrl:
     Value: !Sub "http://${DoctorPortalInstance.PublicIp}"

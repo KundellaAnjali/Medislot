@@ -128,14 +128,9 @@ def lambda_handler(event, context):
 
                     executed_statements += 1
 
-            cursor.execute(
-                "SHOW COLUMNS FROM doctors LIKE 'timezone_name'"
-            )
-            if not cursor.fetchone():
-                cursor.execute(
-                    "ALTER TABLE doctors ADD COLUMN timezone_name "
-                    "VARCHAR(64) NOT NULL DEFAULT 'UTC'"
-                )
+            cursor.execute("SHOW COLUMNS FROM doctors LIKE 'timezone_name'")
+            if cursor.fetchone():
+                cursor.execute("ALTER TABLE doctors DROP COLUMN timezone_name")
 
             cursor.execute(
                 "SHOW COLUMNS FROM appointments LIKE 'slot_id'"

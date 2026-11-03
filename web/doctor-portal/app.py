@@ -2,10 +2,9 @@ import hmac
 import json
 import os
 import secrets
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import wraps
 from urllib.parse import urljoin
-from zoneinfo import ZoneInfo
 
 import requests
 from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
@@ -106,6 +105,31 @@ def with_api_errors(handler):
 def home():
     if session.get("role") == "DOCTOR":
         return redirect(url_for("dashboard"))
+    return render_template("welcome.html")
+
+
+@app.route("/doctor/register", methods=["GET", "POST"])
+def register():
+    if request.method == "GET":
+        return render_template("register.html")
+
+    payload = {
+        "role": "DOCTOR",
+        "first_name": request.form.get("first_name", "").strip(),
+        "last_name": request.form.get("last_name", "").strip(),
+        "email": request.form.get("email", "").strip().lower(),
+        "password": request.form.get("password", ""),
+    }
+    if payload["password"] != request.form.get("confirm_password", ""):
+        flash("Passwords do not match.", "error")
+        return render_template("register.html"), 400
+    try:
+        api_request("POST", "/auth/register", json_body=payload, authenticated=False)
+    except ApiError as error:
+        flash(str(error), "error")
+        return render_template("register.html"), error.status_code
+
+    flash("Your doctor account is ready. Sign in to continue.", "success")
     return redirect(url_for("login"))
 
 
@@ -164,16 +188,14 @@ def dashboard():
         "consultation_types", []
     )
     availability = api_request("GET", "/doctors/me/availability").get("patterns", [])
-    timezone_name = profile.get("timezone_name") or "UTC"
     try:
-        doctor_timezone = ZoneInfo(timezone_name)
-        schedule_date = request.args.get("date") or datetime.now(doctor_timezone).date().isoformat()
+        schedule_date = request.args.get("date") or datetime.now(timezone.utc).date().isoformat()
         schedule = api_request(
             "GET", "/doctors/me/schedule", params={"date": schedule_date}
         )
     except ApiError as error:
         if error.status_code == 404:
-            schedule = {"slots": [], "date": schedule_date, "timezone": timezone_name}
+            schedule = {"slots": [], "date": schedule_date}
         else:
             raise
     return render_template(
@@ -197,7 +219,6 @@ def update_profile():
         "experience_years",
         "qualification",
         "languages",
-        "timezone",
         "hospital_name",
         "city",
         "address",

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Create doctor account | MediSlot</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body class="login-page">
+  <main class="login-layout">
+    <section class="login-intro">
+      <a class="wordmark" href="/">MediSlot<span>.</span></a>
+      <p class="eyebrow">Doctor workspace</p>
+      <h1>Build your<br>practice profile.</h1>
+      <p class="intro-copy">Create an account to manage your consultation types, availability and schedule.</p>
+      <div class="login-detail"><span class="detail-mark"></span><span>Secure access for care professionals</span></div>
+    </section>
+    <section class="login-form-wrap">
+      <form class="login-form" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <p class="eyebrow">New doctor account</p>
+        <h2>Create account</h2>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% for category, message in messages %}<p class="notice {{ category }}">{{ message }}</p>{% endfor %}
+        {% endwith %}
+        <div class="field-pair">
+          <label for="first-name">First name<input id="first-name" name="first_name" autocomplete="given-name" required></label>
+          <label for="last-name">Last name<input id="last-name" name="last_name" autocomplete="family-name" required></label>
+        </div>
+        <label for="email">Email address</label>
+        <input id="email" name="email" type="email" autocomplete="email" required>
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" minlength="10" pattern="(?=.*[A-Za-z])(?=.*[0-9]).{10,}" autocomplete="new-password" required>
+        <label for="confirm-password">Confirm password</label>
+        <input id="confirm-password" name="confirm_password" type="password" minlength="10" autocomplete="new-password" required>
+        <button class="button primary" type="submit">Create account <span aria-hidden="true">&#8594;</span></button>
+        <p class="form-link">Already registered? <a href="{{ url_for('login') }}">Sign in</a></p>
+      </form>
+      <p class="login-foot">MediSlot care operations <span>2026</span></p>
+    </section>
+  </main>
+</body>
+</html>

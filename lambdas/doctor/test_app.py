@@ -1,6 +1,6 @@
 import os
 import unittest
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta
 from unittest.mock import patch
 
 os.environ.setdefault("ENVIRONMENT_NAME", "test")
@@ -16,7 +16,7 @@ import app
 
 class SlotMaterializationTests(unittest.TestCase):
     def setUp(self):
-        self.doctor = {"doctor_id": 14, "timezone_name": "America/Los_Angeles"}
+        self.doctor = {"doctor_id": 14}
         self.pattern = {
             "consultation_type_id": 3,
             "consultation_name": "Detailed Consult",
@@ -27,7 +27,7 @@ class SlotMaterializationTests(unittest.TestCase):
             "capacity": 1,
         }
 
-    def test_materializes_local_hours_across_daylight_saving(self):
+    def test_materializes_availability_in_utc(self):
         with patch.object(app.slots_table, "put_item") as put_item:
             created = app.materialize_for_doctor_day(
                 self.doctor, [self.pattern], [], date(2027, 3, 14)
@@ -37,7 +37,7 @@ class SlotMaterializationTests(unittest.TestCase):
         starts = [call.kwargs["Item"]["start_time"] for call in put_item.call_args_list]
         self.assertEqual(
             starts,
-            ["2027-03-14T16:00:00Z", "2027-03-14T17:00:00Z"],
+            ["2027-03-14T09:00:00Z", "2027-03-14T10:00:00Z"],
         )
 
     def test_rerunning_materialization_does_not_create_duplicate_slots(self):
@@ -65,12 +65,8 @@ class SlotMaterializationTests(unittest.TestCase):
 
     def test_blackout_suppresses_materialized_slots(self):
         blackout = {
-            "start_datetime": datetime(2027, 3, 14, 8, tzinfo=timezone.utc).replace(
-                tzinfo=None
-            ),
-            "end_datetime": datetime(2027, 3, 15, 7, tzinfo=timezone.utc).replace(
-                tzinfo=None
-            ),
+            "start_datetime": datetime(2027, 3, 14),
+            "end_datetime": datetime(2027, 3, 15),
         }
         with patch.object(app.slots_table, "put_item") as put_item:
             created = app.materialize_for_doctor_day(

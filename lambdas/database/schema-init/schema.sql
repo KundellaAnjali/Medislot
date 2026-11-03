@@ -54,8 +54,6 @@ CREATE TABLE IF NOT EXISTS doctors (
 
     qualification VARCHAR(255) NULL,
 
-    timezone_name VARCHAR(64) NOT NULL DEFAULT 'UTC',
-
     profile_image_key VARCHAR(500) NULL,
 
     hospital_id INT NULL,

@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MediSlot | Doctor workspace</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body class="login-page">
+  <main class="login-layout">
+    <section class="login-intro">
+      <a class="wordmark" href="/">MediSlot<span>.</span></a>
+      <p class="eyebrow">Doctor workspace</p>
+      <h1>Care starts<br>with a clear schedule.</h1>
+      <p class="intro-copy">Create your professional profile, set weekly hours and keep your appointments organized.</p>
+      <div class="login-detail"><span class="detail-mark"></span><span>One account for your MediSlot practice</span></div>
+    </section>
+    <section class="login-form-wrap">
+      <div class="welcome-actions">
+        <p class="eyebrow">Get started</p>
+        <h2>Welcome to MediSlot</h2>
+        <p class="welcome-copy">Set up your doctor account or continue to your workspace.</p>
+        <a class="button primary" href="{{ url_for('register') }}">Create doctor account <span aria-hidden="true">&#8594;</span></a>
+        <a class="button secondary" href="{{ url_for('login') }}">Sign in</a>
+      </div>
+      <p class="login-foot">MediSlot care operations <span>2026</span></p>
+    </section>
+  </main>
+</body>
+</html>

@@ -270,6 +270,17 @@ Resources:
     Properties:
       BucketName:
         !Sub "${EnvironmentName}-medislot-assets-${AWS::AccountId}"
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - Content-Type
+            AllowedMethods:
+              - PUT
+            AllowedOrigins:
+              - "*"
+            ExposedHeaders:
+              - ETag
+            MaxAge: 300
 
   RDSHostParameter:
     Type: AWS::SSM::Parameter
