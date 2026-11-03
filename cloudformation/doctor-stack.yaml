@@ -309,7 +309,7 @@ Resources:
     Type: AWS::EC2::Instance
     Properties:
       ImageId: !Sub "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}"
-      InstanceType: t2.micro
+      InstanceType: t3.micro
       IamInstanceProfile: !Ref DoctorPortalInstanceProfile
       SubnetId:
         Fn::ImportValue: !Sub "${EnvironmentName}-PublicSubnetId"
