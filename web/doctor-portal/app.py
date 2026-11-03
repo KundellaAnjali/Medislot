@@ -16,7 +16,7 @@ app = Flask(__name__)
 app.config.update(
     SECRET_KEY=os.environ["FLASK_SECRET_KEY"],
     SESSION_TYPE="filesystem",
-    SESSION_FILE_DIR = "/tmp/flask_session"
+    SESSION_FILE_DIR = "/tmp/flask_session",
     SESSION_PERMANENT=False,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
