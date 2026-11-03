@@ -264,7 +264,7 @@ jobs:
 
       - name: Setup SAM CLI
         uses: aws-actions/setup-sam@v2
-            - name: Debug Environment
+      - name: Debug Environment
         run: |
           echo "ENVIRONMENT=${ENVIRONMENT}"
           cat parameters/doctor-parameters.json
