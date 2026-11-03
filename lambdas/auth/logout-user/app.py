@@ -1,10 +1,10 @@
 import json
-import uuid
 import os
 import logging
-from datetime import datetime
+import hashlib
 
 import boto3
+from boto3.dynamodb.conditions import Key
 
 dynamodb = boto3.resource("dynamodb")
 cloudwatch = boto3.client("cloudwatch")
@@ -31,33 +31,13 @@ def publish_metric(metric_name, value):
     )
 
 
-def log_event(
-    level,
-    correlation_id,
-    event_name,
-    details=None
-):
-
-    payload = {
-        "timestamp": datetime.utcnow().isoformat(),
-        "correlationId": correlation_id,
-        "event": event_name,
-        "details": details or {}
-    }
-
-    if level == "ERROR":
-        logger.error(json.dumps(payload))
-    else:
-        logger.info(json.dumps(payload))
-
-
 def lambda_handler(event, context):
-
-    correlation_id = str(uuid.uuid4())
 
     try:
 
-        body = json.loads(event["body"])
+        body = json.loads(
+            event.get("body", "{}")
+        )
 
         refresh_token = body.get(
             "refresh_token"
@@ -69,27 +49,37 @@ def lambda_handler(event, context):
                 "statusCode": 400,
                 "body": json.dumps(
                     {
-                        "message": "Refresh token is required"
+                        "message":
+                        "Refresh token is required"
                     }
                 )
             }
+
+        refresh_token_hash = hashlib.sha256(
+            refresh_token.encode("utf-8")
+        ).hexdigest()
 
         table = dynamodb.Table(
             f"{ENVIRONMENT}-user-sessions"
         )
 
-        response = table.scan()
+        response = table.query(
+            IndexName="RefreshTokenHashIndex",
+            KeyConditionExpression=Key(
+                "refresh_token_hash"
+            ).eq(refresh_token_hash)
+        )
 
-        session = None
+        items = response.get(
+            "Items",
+            []
+        )
 
-        for item in response.get("Items", []):
-
-            if (
-                item.get("refresh_token")
-                == refresh_token
-            ):
-                session = item
-                break
+        session = (
+            items[0]
+            if items
+            else None
+        )
 
         if not session:
 
@@ -102,7 +92,8 @@ def lambda_handler(event, context):
                 "statusCode": 404,
                 "body": json.dumps(
                     {
-                        "message": "Session not found"
+                        "message":
+                        "Session not found"
                     }
                 )
             }
@@ -114,14 +105,12 @@ def lambda_handler(event, context):
             }
         )
 
-        log_event(
-            "INFO",
-            correlation_id,
-            "UserLogoutCompleted",
-            {
-                "userId":
-                session["user_id"]
-            }
+        logger.info(
+            (
+                "Logout successful "
+                f"for user "
+                f"{session['user_id']}"
+            )
         )
 
         publish_metric(
@@ -134,23 +123,15 @@ def lambda_handler(event, context):
             "body": json.dumps(
                 {
                     "message":
-                    "Logout successful",
-                    "correlation_id":
-                    correlation_id
+                    "Logout successful"
                 }
             )
         }
 
     except Exception as exception:
 
-        log_event(
-            "ERROR",
-            correlation_id,
-            "UserLogoutFailed",
-            {
-                "error":
-                str(exception)
-            }
+        logger.exception(
+            f"Logout failed: {str(exception)}"
         )
 
         publish_metric(
@@ -163,9 +144,7 @@ def lambda_handler(event, context):
             "body": json.dumps(
                 {
                     "message":
-                    "Internal server error",
-                    "correlation_id":
-                    correlation_id
+                    "Internal server error"
                 }
             )
         }

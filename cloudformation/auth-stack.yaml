@@ -353,3 +353,7 @@ Outputs:
   DoctorTestFunctionArn:
     Description: Doctor Test Lambda ARN
     Value: !GetAtt DoctorTestFunction.Arn
+
+  DoctorTestFunctionName:
+    Description: Doctor Test Lambda Name
+    Value: !Ref DoctorTestFunction

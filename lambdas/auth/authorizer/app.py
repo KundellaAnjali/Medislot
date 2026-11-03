@@ -72,7 +72,7 @@ def lambda_handler(event, context):
             raise Exception("Missing authorization token")
 
         if token.startswith("Bearer "):
-            token = token.replace("Bearer ", "")
+            token = token.removeprefix("Bearer ")
 
         jwt_secret = get_parameter(
             f"/medislot/{ENVIRONMENT}/jwt-secret",
@@ -91,8 +91,8 @@ def lambda_handler(event, context):
             event["methodArn"],
             {
                 "userId": str(decoded_token["sub"]),
-                "email": str(decoded_token.get("email", "")),
-                "role": str(decoded_token.get("role", ""))
+                "email": str(decoded_token["email"]),
+                "role": str(decoded_token["role"])
             }
         )
 
