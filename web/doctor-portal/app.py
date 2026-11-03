@@ -188,6 +188,7 @@ def dashboard():
         "consultation_types", []
     )
     availability = api_request("GET", "/doctors/me/availability").get("patterns", [])
+    blackouts = api_request("GET", "/doctors/me/blackouts").get("blackouts", [])
     try:
         schedule_date = request.args.get("date") or datetime.now(timezone.utc).date().isoformat()
         schedule = api_request(
@@ -203,6 +204,7 @@ def dashboard():
         profile=profile,
         consultations=consultations,
         patterns=availability,
+        blackouts=blackouts,
         schedule=schedule,
     )
 
@@ -219,6 +221,7 @@ def update_profile():
         "experience_years",
         "qualification",
         "languages",
+        "specializations",
         "hospital_name",
         "city",
         "address",
@@ -251,6 +254,33 @@ def create_consultation_type():
     return redirect(url_for("dashboard"))
 
 
+@app.post("/doctor/consultation-types/<int:consultation_id>")
+@doctor_required
+@with_api_errors
+def update_consultation_type(consultation_id):
+    api_request(
+        "PUT",
+        f"/doctors/me/consultation-types/{consultation_id}",
+        json_body={
+            "consultation_name": request.form["consultation_name"],
+            "duration_minutes": int(request.form["duration_minutes"]),
+            "capacity": int(request.form["capacity"]),
+            "fee": request.form["fee"],
+        },
+    )
+    flash("Consultation type updated.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/doctor/consultation-types/<int:consultation_id>/deactivate")
+@doctor_required
+@with_api_errors
+def deactivate_consultation_type(consultation_id):
+    api_request("DELETE", f"/doctors/me/consultation-types/{consultation_id}")
+    flash("Consultation type deactivated. Existing appointments are kept.", "success")
+    return redirect(url_for("dashboard"))
+
+
 @app.post("/doctor/availability")
 @doctor_required
 @with_api_errors
@@ -277,6 +307,28 @@ def save_availability():
     return redirect(url_for("dashboard"))
 
 
+@app.post("/doctor/blackouts")
+@doctor_required
+@with_api_errors
+def add_blackout():
+    api_request(
+        "POST",
+        "/doctors/me/blackouts",
+        json_body={"date": request.form.get("date", "")},
+    )
+    flash("Blackout day added.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/doctor/blackouts/<int:blackout_id>/delete")
+@doctor_required
+@with_api_errors
+def delete_blackout(blackout_id):
+    api_request("DELETE", f"/doctors/me/blackouts/{blackout_id}")
+    flash("Blackout day removed.", "success")
+    return redirect(url_for("dashboard"))
+
+
 @app.post("/doctor/photo-url")
 @doctor_required
 def photo_upload_url():
@@ -286,6 +338,21 @@ def photo_upload_url():
             "POST",
             "/doctors/me/photo",
             json_body={"content_type": content_type},
+        )
+        return jsonify(result)
+    except ApiError as error:
+        return jsonify({"message": str(error)}), error.status_code
+
+
+@app.post("/doctor/photo-confirm")
+@doctor_required
+def confirm_photo_upload():
+    key = request.form.get("key", "")
+    try:
+        result = api_request(
+            "POST",
+            "/doctors/me/photo/confirm",
+            json_body={"key": key},
         )
         return jsonify(result)
     except ApiError as error:

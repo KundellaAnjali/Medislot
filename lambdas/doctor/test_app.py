@@ -1,7 +1,7 @@
 import os
 import unittest
 from datetime import date, datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("ENVIRONMENT_NAME", "test")
 os.environ.setdefault("SLOTS_TABLE_NAME", "test-slots")
@@ -78,6 +78,49 @@ class SlotMaterializationTests(unittest.TestCase):
 
 
 class DoctorApiTests(unittest.TestCase):
+    def complete_profile_row(self):
+        return {
+            "first_name": "Asha",
+            "last_name": "Rao",
+            "phone_number": "+15550001111",
+            "license_number": "LIC-123",
+            "experience_years": 0,
+            "qualification": "MBBS",
+            "languages": "English",
+            "profile_image_key": "doctors/14/profile.jpg",
+            "hospital_name": "City Clinic",
+            "city": "Springfield",
+            "address": "1 Main Street",
+            "specialization_count": 1,
+        }
+
+    def test_complete_profile_is_automatically_verified(self):
+        cursor = MagicMock()
+        cursor.fetchone.return_value = self.complete_profile_row()
+
+        verified = app.refresh_doctor_verification(cursor, 14)
+
+        self.assertTrue(verified)
+        self.assertEqual(cursor.execute.call_args.args[1], (True, 14))
+
+    def test_missing_specialization_keeps_profile_unverified(self):
+        cursor = MagicMock()
+        profile = self.complete_profile_row()
+        profile["specialization_count"] = 0
+        cursor.fetchone.return_value = profile
+
+        verified = app.refresh_doctor_verification(cursor, 14)
+
+        self.assertFalse(verified)
+        self.assertEqual(cursor.execute.call_args.args[1], (False, 14))
+
+    def test_unverified_doctor_cannot_configure_schedule(self):
+        cursor = MagicMock()
+        cursor.fetchone.return_value = {"is_verified": 0}
+
+        with self.assertRaises(PermissionError):
+            app.require_verified_doctor(cursor, 14)
+
     def test_patient_role_cannot_use_doctor_route(self):
         result = app.lambda_handler(
             {

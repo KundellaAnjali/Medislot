@@ -102,11 +102,12 @@ def doctor_id_for_user(cursor, user_id):
 def get_profile(cursor, doctor_id):
     cursor.execute(
         """
-        SELECT d.doctor_id, d.first_name, d.last_name, d.phone_number,
+        SELECT d.doctor_id, u.email, d.first_name, d.last_name, d.phone_number,
                d.license_number, d.experience_years, d.qualification,
-               d.profile_image_key, d.languages,
+               d.profile_image_key, d.languages, d.is_verified,
                h.hospital_name, h.city, h.address, h.phone_number AS hospital_phone
         FROM doctors d
+        JOIN users u ON u.user_id = d.user_id
         LEFT JOIN hospitals h ON h.hospital_id = d.hospital_id
         WHERE d.doctor_id = %s
         """,
@@ -124,7 +125,81 @@ def get_profile(cursor, doctor_id):
         (doctor_id,),
     )
     profile["specializations"] = cursor.fetchall()
+    cursor.execute(
+        "SELECT specialization_id, specialization_name FROM specializations "
+        "ORDER BY specialization_name"
+    )
+    profile["available_specializations"] = cursor.fetchall()
+    profile["specialization_names"] = [
+        item["specialization_name"] for item in profile["specializations"]
+    ]
+    profile["is_verified"] = bool(profile["is_verified"])
+    profile["profile_image_url"] = (
+        s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": PHOTO_BUCKET_NAME, "Key": profile["profile_image_key"]},
+            ExpiresIn=3600,
+        )
+        if profile["profile_image_key"]
+        else None
+    )
     return profile
+
+
+def refresh_doctor_verification(cursor, doctor_id):
+    cursor.execute(
+        """
+        SELECT d.first_name, d.last_name, d.phone_number, d.license_number,
+               d.experience_years, d.qualification, d.profile_image_key,
+               d.languages, h.hospital_name, h.city, h.address,
+               (SELECT COUNT(*) FROM doctor_specializations ds
+                WHERE ds.doctor_id = d.doctor_id) AS specialization_count
+        FROM doctors d
+        LEFT JOIN hospitals h ON h.hospital_id = d.hospital_id
+        WHERE d.doctor_id = %s
+        """,
+        (doctor_id,),
+    )
+    profile = cursor.fetchone()
+    required_text = (
+        "first_name",
+        "last_name",
+        "phone_number",
+        "license_number",
+        "qualification",
+        "languages",
+        "profile_image_key",
+        "hospital_name",
+        "city",
+        "address",
+    )
+    complete = all(
+        isinstance(profile[field], str) and profile[field].strip()
+        for field in required_text
+    )
+    complete = (
+        complete
+        and profile["experience_years"] is not None
+        and int(profile["experience_years"]) >= 0
+        and int(profile["specialization_count"]) > 0
+    )
+    cursor.execute(
+        "UPDATE doctors SET is_verified = %s WHERE doctor_id = %s",
+        (complete, doctor_id),
+    )
+    return complete
+
+
+def require_verified_doctor(cursor, doctor_id):
+    cursor.execute(
+        "SELECT is_verified FROM doctors WHERE doctor_id = %s",
+        (doctor_id,),
+    )
+    doctor = cursor.fetchone()
+    if not doctor or not doctor["is_verified"]:
+        raise PermissionError(
+            "Complete and save all required profile details to unlock this feature"
+        )
 
 
 def validate_consultation(body):
@@ -196,7 +271,7 @@ def set_slot_status_for_range(doctor_id, start_utc, end_utc, status):
 def route_doctor_api(event):
     user_id = get_actor(event)
     method = event.get("httpMethod", "GET").upper()
-    proxy = event.get("pathParameters", {}).get("proxy", "")
+    proxy = (event.get("pathParameters") or {}).get("proxy","")
     path = "/me"
     if proxy:
         path += "/" + proxy.strip("/")
@@ -218,20 +293,29 @@ def route_doctor_api(event):
 
             if parts == ["me", "photo"] and method == "POST":
                 result = create_photo_upload(cursor, doctor_id, body)
-                connection.commit()
+                return result
+
+            if parts == ["me", "photo", "confirm"] and method == "POST":
+                result = confirm_photo_upload(connection, cursor, doctor_id, body)
                 return result
 
             if parts[:2] == ["me", "consultation-types"]:
+                if method != "GET":
+                    require_verified_doctor(cursor, doctor_id)
                 return consultation_types_route(
                     connection, cursor, doctor_id, method, parts[2:], body
                 )
 
             if parts == ["me", "availability"]:
+                if method != "GET":
+                    require_verified_doctor(cursor, doctor_id)
                 return availability_route(
                     connection, cursor, doctor_id, method, body
                 )
 
             if parts[:2] == ["me", "blackouts"]:
+                if method != "GET":
+                    require_verified_doctor(cursor, doctor_id)
                 return blackouts_route(
                     connection, cursor, doctor_id, method, parts[2:], body
                 )
@@ -293,7 +377,39 @@ def update_doctor_profile(connection, cursor, doctor_id, body):
             (*values.values(), doctor_id),
         )
 
-    if "specialization_ids" in body:
+    if "specializations" in body:
+        submitted_names = body["specializations"]
+        if isinstance(submitted_names, str):
+            submitted_names = submitted_names.split(",")
+        if not isinstance(submitted_names, list):
+            raise ValueError("specializations must be a comma-separated string or list")
+        names_by_lowercase = {}
+        for item in submitted_names:
+            name = str(item).strip()
+            if name:
+                names_by_lowercase[name.casefold()] = name
+        cursor.execute(
+            "DELETE FROM doctor_specializations WHERE doctor_id = %s",
+            (doctor_id,),
+        )
+        for name in names_by_lowercase.values():
+            cursor.execute(
+                """
+                INSERT INTO specializations (specialization_name)
+                VALUES (%s)
+                ON DUPLICATE KEY UPDATE
+                    specialization_id = LAST_INSERT_ID(specialization_id)
+                """,
+                (name,),
+            )
+            cursor.execute(
+                """
+                INSERT INTO doctor_specializations (doctor_id, specialization_id)
+                VALUES (%s, %s)
+                """,
+                (doctor_id, cursor.lastrowid),
+            )
+    elif "specialization_ids" in body:
         specialization_ids = body["specialization_ids"]
         if not isinstance(specialization_ids, list):
             raise ValueError("specialization_ids must be a list")
@@ -310,6 +426,7 @@ def update_doctor_profile(connection, cursor, doctor_id, body):
                 """,
                 (doctor_id, specialization_id),
             )
+    refresh_doctor_verification(cursor, doctor_id)
     connection.commit()
 
 
@@ -332,11 +449,32 @@ def create_photo_upload(cursor, doctor_id, body):
         },
         ExpiresIn=300,
     )
+    return response(200, {"upload_url": upload_url, "key": key, "expires_in": 300})
+
+
+def confirm_photo_upload(connection, cursor, doctor_id, body):
+    key = body.get("key", "")
+    if not key.startswith(f"doctors/{doctor_id}/profile.") or key.rsplit(".", 1)[-1] not in {
+        "jpg", "png", "webp"
+    }:
+        raise ValueError("Invalid profile photo key")
+    try:
+        metadata = s3.head_object(Bucket=PHOTO_BUCKET_NAME, Key=key)
+    except ClientError as error:
+        if error.response.get("Error", {}).get("Code") in {"404", "NoSuchKey"}:
+            raise ValueError("Upload the profile photo before confirming it") from None
+        raise
+    if metadata.get("ContentLength", 0) <= 0 or metadata["ContentLength"] > 5 * 1024 * 1024:
+        raise ValueError("Profile photo must be between 1 byte and 5 MB")
+    if metadata.get("ContentType") not in {"image/jpeg", "image/png", "image/webp"}:
+        raise ValueError("Unsupported profile photo type")
     cursor.execute(
         "UPDATE doctors SET profile_image_key = %s WHERE doctor_id = %s",
         (key, doctor_id),
     )
-    return response(200, {"upload_url": upload_url, "key": key, "expires_in": 300})
+    verified = refresh_doctor_verification(cursor, doctor_id)
+    connection.commit()
+    return response(200, {"message": "Profile photo saved", "is_verified": verified})
 
 
 def consultation_types_route(connection, cursor, doctor_id, method, tail, body):
@@ -344,7 +482,7 @@ def consultation_types_route(connection, cursor, doctor_id, method, tail, body):
         cursor.execute(
             """
             SELECT consultation_type_id, consultation_name, duration_minutes,
-                   capacity, fee
+                     capacity, fee, is_active
             FROM consultation_types WHERE doctor_id = %s
             ORDER BY consultation_type_id
             """,
@@ -369,7 +507,7 @@ def consultation_types_route(connection, cursor, doctor_id, method, tail, body):
         consultation_id = int(tail[0])
         cursor.execute(
             """
-            SELECT consultation_name, duration_minutes, capacity, fee
+            SELECT consultation_name, duration_minutes, capacity, fee, is_active
             FROM consultation_types
             WHERE consultation_type_id = %s AND doctor_id = %s
             """,
@@ -399,13 +537,31 @@ def consultation_types_route(connection, cursor, doctor_id, method, tail, body):
             )
             cursor.execute(
                 """
-                DELETE FROM consultation_types
+                UPDATE consultation_types SET is_active = FALSE
                 WHERE consultation_type_id = %s AND doctor_id = %s
                 """,
                 (consultation_id, doctor_id),
             )
             connection.commit()
-            return response(200, {"message": "Consultation type deleted"})
+            query_args = {
+                "IndexName": "DoctorStartIndex",
+                "KeyConditionExpression": Key("doctor_id").eq(doctor_id),
+            }
+            while True:
+                result = slots_table.query(**query_args)
+                for slot in result.get("Items", []):
+                    if int(slot["consultation_type_id"]) == consultation_id:
+                        slots_table.update_item(
+                            Key={"slot_id": slot["slot_id"]},
+                            UpdateExpression="SET #status = :status",
+                            ExpressionAttributeNames={"#status": "status"},
+                            ExpressionAttributeValues={":status": 0},
+                        )
+                last_key = result.get("LastEvaluatedKey")
+                if not last_key:
+                    break
+                query_args["ExclusiveStartKey"] = last_key
+            return response(200, {"message": "Consultation type deactivated"})
     raise LookupError("Consultation type endpoint not found")
 
 
@@ -453,7 +609,8 @@ def availability_route(connection, cursor, doctor_id, method, body):
         cursor.execute(
             """
             SELECT consultation_type_id FROM consultation_types
-            WHERE consultation_type_id = %s AND doctor_id = %s
+                        WHERE consultation_type_id = %s AND doctor_id = %s
+                            AND is_active = TRUE
             """,
             (consultation_id, doctor_id),
         )
@@ -492,7 +649,13 @@ def blackouts_route(connection, cursor, doctor_id, method, tail, body):
             """,
             (doctor_id,),
         )
-        return response(200, {"blackouts": cursor.fetchall()})
+        blackouts = cursor.fetchall()
+        for blackout in blackouts:
+            blackout["start_date"] = blackout["start_datetime"].date().isoformat()
+            blackout["end_date"] = (
+                blackout["end_datetime"] - timedelta(seconds=1)
+            ).date().isoformat()
+        return response(200, {"blackouts": blackouts})
     if not tail and method == "POST":
         start_day = date.fromisoformat(body.get("start_date", body.get("date", "")))
         end_day = date.fromisoformat(body.get("end_date", body.get("date", "")))
@@ -696,6 +859,7 @@ def materialize_handler(event, context):
                 JOIN availability_patterns ap
                   ON ap.consultation_type_id = ct.consultation_type_id
                 JOIN users u ON u.user_id = d.user_id AND u.is_active = TRUE
+                WHERE ct.is_active = TRUE
                 ORDER BY d.doctor_id, ct.consultation_type_id
                 """
             )

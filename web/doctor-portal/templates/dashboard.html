@@ -20,11 +20,12 @@
   <main class="workspace">
     <div class="page-heading">
       <div><p class="eyebrow">Doctor workspace / UTC</p><h1>Good day, {{ profile.first_name or 'Doctor' }}</h1></div>
-      <span class="status-pill"><span></span>Practice active</span>
+      <span class="status-pill {{ 'verified' if profile.is_verified else 'pending' }}"><span></span>{{ 'Verified' if profile.is_verified else 'Profile incomplete' }}</span>
     </div>
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% for category, message in messages %}<p class="notice {{ category }}">{{ message }}</p>{% endfor %}
     {% endwith %}
+    {% if not profile.is_verified %}<p class="notice verification-notice">Complete your contact, licence, experience, qualification, specialization, hospital details and profile photo to unlock availability and consultation settings.</p>{% endif %}
 
     <section class="summary-strip" aria-label="Practice summary">
       <div><span class="summary-label">Consultation types</span><strong>{{ consultations|length }}</strong></div>
@@ -62,16 +63,41 @@
       {% else %}<div class="empty-state"><span class="empty-symbol">&#9711;</span><p>No slots on this date</p></div>{% endif %}
     </section>
 
+    <section class="section-block blackout-section" id="blackouts">
+      <div class="section-heading">
+        <div><p class="eyebrow">Time away</p><h2>Blackout days</h2></div>
+        {% if profile.is_verified %}
+          <form class="blackout-form" method="post" action="{{ url_for('add_blackout') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label for="blackout-date">Date (UTC)</label>
+            <input id="blackout-date" name="date" type="date" min="{{ schedule.date }}" required>
+            <button class="button secondary" type="submit">Add day off</button>
+          </form>
+        {% endif %}
+      </div>
+      {% if blackouts %}
+        <ul class="blackout-list">
+          {% for blackout in blackouts %}
+            <li>
+              <span>{{ blackout.start_date }}{% if blackout.end_date != blackout.start_date %} – {{ blackout.end_date }}{% endif %}</span>
+              {% if profile.is_verified %}<form method="post" action="{{ url_for('delete_blackout', blackout_id=blackout.blackout_id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="text-button" type="submit">Remove</button></form>{% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}<div class="empty-state compact-empty"><p>No blackout days</p></div>{% endif %}
+    </section>
+
     <div class="content-grid">
       <section class="section-block" id="availability">
         <div class="section-heading"><div><p class="eyebrow">Recurring weekly</p><h2>Availability</h2></div></div>
         <form method="post" action="{{ url_for('save_availability') }}" id="availability-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <fieldset class="configuration-controls" {{ 'disabled' if not profile.is_verified else '' }}>
           <div class="pattern-list" id="pattern-list">
             {% for pattern in patterns %}
               <div class="pattern-row">
                 <select name="consultation_type_id" aria-label="Consultation type" required>
-                  {% for consultation in consultations %}<option value="{{ consultation.consultation_type_id }}" {{ 'selected' if consultation.consultation_type_id == pattern.consultation_type_id else '' }}>{{ consultation.consultation_name }}</option>{% endfor %}
+                  {% for consultation in consultations if consultation.is_active %}<option value="{{ consultation.consultation_type_id }}" {{ 'selected' if consultation.consultation_type_id == pattern.consultation_type_id else '' }}>{{ consultation.consultation_name }}</option>{% endfor %}
                 </select>
                 <select name="day_of_week" aria-label="Weekday" required>
                   {% for day in ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY'] %}<option value="{{ day }}" {{ 'selected' if day == pattern.day_of_week else '' }}>{{ day.title() }}</option>{% endfor %}
@@ -86,16 +112,41 @@
             <button class="button secondary" type="button" id="add-pattern">+ Add hours</button>
             <button class="button primary" type="submit">Save availability</button>
           </div>
+          </fieldset>
         </form>
         <div class="subsection-divider"></div>
         <div class="mini-heading"><div><p class="eyebrow">Consultation menu</p><h3>Types and fees</h3></div></div>
         <ul class="consultation-list">
           {% for consultation in consultations %}
-            <li><span><strong>{{ consultation.consultation_name }}</strong><small>{{ consultation.duration_minutes }} min / capacity {{ consultation.capacity }}</small></span><b>{{ '%.2f'|format(consultation.fee|float) }}</b></li>
+            <li class="{{ 'inactive-consultation' if not consultation.is_active else '' }}">
+              <div class="consultation-line">
+                <span><strong>{{ consultation.consultation_name }}</strong><small>{{ consultation.duration_minutes }} min / capacity {{ consultation.capacity }} / {{ 'Active' if consultation.is_active else 'Deactivated' }}</small></span>
+                <b>{{ '%.2f'|format(consultation.fee|float) }}</b>
+                {% if profile.is_verified %}<button class="text-button consultation-edit-toggle" type="button" data-target="consultation-edit-{{ consultation.consultation_type_id }}" {{ 'disabled' if not consultation.is_active else '' }}>Edit</button>{% endif %}
+              </div>
+              {% if profile.is_verified and consultation.is_active %}
+                <form class="consultation-edit" id="consultation-edit-{{ consultation.consultation_type_id }}" method="post" action="{{ url_for('update_consultation_type', consultation_id=consultation.consultation_type_id) }}" hidden>
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <select name="consultation_name" class="consultation-name-edit" required>
+                    {% for type_name in ['Quick Consult','Standard Consult','Detailed Consult','Health Camp Session'] %}<option value="{{ type_name }}" {{ 'selected' if type_name == consultation.consultation_name else '' }}>{{ type_name }}</option>{% endfor %}
+                  </select>
+                  <input name="fee" type="number" min="0" step="0.01" value="{{ consultation.fee }}" aria-label="Fee" required>
+                  <input name="capacity" type="number" min="{{ 2 if consultation.consultation_name == 'Health Camp Session' else 1 }}" max="{{ 10 if consultation.consultation_name == 'Health Camp Session' else 1 }}" value="{{ consultation.capacity }}" aria-label="Capacity" required>
+                  <input name="duration_minutes" type="hidden" value="{{ consultation.duration_minutes }}">
+                  <button class="button secondary" type="submit">Save changes</button>
+                  <button class="button secondary consultation-edit-cancel" type="button" data-target="consultation-edit-{{ consultation.consultation_type_id }}">Cancel</button>
+                </form>
+                <form class="deactivate-form" method="post" action="{{ url_for('deactivate_consultation_type', consultation_id=consultation.consultation_type_id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="text-button danger-text" type="submit">Deactivate</button>
+                </form>
+              {% endif %}
+            </li>
           {% else %}<li class="muted">No consultation types added</li>{% endfor %}
         </ul>
         <form class="consultation-form" method="post" action="{{ url_for('create_consultation_type') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <fieldset class="configuration-controls" {{ 'disabled' if not profile.is_verified else '' }}>
           <select name="consultation_name" id="consultation-name" required>
             <option value="">Add consultation type</option>
             <option>Quick Consult</option><option>Standard Consult</option><option>Detailed Consult</option><option>Health Camp Session</option>
@@ -104,33 +155,67 @@
           <input name="capacity" id="consultation-capacity" type="number" min="1" max="10" value="1" aria-label="Capacity" required>
           <input name="duration_minutes" id="consultation-duration" type="hidden" value="15">
           <button class="button secondary" type="submit">Add</button>
+          </fieldset>
         </form>
       </section>
 
       <section class="section-block" id="profile">
-        <div class="section-heading"><div><p class="eyebrow">Professional details</p><h2>Profile</h2></div></div>
-        <form method="post" action="{{ url_for('update_profile') }}" class="profile-form">
+        <div class="section-heading">
+          <div><p class="eyebrow">Professional details</p><h2>Profile</h2></div>
+          {% if profile.is_verified %}<button class="button secondary" type="button" id="edit-profile">Edit profile</button>{% endif %}
+        </div>
+        <div class="profile-view" id="profile-view" {{ 'hidden' if not profile.is_verified else '' }}>
+          <div class="profile-view-heading">
+            {% if profile.profile_image_url %}<img class="profile-image" src="{{ profile.profile_image_url }}" alt="Profile photo of {{ profile.first_name }} {{ profile.last_name }}">{% else %}<div class="profile-image profile-image-placeholder" aria-hidden="true">{{ (profile.first_name or 'D')[:1] }}{{ (profile.last_name or '')[:1] }}</div>{% endif %}
+            <div><h3>Dr. {{ profile.first_name }} {{ profile.last_name }}</h3><span>{{ profile.specialization_names|join(', ') }}</span></div>
+          </div>
+          <dl class="profile-details">
+            <div><dt>Email</dt><dd>{{ profile.email or 'Not provided' }}</dd></div>
+            <div><dt>Phone</dt><dd>{{ profile.phone_number }}</dd></div>
+            <div><dt>Licence</dt><dd>{{ profile.license_number }}</dd></div>
+            <div><dt>Experience</dt><dd>{{ profile.experience_years }} years</dd></div>
+            <div><dt>Qualifications</dt><dd>{{ profile.qualification }}</dd></div>
+            <div><dt>Languages</dt><dd>{{ profile.languages }}</dd></div>
+            <div><dt>Hospital / clinic</dt><dd>{{ profile.hospital_name }}</dd></div>
+            <div><dt>City</dt><dd>{{ profile.city }}</dd></div>
+            <div class="detail-wide"><dt>Address</dt><dd>{{ profile.address }}</dd></div>
+          </dl>
+        </div>
+        <form method="post" action="{{ url_for('update_profile') }}" class="profile-form" id="profile-form" {{ 'hidden' if profile.is_verified else '' }}>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="field-pair"><label>First name<input name="first_name" value="{{ profile.first_name or '' }}" required></label><label>Last name<input name="last_name" value="{{ profile.last_name or '' }}" required></label></div>
-          <div class="field-pair"><label>Licence number<input name="license_number" value="{{ profile.license_number or '' }}"></label><label>Years of experience<input name="experience_years" type="number" min="0" value="{{ profile.experience_years if profile.experience_years is not none else '' }}"></label></div>
-          <label>Qualifications<input name="qualification" value="{{ profile.qualification or '' }}"></label>
-          <label>Languages spoken<input name="languages" value="{{ profile.languages or '' }}" placeholder="English, Hindi"></label>
+          <div class="field-pair"><label>Phone<input name="phone_number" type="tel" value="{{ profile.phone_number or '' }}" required></label><label>Licence number<input name="license_number" value="{{ profile.license_number or '' }}" required></label></div>
+          <div class="field-pair"><label>Years of experience<input name="experience_years" type="number" min="0" value="{{ profile.experience_years if profile.experience_years is not none else '' }}" required></label><label>Specialization<input name="specializations" list="specialization-options" value="{{ profile.specialization_names|join(', ') }}" placeholder="Cardiology, Neurology" required><datalist id="specialization-options">{% for specialization in profile.available_specializations %}<option value="{{ specialization.specialization_name }}">{% endfor %}</datalist></label></div>
+          <label>Qualifications<input name="qualification" value="{{ profile.qualification or '' }}" required></label>
+          <label>Languages spoken<input name="languages" value="{{ profile.languages or '' }}" placeholder="English, Hindi" required></label>
           <div class="subsection-divider"></div>
           <p class="form-caption">Hospital or clinic</p>
-          <label>Name<input name="hospital_name" value="{{ profile.hospital_name or '' }}"></label>
-          <div class="field-pair"><label>City<input name="city" value="{{ profile.city or '' }}"></label><label>Phone<input name="hospital_phone" value="{{ profile.hospital_phone or '' }}"></label></div>
-          <label>Address<input name="address" value="{{ profile.address or '' }}"></label>
-          <button class="button primary" type="submit">Save profile</button>
+          <label>Name<input name="hospital_name" value="{{ profile.hospital_name or '' }}" required></label>
+          <div class="field-pair"><label>City<input name="city" value="{{ profile.city or '' }}" required></label><label>Phone<input name="hospital_phone" value="{{ profile.hospital_phone or '' }}"></label></div>
+          <label>Address<input name="address" value="{{ profile.address or '' }}" required></label>
+          <div class="form-actions"><button class="button primary" type="submit">Save profile</button>{% if profile.is_verified %}<button class="button secondary" type="button" id="cancel-profile-edit">Cancel</button>{% endif %}</div>
         </form>
         <div class="subsection-divider"></div>
-        <div class="photo-row"><div><p class="form-caption">Profile photo</p><small>JPG, PNG or WebP</small></div><label class="button secondary upload-button">Choose photo<input id="photo-file" type="file" accept="image/jpeg,image/png,image/webp" hidden></label></div>
+        <div class="photo-row"><div><p class="form-caption">Profile photo</p><small>JPG, PNG or WebP, up to 5 MB</small></div><label class="button secondary upload-button">{{ 'Change photo' if profile.profile_image_key else 'Choose photo' }}<input id="photo-file" type="file" accept="image/jpeg,image/png,image/webp" hidden></label></div>
         <p id="photo-status" class="upload-status" aria-live="polite"></p>
       </section>
     </div>
   </main>
   <script>
-    const consultationOptions = {{ consultations|tojson }};
+    const consultationOptions = {{ consultations|selectattr('is_active')|list|tojson }};
     const csrfToken = {{ csrf_token()|tojson }};
+    const profileView = document.getElementById('profile-view');
+    const profileForm = document.getElementById('profile-form');
+    const showProfileEdit = () => { profileView.hidden = true; profileForm.hidden = false; };
+    const showProfileView = () => { profileForm.hidden = true; profileView.hidden = false; };
+    document.getElementById('edit-profile')?.addEventListener('click', showProfileEdit);
+    document.getElementById('cancel-profile-edit')?.addEventListener('click', showProfileView);
+    document.querySelectorAll('.consultation-edit-toggle, .consultation-edit-cancel').forEach(button => {
+      button.addEventListener('click', () => {
+        const form = document.getElementById(button.dataset.target);
+        form.hidden = !form.hidden;
+      });
+    });
     const patternList = document.getElementById('pattern-list');
     const days = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY'];
     const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -153,10 +238,21 @@
       capacity.max = nameSelect.value === 'Health Camp Session' ? 10 : 1;
       capacity.value = capacity.min;
     });
+    document.querySelectorAll('.consultation-name-edit').forEach(select => {
+      select.addEventListener('change', () => {
+        const form = select.closest('form');
+        form.querySelector('[name="duration_minutes"]').value = durations[select.value];
+        const capacity = form.querySelector('[name="capacity"]');
+        capacity.min = select.value === 'Health Camp Session' ? 2 : 1;
+        capacity.max = select.value === 'Health Camp Session' ? 10 : 1;
+        capacity.value = capacity.min;
+      });
+    });
     document.getElementById('photo-file').addEventListener('change', async event => {
       const file = event.target.files[0];
       if (!file) return;
       const status = document.getElementById('photo-status');
+      if (file.size > 5 * 1024 * 1024) { status.textContent = 'Photo must be 5 MB or smaller.'; return; }
       status.textContent = 'Uploading photo...';
       try {
         const formData = new FormData();
@@ -166,7 +262,13 @@
         if (!urlResponse.ok) throw new Error(upload.message || 'Could not prepare upload');
         const uploaded = await fetch(upload.upload_url, {method:'PUT',headers:{'Content-Type':file.type},body:file});
         if (!uploaded.ok) throw new Error('Photo upload failed');
-        status.textContent = 'Photo uploaded.';
+        const confirmation = new FormData();
+        confirmation.append('key', upload.key);
+        const confirmed = await fetch('{{ url_for("confirm_photo_upload") }}', {method:'POST',headers:{'X-CSRF-Token':csrfToken},body:confirmation});
+        const result = await confirmed.json();
+        if (!confirmed.ok) throw new Error(result.message || 'Photo could not be saved');
+        status.textContent = result.is_verified ? 'Photo saved. Profile verified.' : 'Photo saved.';
+        window.location.reload();
       } catch (error) { status.textContent = error.message; }
     });
   </script>

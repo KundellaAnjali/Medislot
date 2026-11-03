@@ -141,6 +141,15 @@ def lambda_handler(event, context):
                     "ALTER TABLE appointments MODIFY slot_id BIGINT NOT NULL"
                 )
 
+            cursor.execute(
+                "SHOW COLUMNS FROM consultation_types LIKE 'is_active'"
+            )
+            if not cursor.fetchone():
+                cursor.execute(
+                    "ALTER TABLE consultation_types ADD COLUMN is_active "
+                    "BOOLEAN NOT NULL DEFAULT TRUE"
+                )
+
         publish_metric(
             "SchemaInitializationSuccess",
             1

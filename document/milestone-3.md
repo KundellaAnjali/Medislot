@@ -15,7 +15,9 @@ The doctor domain is deployed as `dev-medislot-doctor-stack`. It attaches `/doct
 | DELETE | `/doctors/me/blackouts/{id}` | Remove a blackout |
 | GET | `/doctors/me/schedule?date=YYYY-MM-DD` | Read a UTC-date schedule with confirmed patient bookings |
 
-Consultation type durations and capacities follow the frozen rules. A blackout request accepts `{"date":"YYYY-MM-DD"}` or inclusive `start_date` and `end_date`. Availability PUT replaces the doctor's complete weekly pattern set.
+Consultation type durations and capacities follow the frozen rules. Types can be edited or deactivated; deactivation retains appointment history and prevents future slot materialization. A blackout request accepts `{"date":"YYYY-MM-DD"}` or inclusive `start_date` and `end_date`. Availability PUT replaces the doctor's complete weekly pattern set.
+
+The dashboard displays the saved profile and offers an edit mode with persisted field values. Verification is set automatically after contact details, licence, experience, qualification, language, specialization, profile photo, and hospital name/city/address are present. Until then, consultation and availability writes are rejected by the API. Photo uploads are confirmed against the existing assets bucket before the profile key is saved and a signed viewing URL is returned.
 
 ## Slot Materialization
 
