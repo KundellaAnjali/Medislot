@@ -1,11 +1,14 @@
 import json
-import uuid
 import os
 import logging
+import hashlib
 from datetime import datetime, timedelta, timezone
 
 import boto3
 import jwt
+import pymysql
+
+from boto3.dynamodb.conditions import Key
 
 ssm = boto3.client("ssm")
 dynamodb = boto3.resource("dynamodb")
@@ -35,21 +38,6 @@ def publish_metric(metric_name, value):
     )
 
 
-def log_event(level, correlation_id, event_name, details=None):
-
-    payload = {
-        "timestamp": datetime.utcnow().isoformat(),
-        "correlationId": correlation_id,
-        "event": event_name,
-        "details": details or {}
-    }
-
-    if level == "ERROR":
-        logger.error(json.dumps(payload))
-    else:
-        logger.info(json.dumps(payload))
-
-
 def get_parameter(name, decrypt=False):
 
     if name in parameter_cache:
@@ -67,39 +55,82 @@ def get_parameter(name, decrypt=False):
     return value
 
 
+def get_connection():
+
+    return pymysql.connect(
+        host=get_parameter(
+            f"/medislot/{ENVIRONMENT}/rds-host"
+        ),
+        port=int(
+            get_parameter(
+                f"/medislot/{ENVIRONMENT}/rds-port"
+            )
+        ),
+        user=get_parameter(
+            f"/medislot/{ENVIRONMENT}/rds-user"
+        ),
+        password=get_parameter(
+            f"/medislot/{ENVIRONMENT}/rds-password",
+            decrypt=True
+        ),
+        database=get_parameter(
+            f"/medislot/{ENVIRONMENT}/rds-database"
+        ),
+        cursorclass=pymysql.cursors.DictCursor
+    )
+
+
 def lambda_handler(event, context):
 
-    correlation_id = str(uuid.uuid4())
+    connection = None
 
     try:
 
-        body = json.loads(event["body"])
+        body = json.loads(
+            event.get("body", "{}")
+        )
 
-        refresh_token = body.get("refresh_token")
+        refresh_token = body.get(
+            "refresh_token"
+        )
 
         if not refresh_token:
+
             return {
                 "statusCode": 400,
                 "body": json.dumps(
                     {
-                        "message": "Refresh token is required"
+                        "message":
+                        "Refresh token is required"
                     }
                 )
             }
+
+        refresh_token_hash = hashlib.sha256(
+            refresh_token.encode("utf-8")
+        ).hexdigest()
 
         table = dynamodb.Table(
             f"{ENVIRONMENT}-user-sessions"
         )
 
-        response = table.scan()
+        response = table.query(
+            IndexName="RefreshTokenHashIndex",
+            KeyConditionExpression=Key(
+                "refresh_token_hash"
+            ).eq(refresh_token_hash)
+        )
 
-        session = None
+        items = response.get(
+            "Items",
+            []
+        )
 
-        for item in response.get("Items", []):
-
-            if item.get("refresh_token") == refresh_token:
-                session = item
-                break
+        session = (
+            items[0]
+            if items
+            else None
+        )
 
         if not session:
 
@@ -112,12 +143,22 @@ def lambda_handler(event, context):
                 "statusCode": 401,
                 "body": json.dumps(
                     {
-                        "message": "Invalid refresh token"
+                        "message":
+                        "Invalid refresh token"
                     }
                 )
             }
 
-        if session["expires_at"] < int(datetime.utcnow().timestamp()):
+        current_timestamp = int(
+            datetime.now(
+                timezone.utc
+            ).timestamp()
+        )
+
+        if (
+            session["expires_at"]
+            < current_timestamp
+        ):
 
             publish_metric(
                 "RefreshFailure",
@@ -128,7 +169,46 @@ def lambda_handler(event, context):
                 "statusCode": 401,
                 "body": json.dumps(
                     {
-                        "message": "Refresh token expired"
+                        "message":
+                        "Refresh token expired"
+                    }
+                )
+            }
+
+        connection = get_connection()
+
+        with connection.cursor() as cursor:
+
+            cursor.execute(
+                """
+                SELECT
+                    user_id,
+                    email,
+                    role
+                FROM users
+                WHERE user_id = %s
+                AND is_active = TRUE
+                """,
+                (
+                    session["user_id"],
+                )
+            )
+
+            user = cursor.fetchone()
+
+        if not user:
+
+            publish_metric(
+                "RefreshFailure",
+                1
+            )
+
+            return {
+                "statusCode": 401,
+                "body": json.dumps(
+                    {
+                        "message":
+                        "User not found"
                     }
                 )
             }
@@ -145,10 +225,15 @@ def lambda_handler(event, context):
         )
 
         payload = {
-            "sub": session["user_id"],
-            "iat": datetime.now(timezone.utc),
-            "exp": datetime.now(timezone.utc)
-            + timedelta(
+            "sub": str(user["user_id"]),
+            "email": user["email"],
+            "role": user["role"],
+            "iat": datetime.now(
+                timezone.utc
+            ),
+            "exp": datetime.now(
+                timezone.utc
+            ) + timedelta(
                 minutes=access_expiry_minutes
             )
         }
@@ -159,13 +244,12 @@ def lambda_handler(event, context):
             algorithm="HS256"
         )
 
-        log_event(
-            "INFO",
-            correlation_id,
-            "AccessTokenRefreshed",
-            {
-                "userId": session["user_id"]
-            }
+        logger.info(
+            (
+                "Access token refreshed "
+                f"for user "
+                f"{user['user_id']}"
+            )
         )
 
         publish_metric(
@@ -177,21 +261,18 @@ def lambda_handler(event, context):
             "statusCode": 200,
             "body": json.dumps(
                 {
-                    "access_token": access_token,
-                    "correlation_id": correlation_id
+                    "access_token":
+                    access_token,
+                    "expires_in":
+                    access_expiry_minutes * 60
                 }
             )
         }
 
     except Exception as exception:
 
-        log_event(
-            "ERROR",
-            correlation_id,
-            "RefreshFailed",
-            {
-                "error": str(exception)
-            }
+        logger.exception(
+            f"Refresh failed: {str(exception)}"
         )
 
         publish_metric(
@@ -203,8 +284,13 @@ def lambda_handler(event, context):
             "statusCode": 500,
             "body": json.dumps(
                 {
-                    "message": "Internal server error",
-                    "correlation_id": correlation_id
+                    "message":
+                    "Internal server error"
                 }
             )
         }
+
+    finally:
+
+        if connection:
+            connection.close()

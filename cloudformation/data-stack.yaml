@@ -81,10 +81,29 @@ Resources:
       AttributeDefinitions:
         - AttributeName: session_id
           AttributeType: S
+        - AttributeName: user_id
+          AttributeType: N
+        - AttributeName: refresh_token_hash
+          AttributeType: S
 
       KeySchema:
         - AttributeName: session_id
           KeyType: HASH
+
+      GlobalSecondaryIndexes:
+        - IndexName: UserIdIndex
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+        - IndexName: RefreshTokenHashIndex
+          KeySchema:
+            - AttributeName: refresh_token_hash
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
 
       TimeToLiveSpecification:
         AttributeName: expires_at
@@ -109,24 +128,131 @@ Resources:
         AttributeName: expires_at
         Enabled: true
 
-  WaitlistHoldsTable:
+  WaitlistTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub "${EnvironmentName}-waitlist-holds"
+      TableName: !Sub "${EnvironmentName}-waitlist"
 
       BillingMode: PAY_PER_REQUEST
 
       AttributeDefinitions:
-        - AttributeName: hold_id
+        - AttributeName: slot_id
+          AttributeType: N
+        - AttributeName: joined_at
           AttributeType: S
+        - AttributeName: patient_id
+          AttributeType: N
 
       KeySchema:
-        - AttributeName: hold_id
+        - AttributeName: slot_id
           KeyType: HASH
+        - AttributeName: joined_at
+          KeyType: RANGE
+
+      GlobalSecondaryIndexes:
+        - IndexName: PatientIdIndex
+          KeySchema:
+            - AttributeName: patient_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
 
       TimeToLiveSpecification:
         AttributeName: expires_at
         Enabled: true
+
+  WaitlistOffersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${EnvironmentName}-waitlist-offers"
+
+      BillingMode: PAY_PER_REQUEST
+
+      AttributeDefinitions:
+        - AttributeName: offer_id
+          AttributeType: N
+        - AttributeName: patient_id
+          AttributeType: N
+
+      KeySchema:
+        - AttributeName: offer_id
+          KeyType: HASH
+
+      GlobalSecondaryIndexes:
+        - IndexName: PatientIdIndex
+          KeySchema:
+            - AttributeName: patient_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
+  SlotsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${EnvironmentName}-slots"
+
+      BillingMode: PAY_PER_REQUEST
+
+      AttributeDefinitions:
+        - AttributeName: slot_id
+          AttributeType: N
+        - AttributeName: doctor_id
+          AttributeType: N
+        - AttributeName: status
+          AttributeType: N
+
+      KeySchema:
+        - AttributeName: slot_id
+          KeyType: HASH
+
+      GlobalSecondaryIndexes:
+        - IndexName: DoctorIdIndex
+          KeySchema:
+            - AttributeName: doctor_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+        - IndexName: StatusIndex
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+
+  NotificationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${EnvironmentName}-notifications"
+
+      BillingMode: PAY_PER_REQUEST
+
+      AttributeDefinitions:
+        - AttributeName: notification_id
+          AttributeType: N
+        - AttributeName: appointment_id
+          AttributeType: N
+
+      KeySchema:
+        - AttributeName: notification_id
+          KeyType: HASH
+
+      GlobalSecondaryIndexes:
+        - IndexName: AppointmentIdIndex
+          KeySchema:
+            - AttributeName: appointment_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
 
   AssetsBucket:
     Type: AWS::S3::Bucket
@@ -175,7 +301,9 @@ Resources:
       Name: !Sub "/medislot/${EnvironmentName}/refresh-token-expiry"
       Type: String
       Value: "7"
+
 Outputs:
+
   DBSubnetGroupName:
     Description: Database Subnet Group Name
     Value: !Ref DBSubnetGroup
@@ -184,39 +312,48 @@ Outputs:
 
   DBEndpoint:
     Description: MySQL Endpoint
-    Value:
-      !GetAtt MySQLDatabase.Endpoint.Address
+    Value: !GetAtt MySQLDatabase.Endpoint.Address
     Export:
       Name: !Sub "${EnvironmentName}-RDSEndpoint"
 
   DBPort:
     Description: MySQL Port
-    Value:
-      !GetAtt MySQLDatabase.Endpoint.Port
+    Value: !GetAtt MySQLDatabase.Endpoint.Port
     Export:
       Name: !Sub "${EnvironmentName}-RDSPort"
 
   UserSessionsTableName:
-    Value:
-      !Ref UserSessionsTable
+    Value: !Ref UserSessionsTable
     Export:
       Name: !Sub "${EnvironmentName}-UserSessionsTable"
 
   IdempotencyTableName:
-    Value:
-      !Ref IdempotencyKeysTable
+    Value: !Ref IdempotencyKeysTable
     Export:
       Name: !Sub "${EnvironmentName}-IdempotencyKeysTable"
 
   WaitlistTableName:
-    Value:
-      !Ref WaitlistHoldsTable
+    Value: !Ref WaitlistTable
     Export:
-      Name: !Sub "${EnvironmentName}-WaitlistHoldsTable"
+      Name: !Sub "${EnvironmentName}-WaitlistTable"
+
+  WaitlistOffersTableName:
+    Value: !Ref WaitlistOffersTable
+    Export:
+      Name: !Sub "${EnvironmentName}-WaitlistOffersTable"
+
+  SlotsTableName:
+    Value: !Ref SlotsTable
+    Export:
+      Name: !Sub "${EnvironmentName}-SlotsTable"
+
+  NotificationsTableName:
+    Value: !Ref NotificationsTable
+    Export:
+      Name: !Sub "${EnvironmentName}-NotificationsTable"
 
   AssetsBucketName:
-    Value:
-      !Ref AssetsBucket
+    Value: !Ref AssetsBucket
     Export:
       Name: !Sub "${EnvironmentName}-AssetsBucket"
 

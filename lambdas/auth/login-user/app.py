@@ -8,7 +8,7 @@ import bcrypt
 import boto3
 import jwt
 import pymysql
-
+import hashlib
 
 ssm = boto3.client("ssm")
 dynamodb = boto3.resource("dynamodb")
@@ -36,26 +36,6 @@ def publish_metric(metric_name, value):
             }
         ]
     )
-
-
-def log_event(
-    level,
-    correlation_id,
-    event_name,
-    details=None
-):
-
-    payload = {
-        "timestamp": datetime.utcnow().isoformat(),
-        "correlationId": correlation_id,
-        "event": event_name,
-        "details": details or {}
-    }
-
-    if level == "ERROR":
-        logger.error(json.dumps(payload))
-    else:
-        logger.info(json.dumps(payload))
 
 
 def get_parameter(name, decrypt=False):
@@ -114,7 +94,7 @@ def create_access_token(user):
     )
 
     payload = {
-        "sub": user["user_id"],
+        "sub": str(user["user_id"]),
         "email": user["email"],
         "role": user["role"],
         "iat": datetime.now(timezone.utc),
@@ -136,8 +116,12 @@ def create_refresh_token():
 
 def save_session(
     user_id,
+    role,
     refresh_token
 ):
+    refresh_token_hash = hashlib.sha256(
+        refresh_token.encode("utf-8")
+    ).hexdigest()
 
     table = dynamodb.Table(
         f"{ENVIRONMENT}-user-sessions"
@@ -151,7 +135,7 @@ def save_session(
 
     expiry = int(
         (
-            datetime.utcnow()
+            datetime.now(timezone.utc)
             + timedelta(days=refresh_expiry_days)
         ).timestamp()
     )
@@ -160,7 +144,8 @@ def save_session(
         Item={
             "session_id": str(uuid.uuid4()),
             "user_id": user_id,
-            "refresh_token": refresh_token,
+            "role": role,
+            "refresh_token_hash": refresh_token_hash,
             "expires_at": expiry
         }
     )
@@ -168,11 +153,9 @@ def save_session(
 
 def lambda_handler(event, context):
 
-    correlation_id = str(uuid.uuid4())
-
     try:
 
-        body = json.loads(event["body"])
+        body = json.loads(event.get("body", "{}"))
 
         email = body.get("email")
         password = body.get("password")
@@ -180,13 +163,8 @@ def lambda_handler(event, context):
         if email:
             email = email.strip().lower()
 
-        log_event(
-            "INFO",
-            correlation_id,
-            "UserLoginStarted",
-            {
-                "email": email
-            }
+        logger.info(
+            f"Login started for {email}"
         )
 
         if not email or not password:
@@ -212,9 +190,11 @@ def lambda_handler(event, context):
                         user_id,
                         email,
                         password_hash,
-                        role
+                        role,
+                        is_active
                     FROM users
-                    WHERE email=%s
+                    WHERE email = %s
+                    AND is_active = TRUE
                     """,
                     (email,)
                 )
@@ -240,12 +220,10 @@ def lambda_handler(event, context):
                 )
             }
 
-        password_matches = bcrypt.checkpw(
+        if not bcrypt.checkpw(
             password.encode("utf-8"),
             user["password_hash"].encode("utf-8")
-        )
-
-        if not password_matches:
+        ):
 
             publish_metric(
                 "LoginFailure",
@@ -260,6 +238,26 @@ def lambda_handler(event, context):
                     }
                 )
             }
+        
+        connection = get_connection()
+
+        try:
+
+            with connection.cursor() as cursor:
+
+                cursor.execute(
+                    """
+                    UPDATE users
+                    SET last_login_at = NOW()
+                    WHERE user_id = %s
+                    """,
+                    (user["user_id"],)
+                )
+
+            connection.commit()
+
+        finally:
+            connection.close()
 
         access_token = create_access_token(
             user
@@ -269,21 +267,23 @@ def lambda_handler(event, context):
 
         save_session(
             user["user_id"],
+            user["role"],
             refresh_token
-        )
-
-        log_event(
-            "INFO",
-            correlation_id,
-            "UserLoginCompleted",
-            {
-                "userId": user["user_id"]
-            }
         )
 
         publish_metric(
             "LoginSuccess",
             1
+        )
+
+        logger.info(
+            f"Login successful for user {user['user_id']}"
+        )
+
+        access_expiry_minutes = int(
+            get_parameter(
+                f"/medislot/{ENVIRONMENT}/access-token-expiry"
+            )
         )
 
         return {
@@ -292,20 +292,17 @@ def lambda_handler(event, context):
                 {
                     "access_token": access_token,
                     "refresh_token": refresh_token,
-                    "correlation_id": correlation_id
+                    "expires_in": access_expiry_minutes * 60,
+                    "user_id": user["user_id"],
+                    "role": user["role"]
                 }
             )
         }
 
     except Exception as exception:
 
-        log_event(
-            "ERROR",
-            correlation_id,
-            "UserLoginFailed",
-            {
-                "error": str(exception)
-            }
+        logger.exception(
+            f"Login failed: {str(exception)}"
         )
 
         publish_metric(
@@ -317,8 +314,7 @@ def lambda_handler(event, context):
             "statusCode": 500,
             "body": json.dumps(
                 {
-                    "message": "Internal server error",
-                    "correlation_id": correlation_id
+                    "message": "Internal server error"
                 }
             )
         }

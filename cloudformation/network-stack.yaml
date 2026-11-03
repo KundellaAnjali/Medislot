@@ -184,32 +184,6 @@ Resources:
         - !Ref PrivateSubnetA
         - !Ref PrivateSubnetB
 
-  SSMMessagesEndpoint:
-    Type: AWS::EC2::VPCEndpoint
-    Properties:
-      VpcId: !Ref VPC
-      VpcEndpointType: Interface
-      PrivateDnsEnabled: true
-      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ssmmessages"
-      SecurityGroupIds:
-        - !Ref VPCEndpointSecurityGroup
-      SubnetIds:
-        - !Ref PrivateSubnetA
-        - !Ref PrivateSubnetB
-
-  EC2MessagesEndpoint:
-    Type: AWS::EC2::VPCEndpoint
-    Properties:
-      VpcId: !Ref VPC
-      VpcEndpointType: Interface
-      PrivateDnsEnabled: true
-      ServiceName: !Sub "com.amazonaws.${AWS::Region}.ec2messages"
-      SecurityGroupIds:
-        - !Ref VPCEndpointSecurityGroup
-      SubnetIds:
-        - !Ref PrivateSubnetA
-        - !Ref PrivateSubnetB
-
   LogsEndpoint:
     Type: AWS::EC2::VPCEndpoint
     Properties:
