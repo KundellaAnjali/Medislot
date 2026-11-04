@@ -240,19 +240,6 @@ Resources:
         - !Ref PrivateSubnetA
         - !Ref PrivateSubnetB
 
-  SecretsManagerEndpoint:
-    Type: AWS::EC2::VPCEndpoint
-    Properties:
-      VpcId: !Ref VPC
-      VpcEndpointType: Interface
-      PrivateDnsEnabled: true
-      ServiceName: !Sub "com.amazonaws.${AWS::Region}.secretsmanager"
-      SecurityGroupIds:
-        - !Ref VPCEndpointSecurityGroup
-      SubnetIds:
-        - !Ref PrivateSubnetA
-        - !Ref PrivateSubnetB
-
   EventBridgeEndpoint:
     Type: AWS::EC2::VPCEndpoint
     Properties:
