@@ -5,6 +5,6 @@
   },
   {
     "ParameterKey": "PortalKeyName",
-    "ParameterValue": "kkey.pem"
+    "ParameterValue": "kkey"
   }
 ]
