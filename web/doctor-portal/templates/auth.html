@@ -30,7 +30,6 @@
           <span class="mode-indicator" aria-hidden="true"></span>
         </div>
         <form method="post" action="{{ url_for('auth') }}" class="auth-form">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="mode" id="auth-mode" value="{{ mode }}">
           <input type="hidden" name="role" id="auth-role" value="{{ role }}">
           <fieldset class="role-fieldset">

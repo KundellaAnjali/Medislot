@@ -224,10 +224,12 @@ def lambda_handler(event, context):
             )
         )
 
+        access_token_jti = session["session_id"]
         payload = {
             "sub": str(user["user_id"]),
             "email": user["email"],
             "role": user["role"],
+            "jti": access_token_jti,
             "iat": datetime.now(
                 timezone.utc
             ),

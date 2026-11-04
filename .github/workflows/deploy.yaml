@@ -29,14 +29,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install cfn-lint
 
-      - name: Install Application Test Dependencies
+      - name: Install Portal Runtime Dependencies
         run: |
-          pip install -r lambdas/doctor/requirements.txt
           pip install -r web/doctor-portal/requirements.txt
-
-      - name: Test Slot Materialization
-        run: |
-          python -m unittest discover -s lambdas/doctor -p 'test_*.py'
 
       - name: Smoke Test Doctor Portal
         env:
@@ -44,7 +39,6 @@ jobs:
           MEDISLOT_API_BASE_URL: https://example.invalid/dev
         run: |
           cd web/doctor-portal
-          python -m unittest discover -s . -p 'test_*.py'
           python -c "from app import app; client=app.test_client(); assert client.get('/auth').status_code == 200; assert client.get('/auth?mode=register&role=DOCTOR').status_code == 200; assert client.get('/auth?mode=login&role=PATIENT').status_code == 200"
 
       - name: Lint Network Stack

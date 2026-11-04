@@ -197,9 +197,7 @@ def require_verified_doctor(cursor, doctor_id):
     )
     doctor = cursor.fetchone()
     if not doctor or not doctor["is_verified"]:
-        raise PermissionError(
-            "Complete and save all required profile details to unlock this feature"
-        )
+        raise PermissionError("Before profile completion, you are not allowed to do this.")
 
 
 def validate_consultation(body):
@@ -243,11 +241,24 @@ def utc_day_bounds(day):
     return start, end
 
 
-def set_slot_status_for_range(doctor_id, start_utc, end_utc, status):
+def parse_utc_datetime(value):
+    parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def set_slots_for_blackout(
+    doctor_id,
+    start_utc,
+    end_utc,
+    blackouts,
+    active_consultation_ids=None,
+):
     if start_utc >= end_utc:
         return
-    query_start = utc_iso(start_utc)
-    query_end = utc_iso(end_utc - timedelta(seconds=1))
+    query_start = utc_iso(start_utc - timedelta(hours=1))
+    query_end = utc_iso(end_utc)
     query_args = {
         "IndexName": "DoctorStartIndex",
         "KeyConditionExpression": Key("doctor_id").eq(doctor_id)
@@ -256,12 +267,50 @@ def set_slot_status_for_range(doctor_id, start_utc, end_utc, status):
     while True:
         result = slots_table.query(**query_args)
         for slot in result.get("Items", []):
+            slot_start = parse_utc_datetime(slot["start_time"])
+            slot_end = parse_utc_datetime(slot["end_time"])
+            if slot_start >= end_utc or slot_end <= start_utc:
+                continue
+            blackout_overlap = any(
+                item["start_datetime"].replace(tzinfo=timezone.utc) < slot_end
+                and item["end_datetime"].replace(tzinfo=timezone.utc) > slot_start
+                for item in blackouts
+            )
+            if blackout_overlap:
+                new_status = 0
+            elif active_consultation_ids is not None and int(
+                slot["consultation_type_id"]
+            ) in active_consultation_ids:
+                new_status = 1
+            else:
+                continue
             slots_table.update_item(
                 Key={"slot_id": slot["slot_id"]},
                 UpdateExpression="SET #status = :status",
                 ExpressionAttributeNames={"#status": "status"},
-                ExpressionAttributeValues={":status": status},
+                ExpressionAttributeValues={":status": new_status},
             )
+        last_key = result.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        query_args["ExclusiveStartKey"] = last_key
+
+
+def set_consultation_slots_status(doctor_id, consultation_id, status):
+    query_args = {
+        "IndexName": "DoctorStartIndex",
+        "KeyConditionExpression": Key("doctor_id").eq(doctor_id),
+    }
+    while True:
+        result = slots_table.query(**query_args)
+        for slot in result.get("Items", []):
+            if int(slot["consultation_type_id"]) == consultation_id:
+                slots_table.update_item(
+                    Key={"slot_id": slot["slot_id"]},
+                    UpdateExpression="SET #status = :status",
+                    ExpressionAttributeNames={"#status": "status"},
+                    ExpressionAttributeValues={":status": status},
+                )
         last_key = result.get("LastEvaluatedKey")
         if not last_key:
             break
@@ -477,14 +526,40 @@ def confirm_photo_upload(connection, cursor, doctor_id, body):
     return response(200, {"message": "Profile photo saved", "is_verified": verified})
 
 
+def get_or_create_consultation_type(cursor, name, duration, capacity):
+    cursor.execute(
+        """
+        SELECT consultation_type_id FROM consultation_types
+        WHERE consultation_name = %s AND duration_minutes = %s AND capacity = %s
+        ORDER BY consultation_type_id LIMIT 1
+        """,
+        (name, duration, capacity),
+    )
+    row = cursor.fetchone()
+    if row:
+        return row["consultation_type_id"]
+    cursor.execute(
+        """
+        INSERT INTO consultation_types
+            (consultation_name, duration_minutes, capacity)
+        VALUES (%s, %s, %s)
+        """,
+        (name, duration, capacity),
+    )
+    return cursor.lastrowid
+
+
 def consultation_types_route(connection, cursor, doctor_id, method, tail, body):
     if not tail and method == "GET":
         cursor.execute(
             """
-            SELECT consultation_type_id, consultation_name, duration_minutes,
-                     capacity, fee, is_active
-            FROM consultation_types WHERE doctor_id = %s
-            ORDER BY consultation_type_id
+            SELECT ct.consultation_type_id, ct.consultation_name,
+                   ct.duration_minutes, ct.capacity, dct.fee, dct.is_active
+            FROM doctor_consulting_types dct
+            JOIN consultation_types ct
+              ON ct.consultation_type_id = dct.consultation_type_id
+            WHERE dct.doctor_id = %s
+            ORDER BY ct.consultation_type_id
             """,
             (doctor_id,),
         )
@@ -492,24 +567,31 @@ def consultation_types_route(connection, cursor, doctor_id, method, tail, body):
 
     if not tail and method == "POST":
         name, duration, capacity, fee = validate_consultation(body)
+        consultation_id = get_or_create_consultation_type(
+            cursor, name, duration, capacity
+        )
         cursor.execute(
             """
-            INSERT INTO consultation_types
-                (doctor_id, consultation_name, duration_minutes, capacity, fee)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO doctor_consulting_types
+                (consultation_type_id, doctor_id, fee, is_active)
+            VALUES (%s, %s, %s, TRUE)
+            ON DUPLICATE KEY UPDATE fee = VALUES(fee), is_active = TRUE
             """,
-            (doctor_id, name, duration, capacity, fee),
+            (consultation_id, doctor_id, fee),
         )
         connection.commit()
-        return response(201, {"consultation_type_id": cursor.lastrowid})
+        return response(201, {"consultation_type_id": consultation_id})
 
     if len(tail) == 1:
         consultation_id = int(tail[0])
         cursor.execute(
             """
-            SELECT consultation_name, duration_minutes, capacity, fee, is_active
-            FROM consultation_types
-            WHERE consultation_type_id = %s AND doctor_id = %s
+                        SELECT ct.consultation_name, ct.duration_minutes, ct.capacity,
+                                     dct.fee, dct.is_active
+                        FROM doctor_consulting_types dct
+                        JOIN consultation_types ct
+                            ON ct.consultation_type_id = dct.consultation_type_id
+                        WHERE dct.consultation_type_id = %s AND dct.doctor_id = %s
             """,
             (consultation_id, doctor_id),
         )
@@ -519,48 +601,53 @@ def consultation_types_route(connection, cursor, doctor_id, method, tail, body):
         if method == "PUT":
             merged = {**current, **body}
             name, duration, capacity, fee = validate_consultation(merged)
+            target_id = get_or_create_consultation_type(
+                cursor, name, duration, capacity
+            )
             cursor.execute(
                 """
-                UPDATE consultation_types
-                SET consultation_name = %s, duration_minutes = %s,
-                    capacity = %s, fee = %s
-                WHERE consultation_type_id = %s AND doctor_id = %s
+                INSERT INTO doctor_consulting_types
+                    (consultation_type_id, doctor_id, fee, is_active)
+                VALUES (%s, %s, %s, TRUE)
+                ON DUPLICATE KEY UPDATE fee = VALUES(fee), is_active = TRUE
                 """,
-                (name, duration, capacity, fee, consultation_id, doctor_id),
+                (target_id, doctor_id, fee),
             )
+            if target_id != consultation_id:
+                cursor.execute(
+                    """
+                    UPDATE availability_patterns
+                    SET consultation_type_id = %s
+                    WHERE doctor_id = %s AND consultation_type_id = %s
+                    """,
+                    (target_id, doctor_id, consultation_id),
+                )
+            if target_id != consultation_id:
+                cursor.execute(
+                    """
+                    UPDATE doctor_consulting_types SET is_active = FALSE
+                    WHERE consultation_type_id = %s AND doctor_id = %s
+                    """,
+                    (consultation_id, doctor_id),
+                )
             connection.commit()
+            if target_id != consultation_id:
+                set_consultation_slots_status(doctor_id, consultation_id, 0)
             return response(200, {"message": "Consultation type updated"})
         if method == "DELETE":
             cursor.execute(
-                "DELETE FROM availability_patterns WHERE consultation_type_id = %s",
-                (consultation_id,),
+                "DELETE FROM availability_patterns WHERE consultation_type_id = %s AND doctor_id = %s",
+                (consultation_id, doctor_id),
             )
             cursor.execute(
                 """
-                UPDATE consultation_types SET is_active = FALSE
+                UPDATE doctor_consulting_types SET is_active = FALSE
                 WHERE consultation_type_id = %s AND doctor_id = %s
                 """,
                 (consultation_id, doctor_id),
             )
             connection.commit()
-            query_args = {
-                "IndexName": "DoctorStartIndex",
-                "KeyConditionExpression": Key("doctor_id").eq(doctor_id),
-            }
-            while True:
-                result = slots_table.query(**query_args)
-                for slot in result.get("Items", []):
-                    if int(slot["consultation_type_id"]) == consultation_id:
-                        slots_table.update_item(
-                            Key={"slot_id": slot["slot_id"]},
-                            UpdateExpression="SET #status = :status",
-                            ExpressionAttributeNames={"#status": "status"},
-                            ExpressionAttributeValues={":status": 0},
-                        )
-                last_key = result.get("LastEvaluatedKey")
-                if not last_key:
-                    break
-                query_args["ExclusiveStartKey"] = last_key
+            set_consultation_slots_status(doctor_id, consultation_id, 0)
             return response(200, {"message": "Consultation type deactivated"})
     raise LookupError("Consultation type endpoint not found")
 
@@ -572,9 +659,10 @@ def availability_route(connection, cursor, doctor_id, method, body):
             SELECT ap.pattern_id, ap.consultation_type_id, ap.day_of_week,
                    ap.start_time, ap.end_time
             FROM availability_patterns ap
-            JOIN consultation_types ct
-              ON ct.consultation_type_id = ap.consultation_type_id
-            WHERE ct.doctor_id = %s
+                        JOIN doctor_consulting_types dct
+                            ON dct.consultation_type_id = ap.consultation_type_id
+                         AND dct.doctor_id = ap.doctor_id
+                        WHERE ap.doctor_id = %s
             ORDER BY ap.day_of_week, ap.start_time
             """,
             (doctor_id,),
@@ -606,9 +694,18 @@ def availability_route(connection, cursor, doctor_id, method, body):
             raise ValueError("day_of_week must be a weekday name")
         if start >= end:
             raise ValueError("Pattern end_time must be after start_time")
+        if any(
+            existing_day == day_name
+            and start < existing_end
+            and end > existing_start
+            for _, existing_day, existing_start, existing_end in normalized
+        ):
+            raise ValueError(
+                f"Hours overlap an existing block on {day_name.title()}; choose a different time."
+            )
         cursor.execute(
             """
-            SELECT consultation_type_id FROM consultation_types
+                        SELECT consultation_type_id FROM doctor_consulting_types
                         WHERE consultation_type_id = %s AND doctor_id = %s
                             AND is_active = TRUE
             """,
@@ -620,10 +717,8 @@ def availability_route(connection, cursor, doctor_id, method, body):
 
     cursor.execute(
         """
-        DELETE ap FROM availability_patterns ap
-        JOIN consultation_types ct
-          ON ct.consultation_type_id = ap.consultation_type_id
-        WHERE ct.doctor_id = %s
+                DELETE FROM availability_patterns
+                WHERE doctor_id = %s
         """,
         (doctor_id,),
     )
@@ -631,10 +726,10 @@ def availability_route(connection, cursor, doctor_id, method, body):
         cursor.execute(
             """
             INSERT INTO availability_patterns
-                (consultation_type_id, day_of_week, start_time, end_time)
-            VALUES (%s, %s, %s, %s)
+                (doctor_id, consultation_type_id, day_of_week, start_time, end_time)
+            VALUES (%s, %s, %s, %s, %s)
             """,
-            (consultation_id, day_name, start, end),
+            (doctor_id, consultation_id, day_name, start, end),
         )
     connection.commit()
     return response(200, {"patterns_saved": len(normalized)})
@@ -651,18 +746,30 @@ def blackouts_route(connection, cursor, doctor_id, method, tail, body):
         )
         blackouts = cursor.fetchall()
         for blackout in blackouts:
-            blackout["start_date"] = blackout["start_datetime"].date().isoformat()
-            blackout["end_date"] = (
-                blackout["end_datetime"] - timedelta(seconds=1)
-            ).date().isoformat()
+            blackout["start_display"] = blackout["start_datetime"].strftime(
+                "%Y-%m-%d %H:%M UTC"
+            )
+            blackout["end_display"] = blackout["end_datetime"].strftime(
+                "%Y-%m-%d %H:%M UTC"
+            )
         return response(200, {"blackouts": blackouts})
     if not tail and method == "POST":
-        start_day = date.fromisoformat(body.get("start_date", body.get("date", "")))
-        end_day = date.fromisoformat(body.get("end_date", body.get("date", "")))
-        if end_day < start_day:
-            raise ValueError("end_date must be on or after start_date")
-        start_utc, _ = utc_day_bounds(start_day)
-        _, end_utc = utc_day_bounds(end_day)
+        if body.get("start_datetime") and body.get("end_datetime"):
+            start_utc = parse_utc_datetime(body["start_datetime"])
+            end_utc = parse_utc_datetime(body["end_datetime"])
+        else:
+            start_day = date.fromisoformat(
+                body.get("start_date", body.get("date", ""))
+            )
+            end_day = date.fromisoformat(
+                body.get("end_date", body.get("date", ""))
+            )
+            if end_day < start_day:
+                raise ValueError("end_date must be on or after start_date")
+            start_utc, _ = utc_day_bounds(start_day)
+            _, end_utc = utc_day_bounds(end_day)
+        if end_utc <= start_utc:
+            raise ValueError("Blackout end must be after its start")
         cursor.execute(
             """
             INSERT INTO blackout_dates (doctor_id, start_datetime, end_datetime)
@@ -674,11 +781,20 @@ def blackouts_route(connection, cursor, doctor_id, method, tail, body):
                 end_utc.replace(tzinfo=None),
             ),
         )
+        blackout_id = cursor.lastrowid
         connection.commit()
-        for day_offset in range((end_day - start_day).days + 1):
-            day_start, day_end = utc_day_bounds(start_day + timedelta(days=day_offset))
-            set_slot_status_for_range(doctor_id, day_start, day_end, 0)
-        return response(201, {"blackout_id": cursor.lastrowid})
+        cursor.execute(
+            "SELECT start_datetime, end_datetime FROM blackout_dates WHERE doctor_id = %s",
+            (doctor_id,),
+        )
+        all_blackouts = cursor.fetchall()
+        set_slots_for_blackout(
+            doctor_id,
+            start_utc,
+            end_utc,
+            all_blackouts,
+        )
+        return response(201, {"blackout_id": blackout_id})
     if len(tail) == 1 and method == "DELETE":
         blackout_id = int(tail[0])
         cursor.execute(
@@ -705,18 +821,29 @@ def blackouts_route(connection, cursor, doctor_id, method, tail, body):
             (doctor_id,),
         )
         remaining_blackouts = cursor.fetchall()
-        now_utc = datetime.now(timezone.utc)
-        for day_offset in range((last_day - first_day).days + 1):
-            day_start, day_end = utc_day_bounds(first_day + timedelta(days=day_offset))
-            still_blocked = any(
-                item["start_datetime"] < day_end.replace(tzinfo=None)
-                and item["end_datetime"] > day_start.replace(tzinfo=None)
-                for item in remaining_blackouts
-            )
-            if not still_blocked:
-                set_slot_status_for_range(
-                    doctor_id, max(day_start, now_utc), day_end, 1
-                )
+        cursor.execute(
+            """
+            SELECT consultation_type_id FROM doctor_consulting_types
+            WHERE doctor_id = %s AND is_active = TRUE
+            """,
+            (doctor_id,),
+        )
+        active_consultation_ids = {
+            int(item["consultation_type_id"]) for item in cursor.fetchall()
+        }
+        removed_start_utc = removed_blackout["start_datetime"].replace(
+            tzinfo=timezone.utc
+        )
+        removed_end_utc = removed_blackout["end_datetime"].replace(
+            tzinfo=timezone.utc
+        )
+        set_slots_for_blackout(
+            doctor_id,
+            max(removed_start_utc, datetime.now(timezone.utc)),
+            removed_end_utc,
+            remaining_blackouts,
+            active_consultation_ids,
+        )
         return response(200, {"message": "Blackout date deleted"})
     raise LookupError("Blackout endpoint not found")
 
@@ -791,13 +918,6 @@ def build_slot_id(doctor_id, consultation_id, start_time):
 
 
 def materialize_for_doctor_day(doctor, patterns, blackout_rows, local_day):
-    day_start_utc, day_end_utc = utc_day_bounds(local_day)
-    for blackout in blackout_rows:
-        blackout_start = blackout["start_datetime"].replace(tzinfo=timezone.utc)
-        blackout_end = blackout["end_datetime"].replace(tzinfo=timezone.utc)
-        if blackout_start < day_end_utc and blackout_end > day_start_utc:
-            return 0
-
     created = 0
     for pattern in patterns:
         if weekday_name(pattern["day_of_week"]) != local_day.strftime("%A").upper():
@@ -809,7 +929,15 @@ def materialize_for_doctor_day(doctor, patterns, blackout_rows, local_day):
         local_end = datetime.combine(local_day, end_time, tzinfo=timezone.utc)
         while slot_local + timedelta(minutes=duration) <= local_end:
             start_iso = utc_iso(slot_local)
-            end_iso = utc_iso(slot_local + timedelta(minutes=duration))
+            slot_end = slot_local + timedelta(minutes=duration)
+            end_iso = utc_iso(slot_end)
+            if any(
+                blackout["start_datetime"].replace(tzinfo=timezone.utc) < slot_end
+                and blackout["end_datetime"].replace(tzinfo=timezone.utc) > slot_local
+                for blackout in blackout_rows
+            ):
+                slot_local += timedelta(minutes=duration)
+                continue
             slot_id = build_slot_id(
                 doctor["doctor_id"], pattern["consultation_type_id"], start_iso
             )
@@ -855,11 +983,14 @@ def materialize_handler(event, context):
                       ap.day_of_week,
                        ap.start_time, ap.end_time
                 FROM doctors d
-                JOIN consultation_types ct ON ct.doctor_id = d.doctor_id
+                                JOIN doctor_consulting_types dct
+                                    ON dct.doctor_id = d.doctor_id AND dct.is_active = TRUE
+                                JOIN consultation_types ct
+                                    ON ct.consultation_type_id = dct.consultation_type_id
                 JOIN availability_patterns ap
-                  ON ap.consultation_type_id = ct.consultation_type_id
+                                    ON ap.consultation_type_id = ct.consultation_type_id
+                                 AND ap.doctor_id = d.doctor_id
                 JOIN users u ON u.user_id = d.user_id AND u.is_active = TRUE
-                WHERE ct.is_active = TRUE
                 ORDER BY d.doctor_id, ct.consultation_type_id
                 """
             )

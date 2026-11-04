@@ -103,6 +103,7 @@ Resources:
                   - dynamodb:Scan
                 Resource:
                   - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-user-sessions"
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-user-sessions/index/RefreshTokenHashIndex"
                   - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-user-sessions/index/*"
 
 
@@ -150,6 +151,12 @@ Resources:
                 Action:
                   - kms:Decrypt
                 Resource: "*"
+
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                Resource:
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-user-sessions"
 
   DoctorLambdaRole:
     Type: AWS::IAM::Role

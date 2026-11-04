@@ -105,6 +105,7 @@ Resources:
           Projection:
             ProjectionType: ALL
 
+
       TimeToLiveSpecification:
         AttributeName: expires_at
         Enabled: true

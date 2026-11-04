@@ -1,7 +1,5 @@
-import hmac
 import json
 import os
-import secrets
 from datetime import datetime, timezone
 from functools import wraps
 from urllib.parse import urljoin
@@ -36,26 +34,6 @@ class ApiError(Exception):
     def __init__(self, message, status_code=502):
         super().__init__(message)
         self.status_code = status_code
-
-
-def csrf_token():
-    if "csrf_token" not in session:
-        session["csrf_token"] = secrets.token_urlsafe(32)
-    return session["csrf_token"]
-
-
-@app.context_processor
-def inject_csrf_token():
-    return {"csrf_token": csrf_token}
-
-
-@app.before_request
-def verify_csrf():
-    if request.method == "POST":
-        submitted = request.form.get("csrf_token") or request.headers.get("X-CSRF-Token", "")
-        expected = session.get("csrf_token", "")
-        if not expected or not hmac.compare_digest(submitted, expected):
-            return "Invalid request token", 400
 
 
 def doctor_required(handler):
@@ -187,7 +165,6 @@ def auth():
     session["access_token"] = result["access_token"]
     session["refresh_token"] = result["refresh_token"]
     session["role"] = role
-    csrf_token()
     endpoint = "doctor_dashboard" if role == "DOCTOR" else "patient_dashboard"
     return redirect(url_for(endpoint))
 
@@ -379,7 +356,10 @@ def add_blackout():
     api_request(
         "POST",
         "/doctors/me/blackouts",
-        json_body={"date": request.form.get("date", "")},
+        json_body={
+            "start_datetime": request.form.get("start_datetime", ""),
+            "end_datetime": request.form.get("end_datetime", ""),
+        },
     )
     flash("Blackout day added.", "success")
     return redirect(url_for("doctor_dashboard"))

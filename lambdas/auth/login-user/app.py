@@ -93,20 +93,23 @@ def create_access_token(user):
         )
     )
 
+    token_id = str(uuid.uuid4())
     payload = {
         "sub": str(user["user_id"]),
         "email": user["email"],
         "role": user["role"],
+        "jti": token_id,
         "iat": datetime.now(timezone.utc),
         "exp": datetime.now(timezone.utc)
         + timedelta(minutes=access_expiry_minutes)
     }
 
-    return jwt.encode(
+    token = jwt.encode(
         payload,
         jwt_secret,
         algorithm="HS256"
     )
+    return token, token_id
 
 
 def create_refresh_token():
@@ -117,7 +120,8 @@ def create_refresh_token():
 def save_session(
     user_id,
     role,
-    refresh_token
+    refresh_token,
+    access_token_jti,
 ):
     refresh_token_hash = hashlib.sha256(
         refresh_token.encode("utf-8")
@@ -142,10 +146,11 @@ def save_session(
 
     table.put_item(
         Item={
-            "session_id": str(uuid.uuid4()),
+            "session_id": access_token_jti,
             "user_id": user_id,
             "role": role,
             "refresh_token_hash": refresh_token_hash,
+            "access_token_jti": access_token_jti,
             "expires_at": expiry
         }
     )
@@ -259,7 +264,7 @@ def lambda_handler(event, context):
         finally:
             connection.close()
 
-        access_token = create_access_token(
+        access_token, access_token_jti = create_access_token(
             user
         )
 
@@ -268,7 +273,8 @@ def lambda_handler(event, context):
         save_session(
             user["user_id"],
             user["role"],
-            refresh_token
+            refresh_token,
+            access_token_jti,
         )
 
         publish_metric(

@@ -10,7 +10,6 @@
   <header class="patient-topbar">
     <a class="wordmark" href="/dashboard/patient">MediSlot<span>.</span></a>
     <form method="post" action="{{ url_for('logout') }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="button secondary" type="submit">Logout</button>
     </form>
   </header>

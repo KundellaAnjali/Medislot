@@ -32,6 +32,7 @@ Resources:
             FunctionPayloadType: TOKEN
             Identity:
               Header: Authorization
+              ReauthorizeEvery: 0
               
   SchemaInitFunction:
     Type: AWS::Serverless::Function

@@ -141,14 +141,108 @@ def lambda_handler(event, context):
                     "ALTER TABLE appointments MODIFY slot_id BIGINT NOT NULL"
                 )
 
+            cursor.execute("SHOW COLUMNS FROM consultation_types")
+            consultation_columns = {
+                column[0] for column in cursor.fetchall()
+            }
+            if "doctor_id" in consultation_columns and "fee" in consultation_columns:
+                if "is_active" in consultation_columns:
+                    cursor.execute(
+                        """
+                        INSERT IGNORE INTO doctor_consulting_types
+                            (consultation_type_id, doctor_id, fee, is_active)
+                        SELECT consultation_type_id, doctor_id, fee, is_active
+                        FROM consultation_types
+                        """
+                    )
+                else:
+                    cursor.execute(
+                        """
+                        INSERT IGNORE INTO doctor_consulting_types
+                            (consultation_type_id, doctor_id, fee)
+                        SELECT consultation_type_id, doctor_id, fee
+                        FROM consultation_types
+                        """
+                    )
+
+            cursor.execute("SHOW COLUMNS FROM availability_patterns")
+            availability_columns = {
+                column[0] for column in cursor.fetchall()
+            }
+            if "doctor_id" not in availability_columns:
+                cursor.execute(
+                    "ALTER TABLE availability_patterns ADD COLUMN doctor_id INT NULL"
+                )
+
+            if "doctor_id" in consultation_columns:
+                cursor.execute(
+                    """
+                    UPDATE availability_patterns ap
+                    JOIN consultation_types ct
+                      ON ct.consultation_type_id = ap.consultation_type_id
+                    SET ap.doctor_id = ct.doctor_id
+                    WHERE ap.doctor_id IS NULL
+                    """
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE availability_patterns ap
+                    JOIN doctor_consulting_types dct
+                      ON dct.consultation_type_id = ap.consultation_type_id
+                    SET ap.doctor_id = dct.doctor_id
+                    WHERE ap.doctor_id IS NULL
+                    """
+                )
+
             cursor.execute(
-                "SHOW COLUMNS FROM consultation_types LIKE 'is_active'"
+                "SELECT COUNT(*) FROM availability_patterns WHERE doctor_id IS NULL"
+            )
+            if cursor.fetchone()[0] == 0:
+                cursor.execute(
+                    "ALTER TABLE availability_patterns MODIFY doctor_id INT NOT NULL"
+                )
+
+            cursor.execute(
+                """
+                SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'availability_patterns'
+                  AND CONSTRAINT_NAME = 'fk_pattern_doctor_consulting_type'
+                """
             )
             if not cursor.fetchone():
                 cursor.execute(
-                    "ALTER TABLE consultation_types ADD COLUMN is_active "
-                    "BOOLEAN NOT NULL DEFAULT TRUE"
+                    """
+                    ALTER TABLE availability_patterns
+                    ADD CONSTRAINT fk_pattern_doctor_consulting_type
+                    FOREIGN KEY (consultation_type_id, doctor_id)
+                    REFERENCES doctor_consulting_types(consultation_type_id, doctor_id)
+                    """
                 )
+
+            if "doctor_id" in consultation_columns:
+                cursor.execute(
+                    """
+                    SELECT CONSTRAINT_NAME FROM information_schema.KEY_COLUMN_USAGE
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'consultation_types'
+                      AND COLUMN_NAME = 'doctor_id'
+                      AND REFERENCED_TABLE_NAME IS NOT NULL
+                    """
+                )
+                for constraint in cursor.fetchall():
+                    constraint_name = constraint[0].replace("`", "``")
+                    cursor.execute(
+                        f"ALTER TABLE consultation_types DROP FOREIGN KEY `{constraint_name}`"
+                    )
+                cursor.execute(
+                    "ALTER TABLE consultation_types DROP COLUMN doctor_id"
+                )
+            if "fee" in consultation_columns:
+                cursor.execute("ALTER TABLE consultation_types DROP COLUMN fee")
+            if "is_active" in consultation_columns:
+                cursor.execute("ALTER TABLE consultation_types DROP COLUMN is_active")
 
         publish_metric(
             "SchemaInitializationSuccess",

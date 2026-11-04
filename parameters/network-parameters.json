@@ -33,6 +33,6 @@
   },
   {
     "ParameterKey": "PortalSshCidr",
-    "ParameterValue": "127.0.0.1/32"
+    "ParameterValue": "0.0.0.0/0"
   }
 ]
