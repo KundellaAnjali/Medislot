@@ -325,6 +325,14 @@ Resources:
       Type: String
       Value: "7"
 
+  BookingWindowDaysParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/booking-window-days"
+      Type: String
+      Value: "30"
+      Description: Rolling slot materialization window in days
+
 Outputs:
 
   DBSubnetGroupName:

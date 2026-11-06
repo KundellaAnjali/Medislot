@@ -16,13 +16,6 @@ Globals:
     MemorySize: 512
 
 Resources:
-  BookingWindowDaysParameter:
-    Type: AWS::SSM::Parameter
-    Properties:
-      Name: !Sub "/medislot/${EnvironmentName}/booking-window-days"
-      Type: String
-      Value: "30"
-      Description: Rolling slot materialization window in days
 
   DoctorApiFunction:
     Type: AWS::Serverless::Function
@@ -50,7 +43,7 @@ Resources:
     Properties:
       FunctionName: !Sub "${EnvironmentName}-slot-materializer"
       Handler: slot_materialization_part.materialize_handler
-      CodeUri: ../lambdas/doctor/
+      CodeUri: ../lambdas/slots/
       Timeout: 900
       MemorySize: 512
       Role:
