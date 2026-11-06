@@ -3,7 +3,7 @@ import os
 import logging
 import hashlib
 from datetime import datetime, timedelta, timezone
-
+import uuid
 import boto3
 import jwt
 import pymysql
@@ -224,11 +224,13 @@ def lambda_handler(event, context):
             )
         )
 
-        access_token_jti = session["session_id"]
+        access_token_jti = str(uuid.uuid4())
+
         payload = {
             "sub": str(user["user_id"]),
             "email": user["email"],
             "role": user["role"],
+            "session_id": session["session_id"],
             "jti": access_token_jti,
             "iat": datetime.now(
                 timezone.utc

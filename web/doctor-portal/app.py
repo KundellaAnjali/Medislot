@@ -146,6 +146,9 @@ def home():
         return redirect(url_for("patient_dashboard"))
     return redirect(url_for("auth"))
 
+@app.get("/debug-session")
+def debug_session():
+    return dict(session)
 
 @app.route("/auth", methods=["GET", "POST"])
 def auth():
