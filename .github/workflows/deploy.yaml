@@ -251,10 +251,8 @@ jobs:
       - name: Load Parameters
         run: |
           ENVIRONMENT=$(jq -r '.[] | select(.ParameterKey=="EnvironmentName") | .ParameterValue' parameters/doctor-parameters.json)
-          PORTAL_KEY_NAME=$(jq -r '.[] | select(.ParameterKey=="PortalKeyName") | .ParameterValue' parameters/doctor-parameters.json)
 
           echo "ENVIRONMENT=$ENVIRONMENT" >> $GITHUB_ENV
-          echo "PORTAL_KEY_NAME=$PORTAL_KEY_NAME" >> $GITHUB_ENV
 
           echo "Loaded Environment: $ENVIRONMENT"
       - uses: aws-actions/configure-aws-credentials@v4
@@ -272,7 +270,7 @@ jobs:
       - name: Upload Doctor Portal Artifact
         run: |
           cd web/doctor-portal
-          zip -r ../../doctor-portal.zip .
+          zip -r ../../doctor-portal.zip . -x '*/__pycache__/*' '__pycache__/*' '*.pyc'
           cd ../..
 
           echo "ENVIRONMENT=${ENVIRONMENT}"
@@ -302,7 +300,7 @@ jobs:
           sam deploy \
             --template-file .aws-sam/build/template.yaml \
             --stack-name ${ENVIRONMENT}-medislot-doctor-stack \
-            --parameter-overrides EnvironmentName=${ENVIRONMENT} PortalKeyName="${PORTAL_KEY_NAME}" \
+            --parameter-overrides EnvironmentName=${ENVIRONMENT} \
             --capabilities CAPABILITY_NAMED_IAM \
             --resolve-s3 \
             --no-fail-on-empty-changeset \

@@ -196,6 +196,10 @@ Resources:
                   - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-slots/index/DoctorStartIndex"
               - Effect: Allow
                 Action:
+                  - cloudwatch:PutMetricData
+                Resource: "*"
+              - Effect: Allow
+                Action:
                   - s3:PutObject
                   - s3:GetObject
                 Resource:

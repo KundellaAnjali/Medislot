@@ -8,13 +8,6 @@ Parameters:
   WebAppArtifactKey:
     Type: String
     Default: doctor-portal/doctor-portal.zip
-  PortalKeyName:
-    Type: String
-    Default: ""
-    Description: Optional EC2 key pair name for SSH administration
-
-Conditions:
-  HasPortalKeyName: !Not [!Equals [!Ref PortalKeyName, ""]]
 
 Globals:
   Function:
@@ -35,7 +28,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub "${EnvironmentName}-doctor-api"
-      Handler: app.lambda_handler
+      Handler: doctor_part.lambda_handler
       CodeUri: ../lambdas/doctor/
       Role:
         Fn::ImportValue: !Sub "${EnvironmentName}-DoctorLambdaRoleArn"
@@ -56,7 +49,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: !Sub "${EnvironmentName}-slot-materializer"
-      Handler: app.materialize_handler
+      Handler: slot_materialization_part.materialize_handler
       CodeUri: ../lambdas/doctor/
       Timeout: 900
       MemorySize: 512
@@ -90,6 +83,7 @@ Resources:
           - FunctionArn:
               Fn::ImportValue: !Sub "${EnvironmentName}-AuthorizerFunctionArn"
 
+# Allows api gateway to invoke the authorizer lambda function
   AuthorizerInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
@@ -186,7 +180,6 @@ Resources:
     Properties:
       ImageId: !Sub "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}"
       InstanceType: t3.micro
-      KeyName: !If [HasPortalKeyName, !Ref PortalKeyName, !Ref "AWS::NoValue"]
       IamInstanceProfile:
         Fn::ImportValue: !Sub "${EnvironmentName}-DoctorPortalInstanceProfileName"
       SubnetId:

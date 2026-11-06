@@ -1,8 +1,8 @@
 import os
 import json
-import uuid
 import logging
-from datetime import datetime
+from time import perf_counter
+from datetime import datetime, timezone
 
 import boto3
 import pymysql
@@ -18,7 +18,7 @@ ENVIRONMENT = os.environ["ENVIRONMENT_NAME"]
 METRIC_NAMESPACE = "MediSlot/Database"
 
 
-def publish_metric(metric_name, value):
+def publish_metric(metric_name, value, unit="Count"):
 
     cloudwatch.put_metric_data(
         Namespace=METRIC_NAMESPACE,
@@ -26,7 +26,7 @@ def publish_metric(metric_name, value):
             {
                 "MetricName": metric_name,
                 "Value": value,
-                "Unit": "Count"
+                "Unit": unit
             }
         ]
     )
@@ -34,14 +34,12 @@ def publish_metric(metric_name, value):
 
 def log_event(
     level,
-    correlation_id,
     event_name,
     details=None
 ):
 
     payload = {
-        "timestamp": datetime.utcnow().isoformat(),
-        "correlationId": correlation_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "event": event_name,
         "details": details or {}
     }
@@ -88,12 +86,10 @@ def get_connection():
 
 
 def lambda_handler(event, context):
-
-    correlation_id = str(uuid.uuid4())
+    started_at = perf_counter()
 
     log_event(
         "INFO",
-        correlation_id,
         "SchemaInitializationStarted",
         {
             "environment": ENVIRONMENT
@@ -107,7 +103,6 @@ def lambda_handler(event, context):
         connection = get_connection()
         log_event(
             "INFO",
-            correlation_id,
             "DatabaseConnectionEstablished"
         )
 
@@ -248,10 +243,14 @@ def lambda_handler(event, context):
             "SchemaInitializationSuccess",
             1
         )
+        publish_metric(
+            "SchemaInitializationDurationMs",
+            (perf_counter() - started_at) * 1000,
+            "Milliseconds",
+        )
 
         log_event(
             "INFO",
-            correlation_id,
             "SchemaInitializationCompleted",
             {
                 "executedStatements": executed_statements
@@ -263,8 +262,7 @@ def lambda_handler(event, context):
             "body": json.dumps(
                 {
                     "message": "Schema initialized successfully",
-                    "executed_statements": executed_statements,
-                    "correlation_id": correlation_id
+                    "executed_statements": executed_statements
                 }
             )
         }
@@ -275,10 +273,14 @@ def lambda_handler(event, context):
             "SchemaInitializationFailure",
             1
         )
+        publish_metric(
+            "SchemaInitializationDurationMs",
+            (perf_counter() - started_at) * 1000,
+            "Milliseconds",
+        )
 
         log_event(
             "ERROR",
-            correlation_id,
             "SchemaInitializationFailed",
             {
                 "error": str(exception)
@@ -290,8 +292,7 @@ def lambda_handler(event, context):
             "body": json.dumps(
                 {
                     "message": "Schema initialization failed",
-                    "error": str(exception),
-                    "correlation_id": correlation_id
+                    "error": str(exception)
                 }
             )
         }

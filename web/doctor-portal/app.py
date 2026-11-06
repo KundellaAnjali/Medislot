@@ -1,11 +1,13 @@
 import json
+import logging
 import os
+from time import perf_counter
 from datetime import datetime, timezone
 from functools import wraps
 from urllib.parse import urljoin
 
 import requests
-from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, flash, g, jsonify, redirect, render_template, request, session, url_for
 from flask_session import Session
 
 CONSULTATION_TYPES = (
@@ -17,6 +19,10 @@ CONSULTATION_TYPES = (
 
 
 app = Flask(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
 app.config.update(
     SECRET_KEY=os.environ["FLASK_SECRET_KEY"],
     SESSION_TYPE="filesystem",
@@ -28,6 +34,24 @@ app.config.update(
 Session(app)
 
 API_BASE_URL = os.environ["MEDISLOT_API_BASE_URL"].rstrip("/") + "/"
+
+
+@app.before_request
+def start_request_timer():
+    g.request_started_at = perf_counter()
+
+
+@app.after_request
+def log_request(response):
+    duration_ms = (perf_counter() - g.request_started_at) * 1000
+    app.logger.info(
+        "Portal request completed: method=%s path=%s status=%s duration_ms=%.2f",
+        request.method,
+        request.path,
+        response.status_code,
+        duration_ms,
+    )
+    return response
 
 
 class ApiError(Exception):
@@ -70,13 +94,26 @@ def api_request(method, path, *, json_body=None, params=None, authenticated=True
             timeout=15,
         )
     except requests.RequestException as error:
+        app.logger.exception("MediSlot API request failed: method=%s path=%s", method, path)
         raise ApiError("MediSlot API is unavailable") from error
     try:
         payload = result.json()
     except ValueError:
         payload = {}
     if not result.ok:
+        app.logger.warning(
+            "MediSlot API returned an error: method=%s path=%s status=%s",
+            method,
+            path,
+            result.status_code,
+        )
         raise ApiError(payload.get("message", "MediSlot API request failed"), result.status_code)
+    app.logger.info(
+        "MediSlot API request completed: method=%s path=%s status=%s",
+        method,
+        path,
+        result.status_code,
+    )
     return payload
 
 
@@ -86,6 +123,11 @@ def with_api_errors(handler):
         try:
             return handler(*args, **kwargs)
         except ApiError as error:
+            app.logger.warning(
+                "Portal action failed: endpoint=%s status=%s",
+                request.endpoint,
+                error.status_code,
+            )
             if error.status_code == 401:
                 session.clear()
                 flash("Your session expired. Please sign in again.", "error")
@@ -196,8 +238,8 @@ def logout():
             json_body={"refresh_token": session.get("refresh_token")},
             authenticated=False,
         )
-    except ApiError:
-        pass
+    except ApiError as error:
+        app.logger.warning("Logout request failed: status=%s", error.status_code)
     session.clear()
     return redirect(url_for("auth"))
 
@@ -314,12 +356,12 @@ def update_consultation_type(consultation_id):
     return redirect(url_for("doctor_dashboard"))
 
 
-@app.post("/doctor/consultation-types/<int:consultation_id>/deactivate")
+@app.post("/doctor/consultation-types/<int:consultation_id>/delete")
 @doctor_required
 @with_api_errors
-def deactivate_consultation_type(consultation_id):
+def delete_consultation_type(consultation_id):
     api_request("DELETE", f"/doctors/me/consultation-types/{consultation_id}")
-    flash("Consultation type deactivated. Existing appointments are kept.", "success")
+    flash("Consultation type deleted.", "success")
     return redirect(url_for("doctor_dashboard"))
 
 

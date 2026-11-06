@@ -116,9 +116,7 @@ def lambda_handler(event, context):
         first_name = body.get("first_name")
         last_name = body.get("last_name")
 
-        logger.info(
-            f"Registration started for email: {email}"
-        )
+        logger.info("Registration started")
 
         # Email Validation
         if not email:

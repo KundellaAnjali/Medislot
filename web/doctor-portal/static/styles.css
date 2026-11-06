@@ -93,7 +93,7 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
 .text-button:disabled { color: var(--muted); cursor: default; text-decoration: none; }
 .danger-text { color: var(--coral); }
 .consultation-edit { display: grid; grid-template-columns: minmax(140px, 1fr) 85px 65px auto auto; gap: 7px; padding-top: 10px; }
-.deactivate-form { align-self: flex-end; }
+.delete-form { align-self: flex-end; }
 .configuration-controls { display: contents; min-width: 0; margin: 0; padding: 0; border: 0; }
 .configuration-controls:disabled { opacity: .55; }
 .consultation-list li span { display: flex; flex-direction: column; gap: 4px; }

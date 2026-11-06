@@ -168,9 +168,7 @@ def lambda_handler(event, context):
         if email:
             email = email.strip().lower()
 
-        logger.info(
-            f"Login started for {email}"
-        )
+        logger.info("Login started")
 
         if not email or not password:
 

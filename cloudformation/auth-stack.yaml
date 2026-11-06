@@ -254,47 +254,6 @@ Resources:
           - Fn::ImportValue:
               !Sub "${EnvironmentName}-PrivateSubnetBId"
 
-  DoctorTestFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-
-      FunctionName: !Sub "${EnvironmentName}-doctor-test"
-
-      Handler: app.lambda_handler
-
-      CodeUri: ../lambdas/auth/doctor-test/
-
-      Role:
-        Fn::ImportValue:
-          !Sub "${EnvironmentName}-AuthLambdaRoleArn"
-
-      Environment:
-        Variables:
-          ENVIRONMENT_NAME: !Ref EnvironmentName
-
-      VpcConfig:
-        SecurityGroupIds:
-          - Fn::ImportValue:
-              !Sub "${EnvironmentName}-LambdaSecurityGroupId"
-
-        SubnetIds:
-          - Fn::ImportValue:
-              !Sub "${EnvironmentName}-PrivateSubnetAId"
-
-          - Fn::ImportValue:
-              !Sub "${EnvironmentName}-PrivateSubnetBId"
-
-
-      Events:
-        DoctorTestApi:
-          Type: Api
-          Properties:
-            RestApiId: !Ref ServerlessApi
-            Path: /doctor/test
-            Method: get
-            Auth:
-              Authorizer: JwtAuthorizer
-  
 
 Outputs:
 
@@ -366,11 +325,3 @@ Outputs:
     Value: !GetAtt AuthorizerFunction.Arn
     Export:
       Name: !Sub "${EnvironmentName}-AuthorizerFunctionArn"
-
-  DoctorTestFunctionArn:
-    Description: Doctor Test Lambda ARN
-    Value: !GetAtt DoctorTestFunction.Arn
-
-  DoctorTestFunctionName:
-    Description: Doctor Test Lambda Name
-    Value: !Ref DoctorTestFunction

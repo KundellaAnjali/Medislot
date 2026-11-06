@@ -78,7 +78,7 @@
                   <div class="pattern-row"><select name="consultation_type_id" aria-label="Consultation type" required>{% for consultation in consultations if consultation.is_active %}<option value="{{ consultation.consultation_type_id }}" {{ 'selected' if consultation.consultation_type_id == pattern.consultation_type_id else '' }}>{{ consultation.consultation_name }}</option>{% endfor %}</select><select name="day_of_week" aria-label="Weekday" required>{% for day in ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY'] %}<option value="{{ day }}" {{ 'selected' if day == pattern.day_of_week else '' }}>{{ day.title() }}</option>{% endfor %}</select><input name="start_time" type="time" aria-label="Start time" value="{{ pattern.start_time|string|truncate(5, True, '') }}" required><input name="end_time" type="time" aria-label="End time" value="{{ pattern.end_time|string|truncate(5, True, '') }}" required><button class="remove-row" type="button" title="Remove availability pattern" aria-label="Remove availability pattern">&times;</button></div>
                 {% endfor %}
               </div>
-              <div class="form-actions"><button class="button secondary" type="button" id="add-pattern">+ Add hours</button><button class="button primary" type="submit">Save availability</button></div>
+              <div class="form-actions"><button class="button secondary" type="button" id="add-pattern">+ Add availability</button><button class="button primary" type="submit">Save availability</button></div>
             </fieldset>
           </form>
         </section>
@@ -108,7 +108,40 @@
         </section>
         <section class="dashboard-panel">
           <div class="panel-heading"><div><p class="eyebrow">Current menu</p><h2>Active consultation types</h2></div><span class="count-label">{{ consultations|selectattr('is_active')|list|length }} active</span></div>
-          <ul class="consultation-list">{% for consultation in consultations %}<li class="{{ 'inactive-consultation' if not consultation.is_active else '' }}"><div class="consultation-line"><span><strong>{{ consultation.consultation_name }}</strong><small>{{ consultation.duration_minutes }} min / capacity {{ consultation.capacity }} / {{ 'Active' if consultation.is_active else 'Deactivated' }}</small></span><b>{{ '%.2f'|format(consultation.fee|float) }}</b>{% if consultation.is_active and profile.is_verified %}<button class="text-button consultation-edit-toggle" type="button" data-target="consultation-edit-{{ consultation.consultation_type_id }}">Edit</button>{% endif %}</div>{% if consultation.is_active and profile.is_verified %}<form class="consultation-edit" id="consultation-edit-{{ consultation.consultation_type_id }}" method="post" action="{{ url_for('update_consultation_type', consultation_id=consultation.consultation_type_id) }}" hidden><select name="consultation_name" class="consultation-name-edit" required>{% for type_name in ['Quick Consult','Standard Consult','Detailed Consult','Health Camp Session'] %}<option value="{{ type_name }}" {{ 'selected' if type_name == consultation.consultation_name else '' }}>{{ type_name }}</option>{% endfor %}</select><input name="fee" type="number" min="0" step="0.01" value="{{ consultation.fee }}" aria-label="Fee" required><input name="capacity" type="number" min="{{ 2 if consultation.consultation_name == 'Health Camp Session' else 1 }}" max="{{ 10 if consultation.consultation_name == 'Health Camp Session' else 1 }}" value="{{ consultation.capacity }}" aria-label="Capacity" required><input name="duration_minutes" type="hidden" value="{{ consultation.duration_minutes }}"><button class="button secondary" type="submit">Save changes</button><button class="button secondary consultation-edit-cancel" type="button" data-target="consultation-edit-{{ consultation.consultation_type_id }}">Cancel</button></form><form class="deactivate-form" method="post" action="{{ url_for('deactivate_consultation_type', consultation_id=consultation.consultation_type_id) }}"><button class="text-button danger-text" type="submit">Delete</button></form>{% endif %}</li>{% else %}<li class="muted">No consultation types added</li>{% endfor %}</ul>
+          <ul class="consultation-list">
+            {% for consultation in consultations %}
+              <li class="{{ 'inactive-consultation' if not consultation.is_active else '' }}">
+                <div class="consultation-line">
+                  <span><strong>{{ consultation.consultation_name }}</strong><small>{{ consultation.duration_minutes }} min / capacity {{ consultation.capacity }} / {{ 'Active' if consultation.is_active else 'Deactivated' }}</small></span>
+                  <b>{{ '%.2f'|format(consultation.fee|float) }}</b>
+                  {% if consultation.is_active and profile.is_verified %}
+                    <button class="text-button consultation-edit-toggle" type="button" data-target="consultation-edit-{{ consultation.consultation_type_id }}">Edit</button>
+                  {% endif %}
+                </div>
+                {% if consultation.is_active and profile.is_verified %}
+                  <form class="consultation-edit" id="consultation-edit-{{ consultation.consultation_type_id }}" method="post" action="{{ url_for('update_consultation_type', consultation_id=consultation.consultation_type_id) }}" hidden>
+                    <select name="consultation_name" class="consultation-name-edit" required>
+                      {% for type_name in ['Quick Consult','Standard Consult','Detailed Consult','Health Camp Session'] %}
+                        <option value="{{ type_name }}" {{ 'selected' if type_name == consultation.consultation_name else '' }}>{{ type_name }}</option>
+                      {% endfor %}
+                    </select>
+                    <input name="fee" type="number" min="0" step="0.01" value="{{ consultation.fee }}" aria-label="Fee" required>
+                    <input name="capacity" type="number" min="{{ 2 if consultation.consultation_name == 'Health Camp Session' else 1 }}" max="{{ 10 if consultation.consultation_name == 'Health Camp Session' else 1 }}" value="{{ consultation.capacity }}" aria-label="Capacity" required>
+                    <input name="duration_minutes" type="hidden" value="{{ consultation.duration_minutes }}">
+                    <button class="button secondary" type="submit">Save changes</button>
+                    <button class="button secondary consultation-edit-cancel" type="button" data-target="consultation-edit-{{ consultation.consultation_type_id }}">Cancel</button>
+                  </form>
+                {% endif %}
+                {% if profile.is_verified %}
+                  <form class="delete-form" method="post" action="{{ url_for('delete_consultation_type', consultation_id=consultation.consultation_type_id) }}">
+                    <button class="text-button danger-text" type="submit">Delete</button>
+                  </form>
+                {% endif %}
+              </li>
+            {% else %}
+              <li class="muted">No consultation types added</li>
+            {% endfor %}
+          </ul>
         </section>
       </section>
 
