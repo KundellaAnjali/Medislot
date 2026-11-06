@@ -9,7 +9,7 @@ import boto3
 import pymysql
 from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
-
+lambda_client = boto3.client("lambda")
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -322,7 +322,39 @@ def delete_unused_consultation_type(cursor, consultation_id):
             "DELETE FROM consultation_types WHERE consultation_type_id = %s",
             (consultation_id,),
         )
+def delete_slots_for_blackout(doctor_id, start_utc, end_utc):
+    query_args = {
+        "IndexName": "DoctorStartIndex",
+        "KeyConditionExpression": Key("doctor_id").eq(doctor_id),
+    }
 
+    while True:
+        result = slots_table.query(**query_args)
+
+        for slot in result.get("Items", []):
+
+            slot_start = parse_utc_datetime(slot["start_time"])
+            slot_end = parse_utc_datetime(slot["end_time"])
+
+            if slot_start < end_utc and slot_end > start_utc:
+
+                if int(slot.get("booked_count", 0)) > 0:
+                    slots_table.update_item(
+                        Key={"slot_id": slot["slot_id"]},
+                        UpdateExpression="SET #status = :status",
+                        ExpressionAttributeNames={"#status": "status"},
+                        ExpressionAttributeValues={":status": 0},
+                    )
+                    continue
+
+                slots_table.delete_item(
+                    Key={"slot_id": slot["slot_id"]}
+                )
+
+        if "LastEvaluatedKey" not in result:
+            break
+
+        query_args["ExclusiveStartKey"] = result["LastEvaluatedKey"]
 
 def route_doctor_api(event):
     user_id = get_actor(event)
@@ -838,27 +870,76 @@ def blackouts_route(connection, cursor, doctor_id, method, tail, body):
         )
         blackout_id = cursor.lastrowid
         connection.commit()
-        logger.info("Blackout %s added for doctor %s", blackout_id, doctor_id)
+
+        delete_slots_for_blackout(
+            doctor_id,
+            start_utc,
+            end_utc,
+        )
+
+        logger.info(
+            "Blackout %s added for doctor %s",
+            blackout_id,
+            doctor_id,
+        )
         return response(201, {"blackout_id": blackout_id})
     if len(tail) == 1 and method == "DELETE":
         blackout_id = int(tail[0])
+
         cursor.execute(
             """
-            SELECT blackout_id FROM blackout_dates
-            WHERE blackout_id = %s AND doctor_id = %s
+            SELECT blackout_id, start_datetime, end_datetime
+            FROM blackout_dates
+            WHERE blackout_id = %s
+            AND doctor_id = %s
             """,
             (blackout_id, doctor_id),
         )
+
         removed_blackout = cursor.fetchone()
+
         if not removed_blackout:
             raise LookupError("Blackout date not found")
+
+        affected_day = removed_blackout["start_datetime"].date()
+        last_affected_day = (
+            removed_blackout["end_datetime"] - timedelta(microseconds=1)
+        ).date()
+
         cursor.execute(
             "DELETE FROM blackout_dates WHERE blackout_id = %s AND doctor_id = %s",
             (blackout_id, doctor_id),
         )
+
         connection.commit()
-        logger.info("Blackout %s removed for doctor %s", blackout_id, doctor_id)
-        return response(200, {"message": "Blackout date deleted"})
+
+        invoke_result = lambda_client.invoke(
+            FunctionName=f"{ENVIRONMENT}-slot-materializer",
+            InvocationType="Event",
+            Payload=json.dumps(
+                {
+                    "start_date": affected_day.isoformat(),
+                    "end_date": last_affected_day.isoformat(),
+                }
+            ),
+        )
+        if invoke_result.get("StatusCode") != 202:
+            raise RuntimeError("Slot regeneration was not accepted")
+
+        logger.info(
+            "Blackout %s removed for doctor %s; slot regeneration queued for %s through %s",
+            blackout_id,
+            doctor_id,
+            affected_day,
+            last_affected_day,
+        )
+
+        return response(
+            200,
+            {
+                "message": "Blackout date deleted"
+            }
+        )
     raise LookupError("Blackout endpoint not found")
 
 

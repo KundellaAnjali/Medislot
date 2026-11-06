@@ -4,16 +4,85 @@ from time import perf_counter
 
 from botocore.exceptions import ClientError
 
-from doctor_part import (
-    ENVIRONMENT,
-    get_connection,
-    get_parameter,
-    logger,
-    parse_sql_time,
-    publish_metric,
-    slots_table,
-    utc_iso,
-)
+import os
+import logging
+
+import boto3
+import pymysql
+
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+ENVIRONMENT = os.environ["ENVIRONMENT_NAME"]
+SLOT_TABLE_NAME = os.environ["SLOTS_TABLE_NAME"]
+
+ssm = boto3.client("ssm")
+cloudwatch = boto3.client("cloudwatch")
+dynamodb = boto3.resource("dynamodb")
+
+slots_table = dynamodb.Table(SLOT_TABLE_NAME)
+
+parameter_cache = {}
+METRIC_NAMESPACE = "MediSlot/Doctor"
+
+
+def publish_metric(metric_name, value, unit="Count"):
+    try:
+        cloudwatch.put_metric_data(
+            Namespace=METRIC_NAMESPACE,
+            MetricData=[
+                {
+                    "MetricName": metric_name,
+                    "Value": value,
+                    "Unit": unit,
+                }
+            ],
+        )
+    except Exception:
+        logger.exception(
+            "Could not publish CloudWatch metric %s",
+            metric_name,
+        )
+
+
+def get_parameter(name):
+    if name not in parameter_cache:
+        response = ssm.get_parameter(Name=name)
+        parameter_cache[name] = response["Parameter"]["Value"]
+    return parameter_cache[name]
+
+
+def get_connection():
+    return pymysql.connect(
+        host=get_parameter(f"/medislot/{ENVIRONMENT}/rds-host"),
+        port=int(get_parameter(f"/medislot/{ENVIRONMENT}/rds-port")),
+        user=get_parameter(f"/medislot/{ENVIRONMENT}/rds-user"),
+        password=ssm.get_parameter(
+            Name=f"/medislot/{ENVIRONMENT}/rds-password",
+            WithDecryption=True,
+        )["Parameter"]["Value"],
+        database=get_parameter(f"/medislot/{ENVIRONMENT}/rds-database"),
+        cursorclass=pymysql.cursors.DictCursor,
+        autocommit=False,
+    )
+
+
+def parse_sql_time(value):
+    from datetime import time
+
+    if isinstance(value, time):
+        return value.replace(tzinfo=None)
+
+    seconds = int(value.total_seconds())
+    return (datetime.min + timedelta(seconds=seconds)).time()
+
+
+def utc_iso(value):
+    return value.astimezone(
+        timezone.utc
+    ).isoformat(
+        timespec="seconds"
+    ).replace("+00:00", "Z")
 
 
 def weekday_name(value):
@@ -36,59 +105,114 @@ def build_slot_id(doctor_id, consultation_id, start_time):
     return int(hashlib.sha256(identity).hexdigest()[:15], 16)
 
 
-def materialize_for_doctor_day(doctor, patterns, blackout_rows, local_day):
+
+def materialize_for_doctor_day(
+    doctor,
+    patterns,
+    blackout_rows,
+    local_day
+):
     created = 0
+
     for pattern in patterns:
+
         if weekday_name(pattern["day_of_week"]) != local_day.strftime("%A").upper():
             continue
+
         start_time = parse_sql_time(pattern["start_time"])
         end_time = parse_sql_time(pattern["end_time"])
-        duration = int(pattern["duration_minutes"])
-        slot_local = datetime.combine(local_day, start_time, tzinfo=timezone.utc)
-        local_end = datetime.combine(local_day, end_time, tzinfo=timezone.utc)
-        while slot_local + timedelta(minutes=duration) <= local_end:
-            slot_end = slot_local + timedelta(minutes=duration)
-            overlapping_blackouts = [
-                blackout
-                for blackout in blackout_rows
-                if blackout["start_datetime"].replace(tzinfo=timezone.utc) < slot_end
-                and blackout["end_datetime"].replace(tzinfo=timezone.utc) > slot_local
-            ]
-            if overlapping_blackouts:
-                blackout_end = max(
-                    blackout["end_datetime"].replace(tzinfo=timezone.utc)
-                    for blackout in overlapping_blackouts
-                )
-                slot_local = blackout_end + timedelta(minutes=1)
-                continue
 
-            start_iso = utc_iso(slot_local)
-            end_iso = utc_iso(slot_end)
-            slot_id = build_slot_id(
-                doctor["doctor_id"], pattern["consultation_type_id"], start_iso
-            )
-            try:
-                slots_table.put_item(
-                    Item={
-                        "slot_id": slot_id,
-                        "doctor_id": doctor["doctor_id"],
-                        "consultation_type_id": pattern["consultation_type_id"],
-                        "consultation_name": pattern["consultation_name"],
-                        "start_time": start_iso,
-                        "end_time": end_iso,
-                        "local_date": local_day.isoformat(),
-                        "capacity": int(pattern["capacity"]),
-                        "booked_count": 0,
-                        "version": 0,
-                        "status": 1,
-                    },
-                    ConditionExpression="attribute_not_exists(slot_id)",
+        duration = int(pattern["duration_minutes"])
+
+        if duration <= 0:
+            raise ValueError("Slot duration must be greater than zero")
+
+        # Original availability boundaries
+        availability_start = datetime.combine(
+            local_day,
+            start_time,
+            tzinfo=timezone.utc
+        )
+
+        availability_end = datetime.combine(
+            local_day,
+            end_time,
+            tzinfo=timezone.utc
+        )
+
+        slot_local = availability_start
+
+        # Generate slots from the ORIGINAL start time
+        while slot_local + timedelta(minutes=duration) <= availability_end:
+
+            slot_end = slot_local + timedelta(minutes=duration)
+
+            # Check whether this slot overlaps any blackout
+            is_blackout = False
+
+            for blackout in blackout_rows:
+
+                blackout_start = blackout["start_datetime"].replace(
+                    tzinfo=timezone.utc
                 )
-                created += 1
-            except ClientError as error:
-                if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
-                    raise
-            slot_local += timedelta(minutes=duration)
+
+                blackout_end = blackout["end_datetime"].replace(
+                    tzinfo=timezone.utc
+                )
+
+                # Overlap condition
+                if (
+                    slot_local < blackout_end
+                    and slot_end > blackout_start
+                ):
+                    is_blackout = True
+                    break
+
+            if not is_blackout:
+
+                start_iso = utc_iso(slot_local)
+                end_iso = utc_iso(slot_end)
+
+                slot_id = build_slot_id(
+                    doctor["doctor_id"],
+                    pattern["consultation_type_id"],
+                    start_iso
+                )
+
+                try:
+                    slots_table.put_item(
+                        Item={
+                            "slot_id": slot_id,
+                            "doctor_id": doctor["doctor_id"],
+                            "consultation_type_id": pattern[
+                                "consultation_type_id"
+                            ],
+                            "consultation_name": pattern[
+                                "consultation_name"
+                            ],
+                            "start_time": start_iso,
+                            "end_time": end_iso,
+                            "local_date": local_day.isoformat(),
+                            "capacity": int(pattern["capacity"]),
+                            "booked_count": 0,
+                            "version": 0,
+                            "status": 1
+                        },
+                        ConditionExpression="attribute_not_exists(slot_id)"
+                    )
+
+                    created += 1
+
+                except ClientError as error:
+
+                    if error.response["Error"]["Code"] != (
+                        "ConditionalCheckFailedException"
+                    ):
+                        raise
+
+            # Always move forward using the original duration
+            slot_local = slot_end
+
     return created
 
 
@@ -137,14 +261,28 @@ def materialize_handler(event, context):
         for blackout in blackout_rows:
             blackouts_by_doctor.setdefault(blackout["doctor_id"], []).append(blackout)
 
-        requested_date = event.get("date") if isinstance(event, dict) else None
+        requested_start_date = None
+        requested_end_date = None
+        if isinstance(event, dict):
+            requested_start_date = event.get("start_date", event.get("date"))
+            requested_end_date = event.get("end_date", requested_start_date)
+        if requested_start_date:
+            requested_start_date = date.fromisoformat(requested_start_date)
+            requested_end_date = date.fromisoformat(requested_end_date)
+            if requested_end_date < requested_start_date:
+                raise ValueError("end_date must be on or after start_date")
+
         for doctor in doctors:
             start_day = (
-                date.fromisoformat(requested_date)
-                if requested_date
+                requested_start_date
+                if requested_start_date
                 else datetime.now(timezone.utc).date()
             )
-            days = 1 if requested_date else window_days
+            days = (
+                (requested_end_date - requested_start_date).days + 1
+                if requested_start_date
+                else window_days
+            )
             patterns = patterns_by_doctor.get(doctor["doctor_id"], [])
             blackouts = blackouts_by_doctor.get(doctor["doctor_id"], [])
             for offset in range(days):
