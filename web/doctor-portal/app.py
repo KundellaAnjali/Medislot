@@ -197,19 +197,42 @@ def api_request(
         payload = {}
 
     if not result.ok:
+        request_id = (
+            result.headers.get("x-amzn-requestid")
+            or result.headers.get("x-amz-apigw-id")
+            or "not provided"
+        )
+        message = None
+        if isinstance(payload, dict):
+            message = (
+                payload.get("message")
+                or payload.get("Message")
+                or payload.get("error")
+                or payload.get("errorMessage")
+            )
+        if not message:
+            content_type = result.headers.get("content-type", "unknown")
+            response_text = result.text.strip()
+            response_detail = ""
+            if response_text and "html" not in content_type.lower():
+                response_detail = f", response={response_text[:300]}"
+            message = (
+                f"API returned HTTP {result.status_code} without an error message "
+                f"(content-type={content_type}, request_id={request_id}"
+                f"{response_detail})"
+            )
         app.logger.warning(
             "MediSlot API returned an error: "
-            "method=%s path=%s status=%s",
+            "method=%s path=%s status=%s request_id=%s message=%s",
             method,
             path,
             result.status_code,
+            request_id,
+            message,
         )
 
         raise ApiError(
-            payload.get(
-                "message",
-                "MediSlot API request failed"
-            ),
+            message,
             result.status_code,
         )
 
