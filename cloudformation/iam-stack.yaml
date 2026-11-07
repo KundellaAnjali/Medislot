@@ -220,6 +220,35 @@ Resources:
                     - AssetsBucket:
                         Fn::ImportValue: !Sub "${EnvironmentName}-AssetsBucket"
 
+  PatientLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${EnvironmentName}-patient-profile-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: PatientProfileAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/medislot/${EnvironmentName}/*"
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: "*"
+
   DoctorPortalInstanceRole:
     Type: AWS::IAM::Role
     Properties:
@@ -296,6 +325,11 @@ Outputs:
     Value: !GetAtt DoctorLambdaRole.Arn
     Export:
       Name: !Sub "${EnvironmentName}-DoctorLambdaRoleArn"
+
+  PatientLambdaRoleArn:
+    Value: !GetAtt PatientLambdaRole.Arn
+    Export:
+      Name: !Sub "${EnvironmentName}-PatientLambdaRoleArn"
 
   DoctorPortalInstanceProfileName:
     Value: !Ref DoctorPortalInstanceProfile

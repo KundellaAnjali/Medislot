@@ -282,6 +282,14 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
 .patient-content { width: min(800px, 90%); padding: 100px 0; margin: 0 auto; }
 .patient-content h1 { margin-bottom: 12px; }
 .patient-content > p:last-child { color: var(--muted); font-size: 14px; }
+.patient-profile { margin-top: 28px; padding: 25px; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
+.patient-profile-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+.patient-profile-heading h2 { font-size: 18px; }
+.patient-profile-form { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.patient-profile-form label { display: grid; gap: 7px; color: var(--muted); font-size: 12px; }
+.patient-profile-form .button { justify-self: start; }
+.patient-delete-form { display: flex; align-items: center; gap: 12px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
+.patient-delete-form span { color: var(--muted); font-size: 11px; }
 
 @media (max-width: 900px) {
   .doctor-app { grid-template-columns: 205px minmax(0, 1fr); }
@@ -324,4 +332,8 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
   .consultation-edit { grid-template-columns: 1fr 1fr; }
   .consultation-edit select { grid-column: 1 / -1; }
   .blackout-form { width: 100%; }
+  .patient-content { padding: 55px 0; }
+  .patient-profile { padding: 18px 14px; }
+  .patient-profile-form { grid-template-columns: 1fr; gap: 12px; }
+  .patient-delete-form { align-items: flex-start; flex-direction: column; }
 }

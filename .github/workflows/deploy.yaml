@@ -61,6 +61,10 @@ jobs:
         run: |
           cfn-lint cloudformation/doctor-stack.yaml
 
+      - name: Lint Patient Stack
+        run: |
+          cfn-lint cloudformation/patient-stack.yaml
+
   deploy-network:
     needs: validate
     runs-on: ubuntu-latest
@@ -319,4 +323,61 @@ jobs:
             --rest-api-id "$API_ID" \
             --stage-name "$ENVIRONMENT" \
             --description "Publish MediSlot doctor-domain routes" \
+            --region ${{ secrets.AWS_REGION }}
+
+  deploy-patient:
+    needs: deploy-doctor
+    runs-on: ubuntu-latest
+
+    env:
+      TEMPLATE_FILE: cloudformation/patient-stack.yaml
+      PARAMETERS_FILE: parameters/auth-parameters.json
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Load Environment
+        run: |
+          echo "ENVIRONMENT=$(jq -r '.[] | select(.ParameterKey=="EnvironmentName") | .ParameterValue' ${{ env.PARAMETERS_FILE }})" >> $GITHUB_ENV
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup SAM CLI
+        uses: aws-actions/setup-sam@v2
+
+      - name: Validate Patient Stack
+        run: |
+          sam validate \
+            --template-file ${{ env.TEMPLATE_FILE }}
+
+      - name: Build Patient Stack
+        run: |
+          sam build \
+            --template-file ${{ env.TEMPLATE_FILE }}
+
+      - name: Deploy Patient Stack
+        run: |
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name ${ENVIRONMENT}-medislot-patient-stack \
+            --parameter-overrides EnvironmentName=${ENVIRONMENT} \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --resolve-s3 \
+            --no-fail-on-empty-changeset \
+            --region ${{ secrets.AWS_REGION }}
+
+      - name: Publish Patient Routes to Existing API Stage
+        run: |
+          API_ID=$(aws cloudformation list-exports \
+            --region ${{ secrets.AWS_REGION }} \
+            --query "Exports[?Name=='${ENVIRONMENT}-MedislotApiId'].Value | [0]" \
+            --output text)
+
+          aws apigateway create-deployment \
+            --rest-api-id "$API_ID" \
+            --stage-name "$ENVIRONMENT" \
+            --description "Publish MediSlot patient-profile routes" \
             --region ${{ secrets.AWS_REGION }}

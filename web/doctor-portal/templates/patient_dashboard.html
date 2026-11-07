@@ -16,7 +16,44 @@
   <main class="patient-content">
     <p class="eyebrow">Patient portal</p>
     <h1>Your care, in one place.</h1>
-    <p>Your patient account is signed in. Patient appointments and discovery views will appear here.</p>
+    <p>Manage your profile details and keep your account information up to date.</p>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}<p class="notice {{ category }}">{{ message }}</p>{% endfor %}
+    {% endwith %}
+    <section class="patient-profile">
+      <div class="patient-profile-heading">
+        <div>
+          <p class="eyebrow">Your account</p>
+          <h2>Patient profile</h2>
+        </div>
+        {% if profile and profile.get('profile_filled') %}
+          <span class="status-pill"><span></span>Complete</span>
+        {% else %}
+          <span class="status-pill pending"><span></span>Needs details</span>
+        {% endif %}
+      </div>
+      <form method="post" action="{{ url_for('update_patient_profile') if profile and profile.get('profile_filled') else url_for('register_patient_profile') }}" class="patient-profile-form">
+        <label for="patient-first-name">First name
+          <input id="patient-first-name" name="first_name" autocomplete="given-name" maxlength="100" required value="{{ profile.get('first_name', '') if profile else '' }}">
+        </label>
+        <label for="patient-last-name">Last name
+          <input id="patient-last-name" name="last_name" autocomplete="family-name" maxlength="100" required value="{{ profile.get('last_name', '') if profile else '' }}">
+        </label>
+        <label for="patient-phone">Phone number
+          <input id="patient-phone" name="phone_number" type="tel" autocomplete="tel" pattern="\+?[0-9() .-]{7,20}" required value="{{ profile.get('phone_number', '') if profile else '' }}">
+        </label>
+        <label for="patient-email">Email address
+          <input id="patient-email" name="email" type="email" autocomplete="email" maxlength="255" required value="{{ profile.get('email', '') if profile else '' }}">
+        </label>
+        <button class="button primary" type="submit">Save profile</button>
+      </form>
+      {% if profile %}
+        <form method="post" action="{{ url_for('delete_patient_profile') }}" class="patient-delete-form" onsubmit="return confirm('Delete your patient profile?')">
+          <button class="button secondary danger-text" type="submit">Delete profile</button>
+          <span>This removes your profile details. Profiles linked to appointments cannot be deleted.</span>
+        </form>
+      {% endif %}
+    </section>
   </main>
 </body>
 </html>

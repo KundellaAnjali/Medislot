@@ -446,7 +446,75 @@ def old_doctor_dashboard():
 @app.get("/dashboard/patient")
 @patient_required
 def patient_dashboard():
-    return render_template("patient_dashboard.html")
+    try:
+        profile = api_request("GET", "/patients/me").get("profile")
+    except ApiError as error:
+        if error.status_code == 404:
+            profile = None
+        else:
+            return patient_api_error(error)
+    return render_template("patient_dashboard.html", profile=profile)
+
+
+def patient_api_error(error):
+    if error.status_code == 401:
+        session.clear()
+        flash("Invalid credentials or your session has expired. Please sign in again.", "error")
+        return redirect(url_for("auth", mode="login", role="PATIENT"))
+    if error.status_code == 403:
+        flash("You are not allowed to access this patient profile.", "error")
+        return render_template("patient_dashboard.html", profile=None), 403
+    else:
+        flash(str(error), "error")
+    return redirect(url_for("patient_dashboard"))
+
+
+def patient_profile_payload():
+    return {
+        field: request.form.get(field, "").strip()
+        for field in ("first_name", "last_name", "phone_number", "email")
+    }
+
+
+@app.post("/patient/profile/register")
+@patient_required
+def register_patient_profile():
+    try:
+        api_request(
+            "POST",
+            "/patients/register",
+            json_body=patient_profile_payload(),
+        )
+    except ApiError as error:
+        return patient_api_error(error)
+    flash("Patient profile saved.", "success")
+    return redirect(url_for("patient_dashboard"))
+
+
+@app.post("/patient/profile")
+@patient_required
+def update_patient_profile():
+    try:
+        api_request(
+            "PUT",
+            "/patients/me",
+            json_body=patient_profile_payload(),
+        )
+    except ApiError as error:
+        return patient_api_error(error)
+    flash("Patient profile updated.", "success")
+    return redirect(url_for("patient_dashboard"))
+
+
+@app.post("/patient/profile/delete")
+@patient_required
+def delete_patient_profile():
+    try:
+        api_request("DELETE", "/patients/me")
+    except ApiError as error:
+        return patient_api_error(error)
+    flash("Patient profile deleted.", "success")
+    return redirect(url_for("patient_dashboard"))
 
 
 @app.post("/doctor/profile")
