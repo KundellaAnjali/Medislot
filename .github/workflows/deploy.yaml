@@ -39,7 +39,7 @@ jobs:
           MEDISLOT_API_BASE_URL: https://example.invalid/dev
         run: |
           cd web/doctor-portal
-          python -c "from app import app; client=app.test_client(); assert client.get('/auth').status_code == 200; assert client.get('/auth?mode=register&role=DOCTOR').status_code == 200; assert client.get('/auth?mode=login&role=PATIENT').status_code == 200"
+          python -c "from app import app; client=app.test_client(); assert client.get('/auth').status_code == 200; assert client.get('/auth?mode=register&role=DOCTOR').status_code == 200; assert client.get('/auth?mode=login&role=PATIENT').status_code == 200; assert client.get('/').headers['Location'].endswith('/auth?mode=login'); assert client.get('/dashboard/patient').headers['Location'].endswith('/auth?mode=login&role=PATIENT'); assert client.get('/dashboard/doctor').headers['Location'].endswith('/auth?mode=login&role=DOCTOR'); assert client.get('/debug-session').status_code == 404"
 
       - name: Lint Network Stack
         run: |
@@ -310,6 +310,57 @@ jobs:
             --capabilities CAPABILITY_NAMED_IAM \
             --resolve-s3 \
             --no-fail-on-empty-changeset \
+            --region ${{ secrets.AWS_REGION }}
+
+      - name: Update Running Doctor Portal
+        run: |
+          INSTANCE_ID=$(aws cloudformation describe-stack-resource \
+            --stack-name ${ENVIRONMENT}-medislot-doctor-stack \
+            --logical-resource-id DoctorPortalInstance \
+            --query "StackResourceDetail.PhysicalResourceId" \
+            --output text \
+            --region ${{ secrets.AWS_REGION }})
+
+          ASSETS_BUCKET=$(aws cloudformation list-exports \
+            --region ${{ secrets.AWS_REGION }} \
+            --query "Exports[?Name=='${ENVIRONMENT}-AssetsBucket'].Value | [0]" \
+            --output text)
+
+          for attempt in $(seq 1 30); do
+            PING_STATUS=$(aws ssm describe-instance-information \
+              --filters "Key=InstanceIds,Values=${INSTANCE_ID}" \
+              --query "InstanceInformationList[0].PingStatus" \
+              --output text \
+              --region ${{ secrets.AWS_REGION }})
+            if [ "$PING_STATUS" = "Online" ]; then
+              break
+            fi
+            sleep 10
+          done
+
+          if [ "$PING_STATUS" != "Online" ]; then
+            echo "Doctor portal instance did not become available in Systems Manager." >&2
+            exit 1
+          fi
+
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --parameters "{\"commands\":[\"aws s3 cp s3://${ASSETS_BUCKET}/doctor-portal/doctor-portal.zip /tmp/doctor-portal.zip\",\"unzip -o /tmp/doctor-portal.zip -d /opt/medislot/doctor-portal\",\"chown -R ec2-user:ec2-user /opt/medislot/doctor-portal\",\"/opt/medislot/venv/bin/pip install --no-cache-dir -r /opt/medislot/doctor-portal/requirements.txt\",\"systemctl restart medislot-doctor-portal\"]}" \
+            --query "Command.CommandId" \
+            --output text \
+            --region ${{ secrets.AWS_REGION }})
+
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --region ${{ secrets.AWS_REGION }}
+
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query "StandardOutputContent" \
+            --output text \
             --region ${{ secrets.AWS_REGION }}
 
       - name: Publish Doctor Routes to Existing API Stage

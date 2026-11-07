@@ -26,8 +26,9 @@ logging.basicConfig(
 app.config.update(
     SECRET_KEY=os.environ["FLASK_SECRET_KEY"],
     SESSION_TYPE="filesystem",
-    SESSION_FILE_DIR = "/tmp/flask_session",
+    SESSION_FILE_DIR="/tmp/flask_session",
     SESSION_PERMANENT=False,
+    SESSION_USE_SIGNER=True,
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
 )
@@ -60,24 +61,74 @@ class ApiError(Exception):
         self.status_code = status_code
 
 
-def doctor_required(handler):
-    @wraps(handler)
-    def wrapped(*args, **kwargs):
-        if not session.get("access_token") or session.get("role") != "DOCTOR":
-            return redirect(url_for("auth", mode="login", role="DOCTOR"))
-        return handler(*args, **kwargs)
+def role_required(role, profile_path, missing_profile_message):
+    def decorate(handler):
+        @wraps(handler)
+        def wrapped(*args, **kwargs):
+            access_token = session.get("access_token")
+            refresh_token = session.get("refresh_token")
+            if (
+                not access_token
+                or not refresh_token
+                or session.get("role") != role
+            ):
+                return redirect(url_for("auth", mode="login", role=role))
 
-    return wrapped
+            try:
+                g.authorized_profile_response = api_request(
+                    "GET",
+                    profile_path,
+                )
+            except ApiError as error:
+                if error.status_code in {401, 403}:
+                    session.clear()
+                    flash(
+                        "Your session is invalid or has expired. Please sign in again.",
+                        "error",
+                    )
+                    return redirect(url_for("auth", mode="login", role=role))
+                if (
+                    error.status_code == 404
+                    and str(error) == missing_profile_message
+                ):
+                    g.authorized_profile_response = None
+                else:
+                    if error.status_code == 404:
+                        session.clear()
+                        flash(
+                            "Your session could not be verified. Please sign in again.",
+                            "error",
+                        )
+                        return redirect(
+                            url_for("auth", mode="login", role=role)
+                        )
+                    app.logger.error(
+                        "Could not verify session: role=%s status=%s",
+                        role,
+                        error.status_code,
+                    )
+                    return (
+                        "Unable to verify your session. Please try again.",
+                        503,
+                    )
+
+            return handler(*args, **kwargs)
+
+        return wrapped
+
+    return decorate
 
 
-def patient_required(handler):
-    @wraps(handler)
-    def wrapped(*args, **kwargs):
-        if not session.get("access_token") or session.get("role") != "PATIENT":
-            return redirect(url_for("auth", mode="login", role="PATIENT"))
-        return handler(*args, **kwargs)
-
-    return wrapped
+doctor_required = role_required(
+    "DOCTOR",
+    "/doctors/me",
+    "Doctor profile not found",
+)
+patient_required = role_required(
+    "PATIENT",
+    "/patients/me",
+    "Patient profile not found.",
+)
 
 def refresh_access_token():
 
@@ -293,11 +344,7 @@ def with_api_errors(handler):
 
 @app.get("/")
 def home():
-    return redirect(url_for("auth", mode="register"))
-
-@app.get("/debug-session")
-def debug_session():
-    return dict(session)
+    return redirect(url_for("auth", mode="login"))
 
 @app.route("/auth", methods=["GET", "POST"])
 def auth():
@@ -400,7 +447,7 @@ def logout():
 @doctor_required
 @with_api_errors
 def doctor_dashboard():
-    profile = api_request("GET", "/doctors/me")
+    profile = g.authorized_profile_response
     consultations = api_request("GET", "/doctors/me/consultation-types").get(
         "consultation_types", []
     )
@@ -442,15 +489,8 @@ def old_doctor_dashboard():
 @app.get("/dashboard/patient")
 @patient_required
 def patient_dashboard():
-    try:
-        response = api_request("GET", "/patients/me")
-        print("FULL RESPONSE =", response)
-        profile = response.get("profile")
-    except ApiError as error:
-        if error.status_code == 404:
-            profile = None
-        else:
-            return patient_api_error(error)
+    profile_response = g.authorized_profile_response
+    profile = profile_response.get("profile") if profile_response else None
     return render_template("patient_dashboard.html", profile=profile)
 
 
