@@ -266,7 +266,7 @@ def lambda_handler(event, context):
 
         session_id = str(uuid.uuid4())
 
-        access_token, access_token_jti = create_access_token(
+        access_token = create_access_token(
             user,
             session_id
         )

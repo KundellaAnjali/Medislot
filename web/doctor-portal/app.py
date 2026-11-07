@@ -79,43 +79,149 @@ def patient_required(handler):
 
     return wrapped
 
+def refresh_access_token():
 
-def api_request(method, path, *, json_body=None, params=None, authenticated=True):
+    refresh_token = session.get("refresh_token")
+
+    if not refresh_token:
+        return False
+
+    try:
+        result = requests.post(
+            urljoin(API_BASE_URL, "auth/refresh"),
+            json={
+                "refresh_token": refresh_token
+            },
+            timeout=15,
+        )
+
+        if not result.ok:
+            return False
+
+        payload = result.json()
+
+        session["access_token"] = payload["access_token"]
+        session.modified = True
+
+        app.logger.info(
+            "Access token refreshed successfully"
+        )
+
+        return True
+
+    except requests.RequestException:
+        app.logger.exception(
+            "Failed to refresh access token"
+        )
+        return False
+
+def api_request(
+    method,
+    path,
+    *,
+    json_body=None,
+    params=None,
+    authenticated=True
+):
     headers = {}
+
     if authenticated:
-        headers["Authorization"] = f"Bearer {session['access_token']}"
+        headers["Authorization"] = (
+            f"Bearer {session['access_token']}"
+        )
+
     try:
         result = requests.request(
             method,
-            urljoin(API_BASE_URL, path.lstrip("/")),
+            urljoin(
+                API_BASE_URL,
+                path.lstrip("/")
+            ),
             headers=headers,
             json=json_body,
             params=params,
             timeout=15,
         )
     except requests.RequestException as error:
-        app.logger.exception("MediSlot API request failed: method=%s path=%s", method, path)
-        raise ApiError("MediSlot API is unavailable") from error
+        app.logger.exception(
+            "MediSlot API request failed: method=%s path=%s",
+            method,
+            path,
+        )
+        raise ApiError(
+            "MediSlot API is unavailable"
+        ) from error
+
+    #
+    # Access token expired
+    #
+    if (
+        authenticated
+        and result.status_code == 401
+        and session.get("refresh_token")
+    ):
+
+        app.logger.info(
+            "Received 401. Attempting token refresh."
+        )
+
+        if refresh_access_token():
+
+            headers["Authorization"] = (
+                f"Bearer {session['access_token']}"
+            )
+
+            try:
+                result = requests.request(
+                    method,
+                    urljoin(
+                        API_BASE_URL,
+                        path.lstrip("/")
+                    ),
+                    headers=headers,
+                    json=json_body,
+                    params=params,
+                    timeout=15,
+                )
+            except requests.RequestException as error:
+                app.logger.exception(
+                    "Retry request failed after token refresh"
+                )
+                raise ApiError(
+                    "MediSlot API is unavailable"
+                ) from error
+
     try:
         payload = result.json()
     except ValueError:
         payload = {}
+
     if not result.ok:
         app.logger.warning(
-            "MediSlot API returned an error: method=%s path=%s status=%s",
+            "MediSlot API returned an error: "
+            "method=%s path=%s status=%s",
             method,
             path,
             result.status_code,
         )
-        raise ApiError(payload.get("message", "MediSlot API request failed"), result.status_code)
+
+        raise ApiError(
+            payload.get(
+                "message",
+                "MediSlot API request failed"
+            ),
+            result.status_code,
+        )
+
     app.logger.info(
-        "MediSlot API request completed: method=%s path=%s status=%s",
+        "MediSlot API request completed: "
+        "method=%s path=%s status=%s",
         method,
         path,
         result.status_code,
     )
-    return payload
 
+    return payload
 
 def with_api_errors(handler):
     @wraps(handler)

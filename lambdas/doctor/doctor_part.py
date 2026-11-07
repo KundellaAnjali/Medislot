@@ -913,18 +913,27 @@ def blackouts_route(connection, cursor, doctor_id, method, tail, body):
 
         connection.commit()
 
-        invoke_result = lambda_client.invoke(
-            FunctionName=f"{ENVIRONMENT}-slot-materializer",
-            InvocationType="Event",
-            Payload=json.dumps(
-                {
-                    "start_date": affected_day.isoformat(),
-                    "end_date": last_affected_day.isoformat(),
-                }
-            ),
-        )
-        if invoke_result.get("StatusCode") != 202:
-            raise RuntimeError("Slot regeneration was not accepted")
+        try:
+            invoke_result = lambda_client.invoke(
+                FunctionName=f"{ENVIRONMENT}-slot-materializer",
+                InvocationType="Event",
+                Payload=json.dumps(
+                    {
+                        "start_date": affected_day.isoformat(),
+                        "end_date": last_affected_day.isoformat(),
+                    }
+                ),
+            )
+
+            if invoke_result.get("StatusCode") != 202:
+                logger.warning(
+                    "Slot regeneration was not accepted"
+                )
+
+        except Exception:
+            logger.exception(
+                "Failed to invoke slot-materializer"
+            )
 
         logger.info(
             "Blackout %s removed for doctor %s; slot regeneration queued for %s through %s",
