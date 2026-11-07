@@ -1,9 +1,11 @@
 import json
 import os
 import logging
+from datetime import datetime, timezone
 
 import boto3
 import jwt
+
 from jwt import ExpiredSignatureError
 from jwt import InvalidTokenError
 
@@ -12,6 +14,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 ssm = boto3.client("ssm")
+dynamodb = boto3.resource("dynamodb")
 
 ENVIRONMENT = os.environ["ENVIRONMENT_NAME"]
 
@@ -85,6 +88,31 @@ def lambda_handler(event, context):
             algorithms=["HS256"]
         )
 
+        session_id = decoded_token.get("session_id")
+
+        if not session_id:
+            raise InvalidTokenError("Missing session ID")
+
+        sessions = dynamodb.Table(f"{ENVIRONMENT}-user-sessions")
+        session_response = sessions.get_item(
+            Key={"session_id": session_id},
+            ConsistentRead=True,
+        )
+        active_session = session_response.get("Item")
+        if (
+            not active_session
+            or int(active_session["expires_at"]) <= int(
+                datetime.now(timezone.utc).timestamp()
+            )
+        ):
+            raise InvalidTokenError(
+                "Access token session is no longer active"
+            )
+        logger.info(
+            "Authorization allowed: role=%s request_id=%s",
+            decoded_token["role"],
+            getattr(context, "aws_request_id", "unknown"),
+        )
         return generate_policy(
             decoded_token["sub"],
             "Allow",

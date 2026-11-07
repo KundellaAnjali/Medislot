@@ -26,5 +26,13 @@
   {
     "ParameterKey": "AvailabilityZoneB",
     "ParameterValue": "us-east-1b"
+  },
+  {
+    "ParameterKey": "PortalAccessCidr",
+    "ParameterValue": "0.0.0.0/0"
+  },
+  {
+    "ParameterKey": "PortalSshCidr",
+    "ParameterValue": "0.0.0.0/0"
   }
 ]

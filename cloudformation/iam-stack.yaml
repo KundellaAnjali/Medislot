@@ -87,7 +87,7 @@ Resources:
                   - ssm:GetParameters
                 Resource:
                   - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/medislot/*"
-
+                  
               - Effect: Allow
                 Action:
                   - kms:Decrypt
@@ -103,6 +103,9 @@ Resources:
                   - dynamodb:Scan
                 Resource:
                   - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-user-sessions"
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-user-sessions/index/RefreshTokenHashIndex"
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-user-sessions/index/*"
+
 
               - Effect: Allow
                 Action:
@@ -149,6 +152,126 @@ Resources:
                   - kms:Decrypt
                 Resource: "*"
 
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                Resource:
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-user-sessions"
+
+  DoctorLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${EnvironmentName}-doctor-domain-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: DoctorDomainAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/medislot/${EnvironmentName}/*"
+
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: "*"
+
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${EnvironmentName}-slot-materializer"
+                  
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:Query
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:GetItem
+                  - dynamodb:Scan
+                Resource:
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-slots"
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-slots/index/*"
+
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                Resource:
+                  Fn::Sub:
+                    - "arn:aws:s3:::${AssetsBucket}/doctors/*"
+                    - AssetsBucket:
+                        Fn::ImportValue: !Sub "${EnvironmentName}-AssetsBucket"
+
+  DoctorPortalInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${EnvironmentName}-doctor-portal-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: DownloadDoctorPortal
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                  Fn::Sub:
+                    - "arn:aws:s3:::${AssetsBucket}/doctor-portal/*"
+                    - AssetsBucket:
+                        Fn::ImportValue: !Sub "${EnvironmentName}-AssetsBucket"
+
+  DoctorPortalInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref DoctorPortalInstanceRole
+
+  SlotMaterializerScheduleRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${EnvironmentName}-slot-materializer-schedule-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeSlotMaterializer
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${EnvironmentName}-slot-materializer"
+
 Outputs:
 
   SchemaInitLambdaRoleArn:
@@ -168,3 +291,18 @@ Outputs:
     Value: !GetAtt AuthorizerLambdaRole.Arn
     Export:
       Name: !Sub "${EnvironmentName}-AuthorizerLambdaRoleArn"
+
+  DoctorLambdaRoleArn:
+    Value: !GetAtt DoctorLambdaRole.Arn
+    Export:
+      Name: !Sub "${EnvironmentName}-DoctorLambdaRoleArn"
+
+  DoctorPortalInstanceProfileName:
+    Value: !Ref DoctorPortalInstanceProfile
+    Export:
+      Name: !Sub "${EnvironmentName}-DoctorPortalInstanceProfileName"
+
+  SlotMaterializerScheduleRoleArn:
+    Value: !GetAtt SlotMaterializerScheduleRole.Arn
+    Export:
+      Name: !Sub "${EnvironmentName}-SlotMaterializerScheduleRoleArn"

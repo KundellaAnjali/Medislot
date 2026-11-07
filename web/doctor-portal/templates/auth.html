@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MediSlot | Account access</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body class="auth-page">
+  <main class="auth-shell">
+    <section class="auth-brand-panel">
+      <a class="wordmark" href="/">MediSlot<span>.</span></a>
+      <div class="brand-copy">
+        <p class="eyebrow">Care, coordinated</p>
+        <h1>Better visits<br>begin here.</h1>
+        <p>One secure place for patients and doctors to manage the next step in care.</p>
+      </div>
+      <span class="brand-index">MEDISLOT / 01</span>
+    </section>
+    <section class="auth-panel">
+      <div class="auth-card">
+        <p class="eyebrow" id="auth-kicker">Welcome back</p>
+        <h2 id="auth-heading">Sign in to MediSlot</h2>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% for category, message in messages %}<p class="notice {{ category }}">{{ message }}</p>{% endfor %}
+        {% endwith %}
+        <div class="auth-mode-switch" role="tablist" aria-label="Account action">
+          <button type="button" class="mode-button" data-mode="login" role="tab">Login</button>
+          <button type="button" class="mode-button" data-mode="register" role="tab">Registration</button>
+          <span class="mode-indicator" aria-hidden="true"></span>
+        </div>
+        <form method="post" action="{{ url_for('auth') }}" class="auth-form">
+          <input type="hidden" name="mode" id="auth-mode" value="{{ mode }}">
+          <input type="hidden" name="role" id="auth-role" value="{{ role }}">
+          <fieldset class="role-fieldset">
+            <legend>Continue as</legend>
+            <div class="role-switch">
+              <button type="button" class="role-button" data-role="PATIENT" aria-pressed="false">Patient</button>
+              <button type="button" class="role-button" data-role="DOCTOR" aria-pressed="false">Doctor</button>
+            </div>
+          </fieldset>
+          <div class="register-fields" id="register-fields">
+            <div class="field-pair">
+              <label for="first-name">First name<input id="first-name" name="first_name" autocomplete="given-name"></label>
+              <label for="last-name">Last name<input id="last-name" name="last_name" autocomplete="family-name"></label>
+            </div>
+          </div>
+          <label for="email">Email address<input id="email" name="email" type="email" autocomplete="email" required></label>
+          <label for="password">Password<input id="password" name="password" type="password" minlength="10" pattern="(?=.*[A-Za-z])(?=.*[0-9]).{10,}" autocomplete="current-password" required></label>
+          <div class="confirm-field" id="confirm-field">
+            <label for="confirm-password">Confirm password<input id="confirm-password" name="confirm_password" type="password" minlength="10" autocomplete="new-password"></label>
+          </div>
+          <button class="button primary auth-submit" id="auth-submit" type="submit">Sign in <span aria-hidden="true">&#8594;</span></button>
+        </form>
+        <p class="auth-footnote">Protected with MediSlot account security</p>
+      </div>
+    </section>
+  </main>
+  <script>
+    const modeInput = document.getElementById('auth-mode');
+    const roleInput = document.getElementById('auth-role');
+    const registerFields = document.getElementById('register-fields');
+    const confirmField = document.getElementById('confirm-field');
+    const firstName = document.getElementById('first-name');
+    const lastName = document.getElementById('last-name');
+    const confirmPassword = document.getElementById('confirm-password');
+    const submit = document.getElementById('auth-submit');
+    const heading = document.getElementById('auth-heading');
+    const kicker = document.getElementById('auth-kicker');
+    const updateMode = mode => {
+      modeInput.value = mode;
+      const registering = mode === 'register';
+      registerFields.hidden = !registering;
+      confirmField.hidden = !registering;
+      firstName.required = registering;
+      lastName.required = registering;
+      confirmPassword.required = registering;
+      document.querySelectorAll('.mode-button').forEach(button => {
+        button.setAttribute('aria-selected', String(button.dataset.mode === mode));
+      });
+      document.querySelector('.auth-mode-switch').dataset.mode = mode;
+      heading.textContent = registering ? 'Create your account' : 'Sign in to MediSlot';
+      kicker.textContent = registering ? 'Join MediSlot' : 'Welcome back';
+      submit.innerHTML = registering ? 'Create account <span aria-hidden="true">&#8594;</span>' : 'Sign in <span aria-hidden="true">&#8594;</span>';
+      document.getElementById('password').autocomplete = registering ? 'new-password' : 'current-password';
+    };
+    document.querySelectorAll('.mode-button').forEach(button => {
+      button.addEventListener('click', () => updateMode(button.dataset.mode));
+    });
+    document.querySelectorAll('.role-button').forEach(button => {
+      button.addEventListener('click', () => {
+        roleInput.value = button.dataset.role;
+        document.querySelectorAll('.role-button').forEach(option => {
+          option.setAttribute('aria-pressed', String(option === button));
+        });
+      });
+    });
+    updateMode(modeInput.value);
+    document.querySelector(`.role-button[data-role="${roleInput.value}"]`).click();
+  </script>
+</body>
+</html>

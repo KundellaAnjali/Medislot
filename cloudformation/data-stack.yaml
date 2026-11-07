@@ -105,6 +105,7 @@ Resources:
           Projection:
             ProjectionType: ALL
 
+
       TimeToLiveSpecification:
         AttributeName: expires_at
         Enabled: true
@@ -202,6 +203,8 @@ Resources:
           AttributeType: N
         - AttributeName: doctor_id
           AttributeType: N
+        - AttributeName: start_time
+          AttributeType: S
         - AttributeName: status
           AttributeType: N
 
@@ -214,6 +217,15 @@ Resources:
           KeySchema:
             - AttributeName: doctor_id
               KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+        - IndexName: DoctorStartIndex
+          KeySchema:
+            - AttributeName: doctor_id
+              KeyType: HASH
+            - AttributeName: start_time
+              KeyType: RANGE
           Projection:
             ProjectionType: ALL
 
@@ -259,6 +271,17 @@ Resources:
     Properties:
       BucketName:
         !Sub "${EnvironmentName}-medislot-assets-${AWS::AccountId}"
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders:
+              - Content-Type
+            AllowedMethods:
+              - PUT
+            AllowedOrigins:
+              - "*"
+            ExposedHeaders:
+              - ETag
+            MaxAge: 300
 
   RDSHostParameter:
     Type: AWS::SSM::Parameter
@@ -301,6 +324,14 @@ Resources:
       Name: !Sub "/medislot/${EnvironmentName}/refresh-token-expiry"
       Type: String
       Value: "7"
+
+  BookingWindowDaysParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/booking-window-days"
+      Type: String
+      Value: "30"
+      Description: Rolling slot materialization window in days
 
 Outputs:
 

@@ -143,8 +143,6 @@ CREATE TABLE IF NOT EXISTS consultation_types (
 
     consultation_type_id INT AUTO_INCREMENT PRIMARY KEY,
 
-    doctor_id INT NOT NULL,
-
     consultation_name VARCHAR(255)
         NOT NULL,
 
@@ -152,14 +150,31 @@ CREATE TABLE IF NOT EXISTS consultation_types (
 
     capacity INT NOT NULL,
 
-    fee DECIMAL(10,2) NOT NULL,
-
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        ON UPDATE CURRENT_TIMESTAMP,
+        ON UPDATE CURRENT_TIMESTAMP
+);
 
-    CONSTRAINT fk_consultation_doctor
+CREATE TABLE IF NOT EXISTS doctor_consulting_types (
+
+    consultation_type_id INT NOT NULL,
+
+    doctor_id INT NOT NULL,
+
+    fee DECIMAL(10,2) NOT NULL,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+
+    PRIMARY KEY (consultation_type_id, doctor_id),
+
+    INDEX idx_doctor_consulting_types_doctor (doctor_id),
+
+    CONSTRAINT fk_doctor_consulting_type
+        FOREIGN KEY (consultation_type_id)
+        REFERENCES consultation_types(consultation_type_id),
+
+    CONSTRAINT fk_consulting_type_doctor
         FOREIGN KEY (doctor_id)
         REFERENCES doctors(doctor_id)
 );
@@ -167,6 +182,8 @@ CREATE TABLE IF NOT EXISTS consultation_types (
 CREATE TABLE IF NOT EXISTS availability_patterns (
 
     pattern_id INT AUTO_INCREMENT PRIMARY KEY,
+
+    doctor_id INT NOT NULL,
 
     consultation_type_id INT NOT NULL,
 
@@ -181,13 +198,9 @@ CREATE TABLE IF NOT EXISTS availability_patterns (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         ON UPDATE CURRENT_TIMESTAMP,
 
-    CONSTRAINT fk_pattern_consultation
-        FOREIGN KEY (
-            consultation_type_id
-        )
-        REFERENCES consultation_types(
-            consultation_type_id
-        )
+    CONSTRAINT fk_pattern_doctor_consulting_type
+        FOREIGN KEY (consultation_type_id, doctor_id)
+        REFERENCES doctor_consulting_types(consultation_type_id, doctor_id)
 );
 
 CREATE TABLE IF NOT EXISTS blackout_dates (
@@ -220,7 +233,7 @@ CREATE TABLE IF NOT EXISTS appointments (
     doctor_id INT
         NOT NULL,
 
-    slot_id INT
+    slot_id BIGINT
         NOT NULL,
 
     consultation_type_id INT

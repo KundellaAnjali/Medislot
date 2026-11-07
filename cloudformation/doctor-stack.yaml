@@ -1,0 +1,261 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: MediSlot Doctor Domain Stack
+
+Parameters:
+  EnvironmentName:
+    Type: String
+  WebAppArtifactKey:
+    Type: String
+    Default: doctor-portal/doctor-portal.zip
+  PortalKeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 60
+    MemorySize: 512
+
+Resources:
+
+  DoctorApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-doctor-api"
+      Handler: doctor_part.lambda_handler
+      CodeUri: ../lambdas/doctor/
+      Role:
+        Fn::ImportValue: !Sub "${EnvironmentName}-DoctorLambdaRoleArn"
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots"
+          PHOTO_BUCKET_NAME:
+            Fn::ImportValue: !Sub "${EnvironmentName}-AssetsBucket"
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetAId"
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+  SlotMaterializerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-slot-materializer"
+      Handler: slot_materialization_part.materialize_handler
+      CodeUri: ../lambdas/slots/
+      Timeout: 900
+      MemorySize: 512
+      Role:
+        Fn::ImportValue: !Sub "${EnvironmentName}-DoctorLambdaRoleArn"
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots"
+          PHOTO_BUCKET_NAME:
+            Fn::ImportValue: !Sub "${EnvironmentName}-AssetsBucket"
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetAId"
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+  DoctorApiAuthorizer:
+    Type: AWS::ApiGateway::Authorizer
+    Properties:
+      Name: !Sub "${EnvironmentName}-doctor-jwt-authorizer"
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      Type: TOKEN
+      IdentitySource: method.request.header.Authorization
+      AuthorizerResultTtlInSeconds: 0
+      AuthorizerUri:
+        Fn::Sub:
+          - "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FunctionArn}/invocations"
+          - FunctionArn:
+              Fn::ImportValue: !Sub "${EnvironmentName}-AuthorizerFunctionArn"
+
+# Allows api gateway to invoke the authorizer lambda function
+  AuthorizerInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName:
+        Fn::ImportValue: !Sub "${EnvironmentName}-AuthorizerFunctionArn"
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub:
+          - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*/*/*"
+          - ApiId:
+              Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+
+  DoctorsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ParentId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiRootResourceId"
+      PathPart: doctors
+
+  DoctorMeResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ParentId: !Ref DoctorsResource
+      PathPart: me
+
+  DoctorMeMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ResourceId: !Ref DoctorMeResource
+      HttpMethod: ANY
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref DoctorApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DoctorApiFunction.Arn}/invocations"
+
+  DoctorMeProxyResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ParentId: !Ref DoctorMeResource
+      PathPart: "{proxy+}"
+
+  DoctorMeProxyMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ResourceId: !Ref DoctorMeProxyResource
+      HttpMethod: ANY
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref DoctorApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DoctorApiFunction.Arn}/invocations"
+
+  DoctorApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref DoctorApiFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub:
+          - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*/*/doctors/me*"
+          - ApiId:
+              Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+
+  SlotMaterializerSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Description: Materialize the rolling doctor slot window once per day
+      ScheduleExpression: "cron(0 2 * * ? *)"
+      FlexibleTimeWindow:
+        Mode: "OFF"
+      State: ENABLED
+      Target:
+        Arn: !GetAtt SlotMaterializerFunction.Arn
+        RoleArn:
+          Fn::ImportValue: !Sub "${EnvironmentName}-SlotMaterializerScheduleRoleArn"
+
+  DoctorPortalInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Sub "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}"
+      InstanceType: t3.micro
+      KeyName: !Ref PortalKeyName
+      IamInstanceProfile:
+        Fn::ImportValue: !Sub "${EnvironmentName}-DoctorPortalInstanceProfileName"
+      SubnetId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-PublicSubnetId"
+      SecurityGroupIds:
+        - Fn::ImportValue: !Sub "${EnvironmentName}-DoctorPortalSecurityGroupId"
+      MetadataOptions:
+        HttpTokens: required
+        HttpEndpoint: enabled
+      UserData:
+        Fn::Base64:
+          Fn::Sub:
+            - |
+              #!/bin/bash
+              set -euxo pipefail
+              if command -v dnf >/dev/null 2>&1; then
+                dnf upgrade -y
+                dnf install -y python3 python3-pip nginx unzip mariadb105
+              elif command -v apt-get >/dev/null 2>&1; then
+                apt-get update
+                DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+                DEBIAN_FRONTEND=noninteractive apt-get install -y python3 python3-pip python3-venv nginx unzip mysql-client
+              else
+                echo "Unsupported operating system package manager" >&2
+                exit 1
+              fi
+              mkdir -p /opt/medislot /etc/medislot /var/lib/medislot/sessions
+              aws s3 cp "s3://${AssetsBucket}/${WebAppArtifactKey}" /tmp/doctor-portal.zip
+              mkdir -p /opt/medislot/doctor-portal
+              unzip -o /tmp/doctor-portal.zip -d /opt/medislot/doctor-portal
+              python3 -m venv /opt/medislot/venv
+              /opt/medislot/venv/bin/pip install --no-cache-dir -r /opt/medislot/doctor-portal/requirements.txt
+              openssl rand -hex 32 > /etc/medislot/flask-secret
+              chown -R ec2-user:ec2-user /opt/medislot /var/lib/medislot
+              chown ec2-user:ec2-user /etc/medislot/flask-secret
+              chmod 600 /etc/medislot/flask-secret
+              cat > /etc/systemd/system/medislot-doctor-portal.service <<'EOF'
+              [Unit]
+              Description=MediSlot Doctor Portal
+              After=network-online.target
+              Wants=network-online.target
+
+              [Service]
+              User=ec2-user
+              WorkingDirectory=/opt/medislot/doctor-portal
+              Environment=MEDISLOT_API_BASE_URL=${ApiUrl}
+              ExecStart=/bin/bash -c 'export FLASK_SECRET_KEY="$(cat /etc/medislot/flask-secret)"; exec /opt/medislot/venv/bin/gunicorn --workers 2 --bind 127.0.0.1:8000 app:app'
+              Restart=always
+
+              [Install]
+              WantedBy=multi-user.target
+              EOF
+              cat > /etc/nginx/conf.d/medislot-doctor-portal.conf <<'EOF'
+              server {
+                  listen 80 default_server;
+                  server_name _;
+                  client_max_body_size 10m;
+                  location / {
+                      proxy_pass http://127.0.0.1:8000;
+                      proxy_set_header Host $host;
+                      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                      proxy_set_header X-Forwarded-Proto $scheme;
+                  }
+              }
+              EOF
+              systemctl daemon-reload
+              systemctl enable --now medislot-doctor-portal nginx
+            - AssetsBucket:
+                Fn::ImportValue: !Sub "${EnvironmentName}-AssetsBucket"
+              ApiUrl:
+                Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiUrl"
+              WebAppArtifactKey: !Ref WebAppArtifactKey
+      Tags:
+        - Key: Name
+          Value: !Sub "${EnvironmentName}-medislot-doctor-portal"
+
+Outputs:
+  DoctorApiFunctionName:
+    Value: !Ref DoctorApiFunction
+  SlotMaterializerFunctionName:
+    Value: !Ref SlotMaterializerFunction
+  DoctorPortalUrl:
+    Value: !Sub "http://${DoctorPortalInstance.PublicIp}"

@@ -90,19 +90,13 @@ def validate_email(email):
 
 def validate_password(password):
 
-    if len(password) < 8:
+    if len(password) < 10:
         return False
 
-    if not re.search(r"[A-Z]", password):
-        return False
-
-    if not re.search(r"[a-z]", password):
+    if not re.search(r"[A-Za-z]", password):
         return False
 
     if not re.search(r"\d", password):
-        return False
-
-    if not re.search(r"[!@#$%^&*()_+\-=]", password):
         return False
 
     return True
@@ -122,9 +116,7 @@ def lambda_handler(event, context):
         first_name = body.get("first_name")
         last_name = body.get("last_name")
 
-        logger.info(
-            f"Registration started for email: {email}"
-        )
+        logger.info("Registration started")
 
         # Email Validation
         if not email:
@@ -171,9 +163,7 @@ def lambda_handler(event, context):
                     {
                         "message": (
                             "Password must contain at least "
-                            "8 characters, one uppercase letter, "
-                            "one lowercase letter, one number, "
-                            "and one special character."
+                            "10 characters, one letter, and one number."
                         )
                     }
                 ),
