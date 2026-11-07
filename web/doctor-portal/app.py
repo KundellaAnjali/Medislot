@@ -280,12 +280,15 @@ def with_api_errors(handler):
                 str(error)
             )
 
-            return (
-                f"API Error ({error.status_code}): {str(error)}",
-                error.status_code,
+            flash(str(error), "error")
+
+            return redirect(
+                request.referrer
+                or url_for("doctor_dashboard")
             )
 
     return wrapped
+
 
 
 @app.get("/")
