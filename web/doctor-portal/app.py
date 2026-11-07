@@ -293,11 +293,7 @@ def with_api_errors(handler):
 
 @app.get("/")
 def home():
-    if session.get("role") == "DOCTOR":
-        return redirect(url_for("doctor_dashboard"))
-    if session.get("role") == "PATIENT":
-        return redirect(url_for("patient_dashboard"))
-    return redirect(url_for("auth"))
+    return redirect(url_for("auth", mode="register"))
 
 @app.get("/debug-session")
 def debug_session():
@@ -447,7 +443,9 @@ def old_doctor_dashboard():
 @patient_required
 def patient_dashboard():
     try:
-        profile = api_request("GET", "/patients/me").get("profile")
+        response = api_request("GET", "/patients/me")
+        print("FULL RESPONSE =", response)
+        profile = response.get("profile")
     except ApiError as error:
         if error.status_code == 404:
             profile = None
@@ -476,21 +474,6 @@ def patient_profile_payload():
     }
 
 
-@app.post("/patient/profile/register")
-@patient_required
-def register_patient_profile():
-    try:
-        api_request(
-            "POST",
-            "/patients/register",
-            json_body=patient_profile_payload(),
-        )
-    except ApiError as error:
-        return patient_api_error(error)
-    flash("Patient profile saved.", "success")
-    return redirect(url_for("patient_dashboard"))
-
-
 @app.post("/patient/profile")
 @patient_required
 def update_patient_profile():
@@ -502,7 +485,7 @@ def update_patient_profile():
         )
     except ApiError as error:
         return patient_api_error(error)
-    flash("Patient profile updated.", "success")
+    flash("Patient profile saved.", "success")
     return redirect(url_for("patient_dashboard"))
 
 

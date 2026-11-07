@@ -32,7 +32,7 @@
           <span class="status-pill pending"><span></span>Needs details</span>
         {% endif %}
       </div>
-      <form method="post" action="{{ url_for('update_patient_profile') if profile and profile.get('profile_filled') else url_for('register_patient_profile') }}" class="patient-profile-form">
+      <form method="post" action="{{ url_for('update_patient_profile') }}" class="patient-profile-form">
         <label for="patient-first-name">First name
           <input id="patient-first-name" name="first_name" autocomplete="given-name" maxlength="100" required value="{{ profile.get('first_name', '') if profile else '' }}">
         </label>

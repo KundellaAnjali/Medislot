@@ -68,14 +68,6 @@ Resources:
         Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiRootResourceId"
       PathPart: patients
 
-  PatientRegisterResource:
-    Type: AWS::ApiGateway::Resource
-    Properties:
-      RestApiId:
-        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
-      ParentId: !Ref PatientsResource
-      PathPart: register
-
   PatientMeResource:
     Type: AWS::ApiGateway::Resource
     Properties:
@@ -83,20 +75,6 @@ Resources:
         Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
       ParentId: !Ref PatientsResource
       PathPart: me
-
-  PatientRegisterMethod:
-    Type: AWS::ApiGateway::Method
-    Properties:
-      RestApiId:
-        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
-      ResourceId: !Ref PatientRegisterResource
-      HttpMethod: POST
-      AuthorizationType: CUSTOM
-      AuthorizerId: !Ref PatientApiAuthorizer
-      Integration:
-        Type: AWS_PROXY
-        IntegrationHttpMethod: POST
-        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${PatientProfileFunction.Arn}/invocations"
 
   PatientMeGetMethod:
     Type: AWS::ApiGateway::Method

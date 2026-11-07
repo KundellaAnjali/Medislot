@@ -160,11 +160,9 @@ def lambda_handler(event, context):
 
     method = event.get("httpMethod", "").upper()
     path = event.get("path", "").rstrip("/")
-    if path == "/patients/register" and method == "POST":
-        operation = "register"
-    elif path == "/patients/me" and method in {"GET", "PUT", "DELETE"}:
+    if path == "/patients/me" and method in {"GET", "PUT", "DELETE"}:
         operation = method.lower()
-    elif path not in {"/patients/register", "/patients/me"}:
+    elif path != "/patients/me":
         return response(404, {"message": "Route not found."})
     else:
         return response(405, {"message": "Method not allowed."})
@@ -198,46 +196,23 @@ def lambda_handler(event, context):
                     connection.rollback()
                     return identity_error
 
-                if operation == "register":
-                    profile = validate_profile(body, require_all=True)
-                    cursor.execute(
-                        """
-                        INSERT INTO patients
-                            (user_id, first_name, last_name, phone_number, profile_filled)
-                        VALUES (%s, %s, %s, %s, TRUE)
-                        ON DUPLICATE KEY UPDATE
-                            first_name = VALUES(first_name),
-                            last_name = VALUES(last_name),
-                            phone_number = VALUES(phone_number),
-                            profile_filled = TRUE
-                        """,
-                        (
-                            user_id,
-                            profile["first_name"],
-                            profile["last_name"],
-                            profile["phone_number"],
-                        ),
-                    )
-                    cursor.execute(
-                        "UPDATE users SET email = %s WHERE user_id = %s",
-                        (profile["email"], user_id),
-                    )
-                    connection.commit()
-                    saved_profile = get_profile(cursor, user_id)
-                    connection.rollback()
-                    logger.info(
-                        "Patient profile registered: user_id=%s request_id=%s",
-                        user_id,
-                        getattr(context, "aws_request_id", "unknown"),
-                    )
-                    return response(201, {"profile": saved_profile})
-
                 if not current:
                     connection.rollback()
                     return response(404, {"message": "Patient profile not found."})
 
                 if operation == "put":
                     updates = validate_profile(body, require_all=False)
+                    updated_profile = {
+                        "first_name": current["first_name"],
+                        "last_name": current["last_name"],
+                        "phone_number": current["phone_number"],
+                        "email": current["email"],
+                    }
+                    updated_profile.update(updates)
+                    profile_filled = all(
+                        updated_profile[field]
+                        for field in PROFILE_FIELDS
+                    )
                     if "email" in updates:
                         cursor.execute(
                             "UPDATE users SET email = %s WHERE user_id = %s",
@@ -253,8 +228,14 @@ def lambda_handler(event, context):
                             f"{field} = %s" for field in patient_updates
                         )
                         cursor.execute(
-                            f"UPDATE patients SET {assignments} WHERE user_id = %s",
-                            (*patient_updates.values(), user_id),
+                            f"UPDATE patients SET {assignments}, profile_filled = %s "
+                            "WHERE user_id = %s",
+                            (*patient_updates.values(), profile_filled, user_id),
+                        )
+                    else:
+                        cursor.execute(
+                            "UPDATE patients SET profile_filled = %s WHERE user_id = %s",
+                            (profile_filled, user_id),
                         )
                     connection.commit()
                     saved_profile = get_profile(cursor, user_id)
