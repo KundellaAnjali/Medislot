@@ -228,18 +228,38 @@ def with_api_errors(handler):
     def wrapped(*args, **kwargs):
         try:
             return handler(*args, **kwargs)
+
         except ApiError as error:
             app.logger.warning(
                 "Portal action failed: endpoint=%s status=%s",
                 request.endpoint,
                 error.status_code,
             )
+
             if error.status_code == 401:
                 session.clear()
-                flash("Your session expired. Please sign in again.", "error")
-                return redirect(url_for("auth", mode="login"))
-            flash(str(error), "error")
-            return redirect(request.referrer or url_for("doctor_dashboard"))
+                flash(
+                    "Your session expired. Please sign in again.",
+                    "error"
+                )
+                return redirect(
+                    url_for(
+                        "auth",
+                        mode="login"
+                    )
+                )
+
+            app.logger.error(
+                "API FAILURE endpoint=%s status=%s error=%s",
+                request.endpoint,
+                error.status_code,
+                str(error)
+            )
+
+            return (
+                f"API Error ({error.status_code}): {str(error)}",
+                error.status_code,
+            )
 
     return wrapped
 
