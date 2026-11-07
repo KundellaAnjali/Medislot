@@ -326,7 +326,7 @@ jobs:
             --query "Exports[?Name=='${ENVIRONMENT}-AssetsBucket'].Value | [0]" \
             --output text)
 
-          for attempt in $(seq 1 30); do
+          for attempt in $(seq 1 60); do
             PING_STATUS=$(aws ssm describe-instance-information \
               --filters "Key=InstanceIds,Values=${INSTANCE_ID}" \
               --query "InstanceInformationList[0].PingStatus" \
@@ -339,7 +339,19 @@ jobs:
           done
 
           if [ "$PING_STATUS" != "Online" ]; then
-            echo "Doctor portal instance did not become available in Systems Manager." >&2
+            echo "Doctor portal instance $INSTANCE_ID did not become available in Systems Manager." >&2
+            echo "Current EC2 instance state and profile:" >&2
+            aws ec2 describe-instances \
+              --instance-ids "$INSTANCE_ID" \
+              --query "Reservations[0].Instances[0].{State:State.Name,Subnet:SubnetId,SecurityGroups:SecurityGroups[*].GroupId,IamProfile:IamInstanceProfile.Arn}" \
+              --output table \
+              --region ${{ secrets.AWS_REGION }} >&2
+            echo "Current Systems Manager registration:" >&2
+            aws ssm describe-instance-information \
+              --filters "Key=InstanceIds,Values=${INSTANCE_ID}" \
+              --output json \
+              --region ${{ secrets.AWS_REGION }} >&2
+            echo "Check the portal role, SSM agent status, and HTTPS access to the SSM VPC endpoint." >&2
             exit 1
           fi
 
