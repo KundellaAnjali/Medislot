@@ -149,7 +149,7 @@ def api_request(
             path,
         )
         raise ApiError(
-            "MediSlot API is unavailable"
+            f"MediSlot API connection failed ({type(error).__name__}: {error})"
         ) from error
 
     #
@@ -188,7 +188,8 @@ def api_request(
                     "Retry request failed after token refresh"
                 )
                 raise ApiError(
-                    "MediSlot API is unavailable"
+                    f"MediSlot API connection failed "
+                    f"({type(error).__name__}: {error})"
                 ) from error
 
     try:
