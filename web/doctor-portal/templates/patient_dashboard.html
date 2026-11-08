@@ -126,6 +126,7 @@
                 <p><strong>Hospital:</strong> {{ doctor.hospital or 'Not listed' }}</p>
                 <p><strong>Specialization:</strong> {{ doctor.specialization or 'Not listed' }}</p>
                 <p><strong>City:</strong> {{ doctor.city or 'Not listed' }}</p>
+                <a class="button secondary doctor-profile-link" href="{{ url_for('public_doctor_profile', doctor_id=doctor.doctor_id) }}">View profile</a>
               </article>
             {% endfor %}
           </div>

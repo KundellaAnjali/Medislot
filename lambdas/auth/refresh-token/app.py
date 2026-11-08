@@ -230,7 +230,6 @@ def lambda_handler(event, context):
             "sub": str(user["user_id"]),
             "email": user["email"],
             "role": user["role"],
-            "session_id": session["session_id"],
             "jti": access_token_jti,
             "iat": datetime.now(
                 timezone.utc
@@ -246,6 +245,14 @@ def lambda_handler(event, context):
             payload,
             jwt_secret,
             algorithm="HS256"
+        )
+
+        table.update_item(
+            Key={"session_id": session["session_id"]},
+            UpdateExpression="SET jti = :jti",
+            ExpressionAttributeValues={
+                ":jti": access_token_jti
+            },
         )
 
         logger.info(

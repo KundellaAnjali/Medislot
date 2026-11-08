@@ -307,8 +307,21 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
 .doctor-search-card h3 { font-size: 14px; }
 .doctor-search-card p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
 .doctor-search-card p strong { color: var(--ink); }
+.doctor-profile-link { margin-top: 14px; }
 .doctor-search-pagination { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 18px; color: var(--muted); font-size: 12px; }
 .doctor-search-empty { padding: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; text-align: center; }
+.public-doctor-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.public-doctor-section { margin-top: 24px; padding: 25px; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
+.public-doctor-section h2 { margin-bottom: 18px; font-size: 18px; }
+.public-doctor-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin: 0; }
+.public-doctor-details > div { min-width: 0; }
+.public-doctor-details dt { margin-bottom: 5px; color: var(--muted); font-size: 11px; }
+.public-doctor-details dd { margin: 0; overflow-wrap: anywhere; font-size: 13px; font-weight: 600; }
+.public-consultations { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.public-consultation-card { padding: 16px; border: 1px solid var(--line); border-radius: 4px; }
+.public-consultation-card h3 { margin-bottom: 10px; }
+.public-consultation-card p, .public-doctor-empty { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+.public-consultation-card p strong { color: var(--ink); }
 
 @media (max-width: 900px) {
   .doctor-app { grid-template-columns: 205px minmax(0, 1fr); }
@@ -357,4 +370,6 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
   .patient-delete-form { align-items: flex-start; flex-direction: column; }
   .doctor-search { padding: 18px 14px; }
   .doctor-search-form { grid-template-columns: 1fr; gap: 12px; }
+  .public-doctor-details { grid-template-columns: 1fr; gap: 14px; }
+  .public-doctor-section { padding: 18px 14px; }
 }

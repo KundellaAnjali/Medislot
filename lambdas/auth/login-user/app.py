@@ -80,7 +80,7 @@ def get_connection():
     )
 
 
-def create_access_token(user, session_id):
+def create_access_token(user, token_jti):
 
     jwt_secret = get_parameter(
         f"/medislot/{ENVIRONMENT}/jwt-secret",
@@ -93,13 +93,10 @@ def create_access_token(user, session_id):
         )
     )
 
-    token_jti = str(uuid.uuid4())
-
     payload = {
         "sub": str(user["user_id"]),
         "email": user["email"],
         "role": user["role"],
-        "session_id": session_id,
         "jti": token_jti,
         "iat": datetime.now(timezone.utc),
         "exp": datetime.now(timezone.utc)
@@ -125,6 +122,7 @@ def save_session(
     role,
     refresh_token,
     session_id,
+    token_jti,
 ):
     refresh_token_hash = hashlib.sha256(
         refresh_token.encode("utf-8")
@@ -152,6 +150,7 @@ def save_session(
             "session_id": session_id,
             "user_id": user_id,
             "role": role,
+            "jti": token_jti,
             "refresh_token_hash": refresh_token_hash,
             "expires_at": expiry
         }
@@ -265,10 +264,11 @@ def lambda_handler(event, context):
             connection.close()
 
         session_id = str(uuid.uuid4())
+        token_jti = str(uuid.uuid4())
 
         access_token = create_access_token(
             user,
-            session_id
+            token_jti
         )
 
         refresh_token = create_refresh_token()
@@ -278,6 +278,7 @@ def lambda_handler(event, context):
             user["role"],
             refresh_token,
             session_id,
+            token_jti,
         )
 
         publish_metric(
