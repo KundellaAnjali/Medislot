@@ -109,12 +109,34 @@ Resources:
       ParentId: !Ref DoctorsResource
       PathPart: me
 
+  DoctorMeAvailabilityResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ParentId: !Ref DoctorMeResource
+      PathPart: availability
+
   DoctorMeMethod:
     Type: AWS::ApiGateway::Method
     Properties:
       RestApiId:
         Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
       ResourceId: !Ref DoctorMeResource
+      HttpMethod: ANY
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref DoctorApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DoctorApiFunction.Arn}/invocations"
+
+  DoctorMeAvailabilityMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ResourceId: !Ref DoctorMeAvailabilityResource
       HttpMethod: ANY
       AuthorizationType: CUSTOM
       AuthorizerId: !Ref DoctorApiAuthorizer
