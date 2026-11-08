@@ -16,7 +16,102 @@
   <main class="patient-content">
     <p class="eyebrow">Patient portal</p>
     <h1>Your care, in one place.</h1>
-    <p>Your patient account is signed in. Patient appointments and discovery views will appear here.</p>
+    <p>Manage your profile details and keep your account information up to date.</p>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}<p class="notice {{ category }}">{{ message }}</p>{% endfor %}
+    {% endwith %}
+    <section class="patient-profile">
+      <div class="patient-profile-heading">
+        <div>
+          <p class="eyebrow">Your account</p>
+          <h2>Patient profile</h2>
+        </div>
+        {% if profile and profile.get('profile_filled') %}
+          <span class="status-pill"><span></span>Complete</span>
+        {% else %}
+          <span class="status-pill pending"><span></span>Needs details</span>
+        {% endif %}
+      </div>
+      {% if profile and profile.get('profile_filled') %}
+        <button class="button secondary" id="edit-patient-profile" type="button">Edit profile</button>
+      {% endif %}
+      <form method="post" action="{{ url_for('update_patient_profile') }}" class="patient-profile-form" id="patient-profile-form">
+        <label for="patient-first-name">First name
+          <input data-editable id="patient-first-name" name="first_name" autocomplete="given-name" maxlength="100" required value="{{ profile.get('first_name') or '' if profile else '' }}" {% if profile and profile.get('profile_filled') %}readonly{% endif %}>
+        </label>
+        <label for="patient-last-name">Last name
+          <input data-editable id="patient-last-name" name="last_name" autocomplete="family-name" maxlength="100" required value="{{ profile.get('last_name') or '' if profile else '' }}" {% if profile and profile.get('profile_filled') %}readonly{% endif %}>
+        </label>
+        <label for="patient-phone">Phone number
+          <input data-editable id="patient-phone" name="phone_number" type="tel" autocomplete="tel" pattern="\+?[0-9() .-]{7,20}" required value="{{ profile.get('phone_number') or '' if profile else '' }}" {% if profile and profile.get('profile_filled') %}readonly{% endif %}>
+        </label>
+        <label for="patient-email">Email address
+          <input id="patient-email" name="email" type="email" autocomplete="email" value="{{ profile.get('email') or '' if profile else '' }}" readonly>
+        </label>
+        <label for="patient-date-of-birth">Date of birth
+          <input data-editable id="patient-date-of-birth" name="date_of_birth" type="date" value="{{ profile.get('date_of_birth') or '' if profile else '' }}" {% if profile and profile.get('profile_filled') %}readonly{% endif %}>
+        </label>
+        <label for="patient-gender">Gender
+          <select data-editable id="patient-gender" name="gender" {% if profile and profile.get('profile_filled') %}disabled{% endif %}>
+            <option value="">Select gender</option>
+            {% set gender = profile.get('gender') if profile else '' %}
+            {% if gender and gender not in ['Female', 'Male', 'Non-binary', 'Other', 'Prefer not to say'] %}
+              <option value="{{ gender }}" selected>{{ gender }}</option>
+            {% endif %}
+            {% for option in ['Female', 'Male', 'Non-binary', 'Other', 'Prefer not to say'] %}
+              <option value="{{ option }}" {% if gender == option %}selected{% endif %}>{{ option }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label for="patient-emergency-contact">Emergency contact phone
+          <input data-editable id="patient-emergency-contact" name="emergency_contact" type="tel" autocomplete="tel" pattern="\+?[0-9() .-]{7,20}" value="{{ profile.get('emergency_contact') or '' if profile else '' }}" {% if profile and profile.get('profile_filled') %}readonly{% endif %}>
+        </label>
+        <label for="patient-emergency-contact-name">Emergency contact name
+          <input data-editable id="patient-emergency-contact-name" name="emergency_contact_name" maxlength="200" value="{{ profile.get('emergency_contact_name') or '' if profile else '' }}" {% if profile and profile.get('profile_filled') %}readonly{% endif %}>
+        </label>
+        <p class="patient-email-note">Email is tied to your account and cannot be changed here.</p>
+        <div class="patient-profile-actions" id="patient-profile-actions" {% if profile and profile.get('profile_filled') %}hidden{% endif %}>
+          <button class="button primary" type="submit">Save profile</button>
+          <button class="button secondary" id="cancel-patient-profile" type="button" {% if not profile or not profile.get('profile_filled') %}hidden{% endif %}>Cancel</button>
+        </div>
+      </form>
+      {% if profile %}
+        <form method="post" action="{{ url_for('delete_patient_profile') }}" class="patient-delete-form" onsubmit="return confirm('Clear your patient profile details?')">
+          <button class="button secondary danger-text" type="submit">Clear profile</button>
+          <span>This clears your profile details but keeps your account active.</span>
+        </form>
+      {% endif %}
+    </section>
   </main>
+  <script>
+    const profileForm = document.getElementById('patient-profile-form');
+    const editProfile = document.getElementById('edit-patient-profile');
+    const profileActions = document.getElementById('patient-profile-actions');
+    const cancelProfile = document.getElementById('cancel-patient-profile');
+    const editableFields = profileForm.querySelectorAll('[data-editable]');
+
+    if (editProfile) {
+      editProfile.addEventListener('click', () => {
+        editableFields.forEach(field => {
+          if (field.tagName === 'SELECT') field.disabled = false;
+          else field.readOnly = false;
+        });
+        editProfile.hidden = true;
+        profileActions.hidden = false;
+        cancelProfile.hidden = false;
+      });
+
+      cancelProfile.addEventListener('click', () => {
+        profileForm.reset();
+        editableFields.forEach(field => {
+          if (field.tagName === 'SELECT') field.disabled = true;
+          else field.readOnly = true;
+        });
+        profileActions.hidden = true;
+        cancelProfile.hidden = true;
+        editProfile.hidden = false;
+      });
+    }
+  </script>
 </body>
 </html>

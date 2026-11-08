@@ -166,6 +166,10 @@ Resources:
           FromPort: 443
           ToPort: 443
           SourceSecurityGroupId: !Ref LambdaSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          SourceSecurityGroupId: !Ref DoctorPortalSecurityGroup
 
   DoctorPortalSecurityGroup:
     Type: AWS::EC2::SecurityGroup
