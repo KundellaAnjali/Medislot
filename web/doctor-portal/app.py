@@ -507,6 +507,40 @@ def patient_api_error(error):
     return redirect(url_for("patient_dashboard"))
 
 
+@app.get("/patient/doctors")
+@patient_required
+def patient_doctor_search():
+    filters = {
+        field: request.args.get(field, "").strip()
+        for field in ("name", "hospital", "specialization", "city")
+    }
+    try:
+        page = request.args.get("page", "1")
+        limit = request.args.get("limit", "10")
+        results = api_request(
+            "GET",
+            "/doctors/search",
+            params={**filters, "page": page, "limit": limit},
+        )
+    except ApiError as error:
+        if error.status_code in {401, 403}:
+            return patient_api_error(error)
+        flash(str(error), "error")
+        results = {
+            "doctors": [],
+            "pagination": {"page": 1, "limit": 10, "total": 0, "total_pages": 0},
+        }
+
+    profile_response = g.authorized_profile_response
+    profile = profile_response.get("profile") if profile_response else None
+    return render_template(
+        "patient_dashboard.html",
+        profile=profile,
+        doctor_search=results,
+        doctor_search_filters=filters,
+    )
+
+
 def patient_profile_payload():
     return {
         field: request.form.get(field, "").strip()
