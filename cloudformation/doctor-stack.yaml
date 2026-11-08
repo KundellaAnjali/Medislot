@@ -253,6 +253,10 @@ Resources:
           Value: !Sub "${EnvironmentName}-medislot-doctor-portal"
 
 Outputs:
+  DoctorsResourceId:
+    Value: !Ref DoctorsResource
+    Export:
+      Name: !Sub "${EnvironmentName}-DoctorsResourceId"
   DoctorApiFunctionName:
     Value: !Ref DoctorApiFunction
   SlotMaterializerFunctionName:

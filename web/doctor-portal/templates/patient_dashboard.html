@@ -82,6 +82,69 @@
         </form>
       {% endif %}
     </section>
+
+    <section class="doctor-search">
+      <div class="patient-profile-heading">
+        <div>
+          <p class="eyebrow">Find care</p>
+          <h2>Search doctors</h2>
+        </div>
+      </div>
+      <form method="get" action="{{ url_for('patient_doctor_search') }}" class="doctor-search-form">
+        <label for="doctor-name">Doctor name
+          <input id="doctor-name" name="name" value="{{ doctor_search_filters.get('name', '') if doctor_search_filters else '' }}" maxlength="100">
+        </label>
+        <label for="doctor-hospital">Hospital
+          <input id="doctor-hospital" name="hospital" value="{{ doctor_search_filters.get('hospital', '') if doctor_search_filters else '' }}" maxlength="100">
+        </label>
+        <label for="doctor-specialization">Specialization
+          <input id="doctor-specialization" name="specialization" value="{{ doctor_search_filters.get('specialization', '') if doctor_search_filters else '' }}" maxlength="100">
+        </label>
+        <label for="doctor-city">City
+          <input id="doctor-city" name="city" value="{{ doctor_search_filters.get('city', '') if doctor_search_filters else '' }}" maxlength="100">
+        </label>
+        <input type="hidden" name="limit" value="{{ doctor_search.pagination.limit if doctor_search else 10 }}">
+        <button class="button primary" type="submit">Search doctors</button>
+      </form>
+
+      {% if doctor_search %}
+        <p class="doctor-search-count">
+          {{ doctor_search.pagination.total }} doctor{{ '' if doctor_search.pagination.total == 1 else 's' }} found
+        </p>
+        {% if doctor_search.doctors %}
+          <div class="doctor-search-results">
+            {% for doctor in doctor_search.doctors %}
+              <article class="doctor-search-card">
+                <div class="doctor-search-card-heading">
+                  <h3>{{ doctor.name or 'Name not provided' }}</h3>
+                  {% if doctor.verification_status %}
+                    <span class="status-pill">Verified</span>
+                  {% else %}
+                    <span class="status-pill pending">Not verified</span>
+                  {% endif %}
+                </div>
+                <p><strong>Hospital:</strong> {{ doctor.hospital or 'Not listed' }}</p>
+                <p><strong>Specialization:</strong> {{ doctor.specialization or 'Not listed' }}</p>
+                <p><strong>City:</strong> {{ doctor.city or 'Not listed' }}</p>
+              </article>
+            {% endfor %}
+          </div>
+          {% if doctor_search.pagination.total_pages > 1 %}
+            <nav class="doctor-search-pagination" aria-label="Doctor search pages">
+              {% if doctor_search.pagination.page > 1 %}
+                <a class="button secondary" href="{{ url_for('patient_doctor_search', name=doctor_search_filters.name, hospital=doctor_search_filters.hospital, specialization=doctor_search_filters.specialization, city=doctor_search_filters.city, page=doctor_search.pagination.page - 1, limit=doctor_search.pagination.limit) }}">Previous</a>
+              {% endif %}
+              <span>Page {{ doctor_search.pagination.page }} of {{ doctor_search.pagination.total_pages }}</span>
+              {% if doctor_search.pagination.page < doctor_search.pagination.total_pages %}
+                <a class="button secondary" href="{{ url_for('patient_doctor_search', name=doctor_search_filters.name, hospital=doctor_search_filters.hospital, specialization=doctor_search_filters.specialization, city=doctor_search_filters.city, page=doctor_search.pagination.page + 1, limit=doctor_search.pagination.limit) }}">Next</a>
+              {% endif %}
+            </nav>
+          {% endif %}
+        {% else %}
+          <p class="doctor-search-empty">No doctors matched those filters.</p>
+        {% endif %}
+      {% endif %}
+    </section>
   </main>
   <script>
     const profileForm = document.getElementById('patient-profile-form');

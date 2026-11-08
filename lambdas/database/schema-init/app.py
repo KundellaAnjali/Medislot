@@ -85,6 +85,27 @@ def get_connection():
     )
 
 
+def ensure_index(cursor, table_name, index_name, columns):
+    cursor.execute(
+        """
+        SELECT COUNT(*)
+        FROM information_schema.statistics
+        WHERE table_schema = DATABASE()
+          AND table_name = %s
+          AND index_name = %s
+        """,
+        (table_name, index_name),
+    )
+    if cursor.fetchone()[0]:
+        return False
+
+    column_list = ", ".join(f"`{column}`" for column in columns)
+    cursor.execute(
+        f"ALTER TABLE `{table_name}` ADD INDEX `{index_name}` ({column_list})"
+    )
+    return True
+
+
 def lambda_handler(event, context):
     started_at = perf_counter()
 
@@ -121,6 +142,27 @@ def lambda_handler(event, context):
 
                     cursor.execute(statement)
 
+                    executed_statements += 1
+
+            doctor_search_indexes = (
+                (
+                    "hospitals",
+                    "idx_hospitals_city",
+                    ("city",),
+                ),
+                (
+                    "doctors",
+                    "idx_doctors_hospital_id",
+                    ("hospital_id",),
+                ),
+                (
+                    "doctor_specializations",
+                    "idx_doctor_specializations_specialization_doctor",
+                    ("specialization_id", "doctor_id"),
+                ),
+            )
+            for table_name, index_name, columns in doctor_search_indexes:
+                if ensure_index(cursor, table_name, index_name, columns):
                     executed_statements += 1
 
             cursor.execute("SHOW COLUMNS FROM doctors LIKE 'timezone_name'")

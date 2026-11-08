@@ -34,7 +34,9 @@ CREATE TABLE IF NOT EXISTS hospitals (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        ON UPDATE CURRENT_TIMESTAMP
+        ON UPDATE CURRENT_TIMESTAMP,
+
+    INDEX idx_hospitals_city (city)
 );
 
 CREATE TABLE IF NOT EXISTS doctors (
@@ -70,6 +72,8 @@ CREATE TABLE IF NOT EXISTS doctors (
     CONSTRAINT fk_doctor_user
         FOREIGN KEY (user_id)
         REFERENCES users(user_id),
+
+    INDEX idx_doctors_hospital_id (hospital_id),
 
     CONSTRAINT fk_doctor_hospital
         FOREIGN KEY (hospital_id)
@@ -126,6 +130,11 @@ CREATE TABLE IF NOT EXISTS doctor_specializations (
     PRIMARY KEY (
         doctor_id,
         specialization_id
+    ),
+
+    INDEX idx_doctor_specializations_specialization_doctor (
+        specialization_id,
+        doctor_id
     ),
 
     CONSTRAINT fk_ds_doctor

@@ -295,6 +295,20 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
 .patient-email-note { grid-column: 1 / -1; margin: -8px 0 0; color: var(--muted); font-size: 11px; }
 .patient-delete-form { display: flex; align-items: center; gap: 12px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
 .patient-delete-form span { color: var(--muted); font-size: 11px; }
+.doctor-search { margin-top: 24px; padding: 25px; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
+.doctor-search h2 { font-size: 18px; }
+.doctor-search-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.doctor-search-form label { display: grid; gap: 7px; color: var(--muted); font-size: 12px; }
+.doctor-search-form > .button { justify-self: start; }
+.doctor-search-count { margin: 20px 0 12px; color: var(--muted); font-size: 12px; }
+.doctor-search-results { display: grid; gap: 10px; }
+.doctor-search-card { padding: 16px; border: 1px solid var(--line); border-radius: 4px; }
+.doctor-search-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.doctor-search-card h3 { font-size: 14px; }
+.doctor-search-card p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+.doctor-search-card p strong { color: var(--ink); }
+.doctor-search-pagination { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 18px; color: var(--muted); font-size: 12px; }
+.doctor-search-empty { padding: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; text-align: center; }
 
 @media (max-width: 900px) {
   .doctor-app { grid-template-columns: 205px minmax(0, 1fr); }
@@ -341,4 +355,6 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
   .patient-profile { padding: 18px 14px; }
   .patient-profile-form { grid-template-columns: 1fr; gap: 12px; }
   .patient-delete-form { align-items: flex-start; flex-direction: column; }
+  .doctor-search { padding: 18px 14px; }
+  .doctor-search-form { grid-template-columns: 1fr; gap: 12px; }
 }
