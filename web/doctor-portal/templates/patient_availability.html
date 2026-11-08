@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MediSlot | Doctor availability</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body class="patient-page">
+  <header class="patient-topbar">
+    <a class="wordmark" href="{{ url_for('patient_dashboard') }}">MediSlot<span>.</span></a>
+    <form method="post" action="{{ url_for('logout') }}">
+      <button class="button secondary" type="submit">Logout</button>
+    </form>
+  </header>
+  <main class="patient-content">
+    <a class="availability-back-link" href="{{ url_for('patient_dashboard') }}">Back to dashboard</a>
+    <p class="eyebrow">Find care</p>
+    <h1>Doctor availability</h1>
+    <p>Choose a date range to see open appointment slots with Doctor {{ doctor_id }}.</p>
+
+    <section class="patient-availability">
+      <form method="get" class="availability-form">
+        <label for="availability-start-date">Start date
+          <input id="availability-start-date" name="start_date" type="date" value="{{ start_date }}" required>
+        </label>
+        <label for="availability-end-date">End date
+          <input id="availability-end-date" name="end_date" type="date" value="{{ end_date }}" required>
+        </label>
+        <button class="button primary" type="submit">Show availability</button>
+      </form>
+
+      {% if error_message %}
+        <p class="notice error" role="alert">{{ error_message }}</p>
+      {% elif availability is not none %}
+        <p class="doctor-search-count">
+          {{ availability|length }} slot{{ '' if availability|length == 1 else 's' }} available
+        </p>
+        {% if availability %}
+          <div class="availability-results">
+            {% for slot in availability %}
+              <article class="availability-slot">
+                <h2>{{ slot.consultation_type or 'Consultation' }}</h2>
+                <p><strong>Slot:</strong> {{ slot.slot_id }}</p>
+                <p><strong>Starts:</strong> {{ slot.start_time }}</p>
+                <p><strong>Ends:</strong> {{ slot.end_time }}</p>
+                <p><strong>Seats:</strong> {{ slot.available_seats }} available of {{ slot.capacity }}</p>
+              </article>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="doctor-search-empty">No available slots were found in this date range.</p>
+        {% endif %}
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>

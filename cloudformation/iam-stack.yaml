@@ -250,6 +250,15 @@ Resources:
                 Action:
                   - kms:Decrypt
                 Resource: "*"
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                Resource:
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-slots/index/DoctorStartIndex"
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: "*"
 
   DoctorPortalInstanceRole:
     Type: AWS::IAM::Role
