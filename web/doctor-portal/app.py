@@ -765,7 +765,9 @@ def save_availability():
             )
     api_request("PUT", "/doctors/me/availability", json_body={"patterns": patterns})
     flash("Weekly availability saved.", "success")
-    return redirect(url_for("doctor_dashboard"))
+    return redirect(
+        url_for("doctor_dashboard", view="availability-view")
+    )
 
 
 @app.post("/doctor/blackouts")

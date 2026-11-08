@@ -159,7 +159,7 @@
     const activeConsultations = {{ consultations|selectattr('is_active')|list|tojson }};
     const views = [...document.querySelectorAll('[data-view]')];
     const navLinks = [...document.querySelectorAll('[data-view-target]')];
-    const activateView = id => {
+    const activateView = (id, updateUrl = false) => {
       views.forEach(view => { view.hidden = view.id !== id; });
       navLinks.forEach(link => {
         const active = link.dataset.viewTarget === id;
@@ -167,10 +167,16 @@
         if (active) link.setAttribute('aria-current', 'page');
         else link.removeAttribute('aria-current');
       });
+      if (updateUrl) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('view', id);
+        window.history.replaceState(null, '', url);
+      }
     };
-    navLinks.forEach(link => link.addEventListener('click', () => activateView(link.dataset.viewTarget)));
-    document.querySelectorAll('[data-go-view]').forEach(button => button.addEventListener('click', () => activateView(button.dataset.goView)));
-    activateView('dashboard-view');
+    navLinks.forEach(link => link.addEventListener('click', () => activateView(link.dataset.viewTarget, true)));
+    document.querySelectorAll('[data-go-view]').forEach(button => button.addEventListener('click', () => activateView(button.dataset.goView, true)));
+    const requestedView = new URLSearchParams(window.location.search).get('view');
+    activateView(views.some(view => view.id === requestedView) ? requestedView : 'dashboard-view');
 
     const profileView = document.getElementById('profile-view');
     const profileForm = document.getElementById('profile-form');
