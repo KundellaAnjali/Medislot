@@ -310,6 +310,15 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
 .doctor-profile-link { margin-top: 14px; }
 .doctor-search-pagination { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 18px; color: var(--muted); font-size: 12px; }
 .doctor-search-empty { padding: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; text-align: center; }
+.availability-back-link { display: inline-block; margin-bottom: 20px; color: var(--teal); font-size: 12px; font-weight: 700; }
+.patient-availability { margin-top: 24px; padding: 25px; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
+.availability-form { display: flex; align-items: end; flex-wrap: wrap; gap: 14px; }
+.availability-form label { display: grid; gap: 7px; color: var(--muted); font-size: 12px; }
+.availability-results { display: grid; gap: 10px; }
+.availability-slot { padding: 16px; border: 1px solid var(--line); border-radius: 4px; }
+.availability-slot h2 { margin-bottom: 10px; font-size: 14px; }
+.availability-slot p { margin: 6px 0 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.availability-slot p strong { color: var(--ink); }
 .public-doctor-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .public-doctor-section { margin-top: 24px; padding: 25px; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
 .public-doctor-section h2 { margin-bottom: 18px; font-size: 18px; }
@@ -370,6 +379,8 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
   .patient-delete-form { align-items: flex-start; flex-direction: column; }
   .doctor-search { padding: 18px 14px; }
   .doctor-search-form { grid-template-columns: 1fr; gap: 12px; }
+  .patient-availability { padding: 18px 14px; }
+  .availability-form { align-items: stretch; flex-direction: column; }
   .public-doctor-details { grid-template-columns: 1fr; gap: 14px; }
   .public-doctor-section { padding: 18px 14px; }
 }

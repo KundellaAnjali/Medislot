@@ -359,7 +359,30 @@ def delete_slots_for_blackout(doctor_id, start_utc, end_utc):
 def route_doctor_api(event):
     user_id = get_actor(event)
     method = event.get("httpMethod", "GET").upper()
-    proxy = (event.get("pathParameters") or {}).get("proxy","")
+    proxy = (event.get("pathParameters") or {}).get("proxy")
+    if proxy is None:
+        route_path = event.get("resource", "")
+        route_parts = route_path.strip("/").split("/")
+        if not route_path or "{proxy+}" in route_parts:
+            route_path = event.get("path", "")
+            route_parts = route_path.strip("/").split("/")
+        try:
+            doctors_index = route_parts.index("doctors")
+        except ValueError:
+            proxy = ""
+        else:
+            if (
+                doctors_index + 1 < len(route_parts)
+                and route_parts[doctors_index + 1] == "me"
+            ):
+                suffix = route_parts[doctors_index + 2 :]
+                proxy = (
+                    "/".join(suffix)
+                    if suffix and not any(part.startswith("{") for part in suffix)
+                    else ""
+                )
+            else:
+                proxy = ""
     path = "/me"
     if proxy:
         path += "/" + proxy.strip("/")

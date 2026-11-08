@@ -2,7 +2,7 @@ import json
 import logging
 import os
 from time import perf_counter
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from urllib.parse import urljoin
 
@@ -541,6 +541,54 @@ def patient_doctor_search():
     )
 
 
+@app.get("/patient/doctors/<int:doctor_id>/availability")
+@patient_required
+def patient_doctor_availability(doctor_id):
+    profile_response = g.authorized_profile_response
+    profile = profile_response.get("profile") if profile_response else None
+    start_date = request.args.get("start_date") or datetime.now(
+        timezone.utc
+    ).date().isoformat()
+    end_date = request.args.get("end_date")
+    if not end_date:
+        try:
+            end_date = (
+                datetime.fromisoformat(start_date).date() + timedelta(days=7)
+            ).isoformat()
+        except ValueError:
+            end_date = start_date
+    availability = None
+    error_message = None
+    status_code = 200
+
+    try:
+        payload = api_request(
+            "GET",
+            f"/doctors/{doctor_id}/availability",
+            params={"start_date": start_date, "end_date": end_date},
+        )
+        if not isinstance(payload, dict) or not isinstance(
+            payload.get("slots"), list
+        ):
+            raise ApiError("Availability API returned an invalid response.")
+        availability = payload["slots"]
+    except ApiError as error:
+        if error.status_code in {401, 403}:
+            return patient_api_error(error)
+        error_message = str(error)
+        status_code = error.status_code if error.status_code >= 400 else 502
+
+    return render_template(
+        "patient_availability.html",
+        profile=profile,
+        doctor_id=doctor_id,
+        start_date=start_date,
+        end_date=end_date,
+        availability=availability,
+        error_message=error_message,
+    ), status_code
+
+
 @app.get("/doctors/<int:doctor_id>")
 def public_doctor_profile(doctor_id):
     try:
@@ -717,7 +765,9 @@ def save_availability():
             )
     api_request("PUT", "/doctors/me/availability", json_body={"patterns": patterns})
     flash("Weekly availability saved.", "success")
-    return redirect(url_for("doctor_dashboard"))
+    return redirect(
+        url_for("doctor_dashboard", view="availability-view")
+    )
 
 
 @app.post("/doctor/blackouts")

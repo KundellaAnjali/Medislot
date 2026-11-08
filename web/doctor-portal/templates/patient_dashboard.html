@@ -127,6 +127,7 @@
                 <p><strong>Specialization:</strong> {{ doctor.specialization or 'Not listed' }}</p>
                 <p><strong>City:</strong> {{ doctor.city or 'Not listed' }}</p>
                 <a class="button secondary doctor-profile-link" href="{{ url_for('public_doctor_profile', doctor_id=doctor.doctor_id) }}">View profile</a>
+                <a class="button secondary doctor-profile-link" href="{{ url_for('patient_doctor_availability', doctor_id=doctor.doctor_id) }}">Check availability</a>
               </article>
             {% endfor %}
           </div>
