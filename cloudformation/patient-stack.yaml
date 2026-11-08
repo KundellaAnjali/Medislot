@@ -49,6 +49,24 @@ Resources:
           - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetAId"
           - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetBId"
 
+  PublicDoctorProfileFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-doctor-public-profile"
+      Handler: doctor_public_profile.lambda_handler
+      CodeUri: ../lambdas/patient/
+      Role:
+        Fn::ImportValue: !Sub "${EnvironmentName}-PatientLambdaRoleArn"
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetAId"
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetBId"
+
   PatientApiAuthorizer:
     Type: AWS::ApiGateway::Authorizer
     Properties:
@@ -94,6 +112,23 @@ Resources:
       ParentId:
         Fn::ImportValue: !Sub "${EnvironmentName}-DoctorsResourceId"
       PathPart: search
+
+  PublicDoctorProfileDoctorResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ParentId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-DoctorsResourceId"
+      PathPart: "{doctor_id}"
+
+  PublicDoctorProfileResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ParentId: !Ref PublicDoctorProfileDoctorResource
+      PathPart: profile
 
   PatientMeResource:
     Type: AWS::ApiGateway::Resource
@@ -159,6 +194,19 @@ Resources:
         IntegrationHttpMethod: POST
         Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DoctorSearchFunction.Arn}/invocations"
 
+  PublicDoctorProfileMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ResourceId: !Ref PublicDoctorProfileResource
+      HttpMethod: GET
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${PublicDoctorProfileFunction.Arn}/invocations"
+
   PatientProfileInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
@@ -183,8 +231,22 @@ Resources:
           - ApiId:
               Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
 
+  PublicDoctorProfileInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref PublicDoctorProfileFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub:
+          - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*/GET/doctors/*/profile"
+          - ApiId:
+              Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+
 Outputs:
   PatientProfileFunctionName:
     Value: !Ref PatientProfileFunction
   DoctorSearchFunctionName:
     Value: !Ref DoctorSearchFunction
+  PublicDoctorProfileFunctionName:
+    Value: !Ref PublicDoctorProfileFunction

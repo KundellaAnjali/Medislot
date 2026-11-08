@@ -541,6 +541,46 @@ def patient_doctor_search():
     )
 
 
+@app.get("/doctors/<int:doctor_id>")
+def public_doctor_profile(doctor_id):
+    try:
+        payload = api_request(
+            "GET",
+            f"/doctors/{doctor_id}/profile",
+            authenticated=False,
+        )
+    except ApiError as error:
+        if error.status_code == 404:
+            return render_template(
+                "public_doctor_profile.html",
+                profile=None,
+                error_message="Doctor profile not found.",
+            ), 404
+        app.logger.error(
+            "Could not load public doctor profile: doctor_id=%s status=%s",
+            doctor_id,
+            error.status_code,
+        )
+        return render_template(
+            "public_doctor_profile.html",
+            profile=None,
+            error_message="Unable to load this doctor profile right now.",
+        ), 502
+
+    profile = payload.get("profile") if isinstance(payload, dict) else None
+    if not isinstance(profile, dict):
+        app.logger.error(
+            "Public doctor profile API returned an invalid response: doctor_id=%s",
+            doctor_id,
+        )
+        return render_template(
+            "public_doctor_profile.html",
+            profile=None,
+            error_message="Unable to load this doctor profile right now.",
+        ), 502
+    return render_template("public_doctor_profile.html", profile=profile)
+
+
 def patient_profile_payload():
     return {
         field: request.form.get(field, "").strip()

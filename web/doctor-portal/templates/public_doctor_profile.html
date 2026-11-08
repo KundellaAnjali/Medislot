@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MediSlot | Doctor profile</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body class="patient-page">
+  <header class="patient-topbar">
+    <a class="wordmark" href="{{ url_for('patient_dashboard') }}">MediSlot<span>.</span></a>
+    <a class="button secondary" href="{{ url_for('patient_dashboard') }}">Back to dashboard</a>
+  </header>
+  <main class="patient-content">
+    {% if profile %}
+      <p class="eyebrow">Doctor profile</p>
+      <div class="public-doctor-heading">
+        <h1>{{ profile.doctor_name or 'Doctor' }}</h1>
+        {% if profile.verification_status %}
+          <span class="status-pill">Verified</span>
+        {% else %}
+          <span class="status-pill pending">Not verified</span>
+        {% endif %}
+      </div>
+      <section class="public-doctor-section">
+        <h2>Professional details</h2>
+        <dl class="public-doctor-details">
+          <div><dt>Specialization</dt><dd>{{ profile.specialization or 'Not listed' }}</dd></div>
+          <div><dt>Qualifications</dt><dd>{{ profile.qualifications or 'Not listed' }}</dd></div>
+          <div><dt>Languages</dt><dd>{{ profile.languages or 'Not listed' }}</dd></div>
+          <div><dt>Hospital</dt><dd>{{ profile.hospital or 'Not listed' }}</dd></div>
+          <div><dt>City</dt><dd>{{ profile.city or 'Not listed' }}</dd></div>
+        </dl>
+      </section>
+      <section class="public-doctor-section">
+        <h2>Consultation details</h2>
+        {% if profile.consultation_details %}
+          <div class="public-consultations">
+            {% for consultation in profile.consultation_details %}
+              <article class="public-consultation-card">
+                <h3>{{ consultation.consultation_type }}</h3>
+                <p><strong>Duration:</strong> {{ consultation.duration }} minutes</p>
+                <p><strong>Capacity:</strong> {{ consultation.capacity }}</p>
+                <p><strong>Fee:</strong> {{ consultation.fee }}</p>
+              </article>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="public-doctor-empty">No consultation details are available.</p>
+        {% endif %}
+      </section>
+    {% else %}
+      <section class="public-doctor-section">
+        <p class="public-doctor-empty">{{ error_message or 'Doctor profile not found.' }}</p>
+      </section>
+    {% endif %}
+  </main>
+</body>
+</html>
