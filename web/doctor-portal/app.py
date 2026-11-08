@@ -510,7 +510,15 @@ def patient_api_error(error):
 def patient_profile_payload():
     return {
         field: request.form.get(field, "").strip()
-        for field in ("first_name", "last_name", "phone_number", "email")
+        for field in (
+            "first_name",
+            "last_name",
+            "phone_number",
+            "date_of_birth",
+            "gender",
+            "emergency_contact",
+            "emergency_contact_name",
+        )
     }
 
 
@@ -536,7 +544,7 @@ def delete_patient_profile():
         api_request("DELETE", "/patients/me")
     except ApiError as error:
         return patient_api_error(error)
-    flash("Patient profile deleted.", "success")
+    flash("Patient profile cleared.", "success")
     return redirect(url_for("patient_dashboard"))
 
 

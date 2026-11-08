@@ -288,6 +288,11 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
 .patient-profile-form { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .patient-profile-form label { display: grid; gap: 7px; color: var(--muted); font-size: 12px; }
 .patient-profile-form .button { justify-self: start; }
+.patient-profile-form input[readonly], .patient-profile-form select:disabled { background: #f5f8f6; color: var(--muted); }
+.patient-profile-form select { width: 100%; min-width: 0; height: 39px; padding: 0 10px; border: 1px solid #cfdad7; border-radius: 4px; background: #fff; color: var(--ink); font-size: 12px; }
+.patient-profile-actions { display: flex; gap: 9px; }
+.patient-profile-actions[hidden] { display: none; }
+.patient-email-note { grid-column: 1 / -1; margin: -8px 0 0; color: var(--muted); font-size: 11px; }
 .patient-delete-form { display: flex; align-items: center; gap: 12px; margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
 .patient-delete-form span { color: var(--muted); font-size: 11px; }
 

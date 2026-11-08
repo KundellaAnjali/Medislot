@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+from datetime import date
 
 import boto3
 import pymysql
@@ -14,9 +15,17 @@ ENVIRONMENT = os.environ["ENVIRONMENT_NAME"]
 ssm = boto3.client("ssm")
 parameter_cache = {}
 
-PROFILE_FIELDS = {"first_name", "last_name", "phone_number", "email"}
+PROFILE_FIELDS = {
+    "first_name",
+    "last_name",
+    "phone_number",
+    "date_of_birth",
+    "gender",
+    "emergency_contact",
+    "emergency_contact_name",
+}
 IDENTITY_FIELDS = {"user_id", "patient_id"}
-EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+REQUIRED_PROFILE_FIELDS = {"first_name", "last_name", "phone_number", "email"}
 PHONE_PATTERN = re.compile(r"^\+?[0-9() .-]{7,20}$")
 
 
@@ -50,7 +59,7 @@ def response(status_code, payload):
     return {
         "statusCode": status_code,
         "headers": {"Content-Type": "application/json"},
-        "body": json.dumps(payload),
+        "body": json.dumps(payload, default=str),
     }
 
 
@@ -84,7 +93,7 @@ def validate_identity_fields(body, user_id, patient_id=None):
     return None
 
 
-def validate_profile(body, require_all):
+def validate_profile(body):
     unknown_fields = set(body) - PROFILE_FIELDS - IDENTITY_FIELDS
     if unknown_fields:
         raise ValidationError("Request contains unsupported profile fields.")
@@ -92,8 +101,6 @@ def validate_profile(body, require_all):
     profile = {}
     for field in PROFILE_FIELDS:
         if field not in body:
-            if require_all:
-                raise ValidationError(f"{field} is required.")
             continue
 
         value = body[field]
@@ -101,21 +108,36 @@ def validate_profile(body, require_all):
             raise ValidationError(f"{field} must be a string.")
         value = value.strip()
         if not value:
-            raise ValidationError(f"{field} is required.")
+            if field in {"first_name", "last_name", "phone_number"}:
+                raise ValidationError(f"{field} is required.")
+            profile[field] = None
+            continue
 
         if field in {"first_name", "last_name"} and len(value) > 100:
             raise ValidationError(f"{field} must be 100 characters or fewer.")
-        if field == "phone_number":
+        if field in {"phone_number", "emergency_contact"}:
             digit_count = sum(character.isdigit() for character in value)
             if not PHONE_PATTERN.fullmatch(value) or not 7 <= digit_count <= 15:
-                raise ValidationError("phone_number must be a valid phone number.")
-        if field == "email":
-            value = value.lower()
-            if len(value) > 255 or not EMAIL_PATTERN.fullmatch(value):
-                raise ValidationError("email must be a valid email address.")
+                raise ValidationError(f"{field} must be a valid phone number.")
+        if field == "date_of_birth":
+            try:
+                parsed_date = date.fromisoformat(value)
+            except ValueError as error:
+                raise ValidationError(
+                    "date_of_birth must be a valid date in YYYY-MM-DD format."
+                ) from error
+            if parsed_date > date.today():
+                raise ValidationError("date_of_birth cannot be in the future.")
+            value = parsed_date.isoformat()
+        if field == "gender" and len(value) > 20:
+            raise ValidationError("gender must be 20 characters or fewer.")
+        if field == "emergency_contact_name" and len(value) > 200:
+            raise ValidationError(
+                "emergency_contact_name must be 200 characters or fewer."
+            )
         profile[field] = value
 
-    if not require_all and not profile:
+    if not profile:
         raise ValidationError("Provide at least one profile field to update.")
     return profile
 
@@ -123,15 +145,34 @@ def validate_profile(body, require_all):
 def get_profile(cursor, user_id):
     cursor.execute(
         """
-        SELECT p.patient_id, p.first_name, p.last_name, p.phone_number,
-               p.profile_filled, u.email
-        FROM patients p
-        JOIN users u ON u.user_id = p.user_id
-        WHERE p.user_id = %s
+        SELECT p.patient_id, p.user_id, p.first_name, p.last_name,
+               p.phone_number, u.email, p.date_of_birth, p.gender,
+               p.emergency_contact, p.emergency_contact_name,
+               p.profile_filled
+        FROM users u
+        LEFT JOIN patients p ON p.user_id = u.user_id
+        WHERE u.user_id = %s AND u.role = 'PATIENT'
         """,
         (user_id,),
     )
     return cursor.fetchone()
+
+
+def ensure_patient_record(cursor, user_id):
+    cursor.execute(
+        """
+        INSERT INTO patients (user_id, first_name, last_name, profile_filled)
+        SELECT user_id, NULL, NULL, FALSE
+        FROM users
+        WHERE user_id = %s AND role = 'PATIENT'
+        ON DUPLICATE KEY UPDATE user_id = VALUES(user_id)
+        """,
+        (user_id,),
+    )
+
+
+def calculate_profile_filled(profile):
+    return all(profile.get(field) for field in REQUIRED_PROFILE_FIELDS)
 
 
 def lambda_handler(event, context):
@@ -178,12 +219,13 @@ def lambda_handler(event, context):
         connection = get_connection()
         try:
             with connection.cursor() as cursor:
+                ensure_patient_record(cursor, user_id)
                 if operation == "get":
                     profile = get_profile(cursor, user_id)
-                    if not profile:
+                    if not profile or not profile["patient_id"]:
                         connection.rollback()
                         return response(404, {"message": "Patient profile not found."})
-                    connection.rollback()
+                    connection.commit()
                     return response(200, {"profile": profile})
 
                 current = get_profile(cursor, user_id)
@@ -201,45 +243,51 @@ def lambda_handler(event, context):
                     return response(404, {"message": "Patient profile not found."})
 
                 if operation == "put":
-                    updates = validate_profile(body, require_all=False)
+                    updates = validate_profile(body)
                     updated_profile = {
                         "first_name": current["first_name"],
                         "last_name": current["last_name"],
                         "phone_number": current["phone_number"],
                         "email": current["email"],
+                        "date_of_birth": current["date_of_birth"],
+                        "gender": current["gender"],
+                        "emergency_contact": current["emergency_contact"],
+                        "emergency_contact_name": current["emergency_contact_name"],
                     }
                     updated_profile.update(updates)
-                    profile_filled = all(
-                        updated_profile[field]
-                        for field in PROFILE_FIELDS
+                    profile_filled = calculate_profile_filled(updated_profile)
+                    cursor.execute(
+                        """
+                        INSERT INTO patients (
+                            user_id, first_name, last_name, phone_number,
+                            date_of_birth, gender, emergency_contact,
+                            emergency_contact_name, profile_filled
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON DUPLICATE KEY UPDATE
+                            first_name = VALUES(first_name),
+                            last_name = VALUES(last_name),
+                            phone_number = VALUES(phone_number),
+                            date_of_birth = VALUES(date_of_birth),
+                            gender = VALUES(gender),
+                            emergency_contact = VALUES(emergency_contact),
+                            emergency_contact_name = VALUES(emergency_contact_name),
+                            profile_filled = VALUES(profile_filled)
+                        """,
+                        (
+                            user_id,
+                            updated_profile["first_name"],
+                            updated_profile["last_name"],
+                            updated_profile["phone_number"],
+                            updated_profile["date_of_birth"],
+                            updated_profile["gender"],
+                            updated_profile["emergency_contact"],
+                            updated_profile["emergency_contact_name"],
+                            profile_filled,
+                        ),
                     )
-                    if "email" in updates:
-                        cursor.execute(
-                            "UPDATE users SET email = %s WHERE user_id = %s",
-                            (updates["email"], user_id),
-                        )
-                    patient_updates = {
-                        field: updates[field]
-                        for field in ("first_name", "last_name", "phone_number")
-                        if field in updates
-                    }
-                    if patient_updates:
-                        assignments = ", ".join(
-                            f"{field} = %s" for field in patient_updates
-                        )
-                        cursor.execute(
-                            f"UPDATE patients SET {assignments}, profile_filled = %s "
-                            "WHERE user_id = %s",
-                            (*patient_updates.values(), profile_filled, user_id),
-                        )
-                    else:
-                        cursor.execute(
-                            "UPDATE patients SET profile_filled = %s WHERE user_id = %s",
-                            (profile_filled, user_id),
-                        )
                     connection.commit()
                     saved_profile = get_profile(cursor, user_id)
-                    connection.rollback()
                     logger.info(
                         "Patient profile updated: user_id=%s request_id=%s",
                         user_id,
@@ -248,16 +296,27 @@ def lambda_handler(event, context):
                     return response(200, {"profile": saved_profile})
 
                 cursor.execute(
-                    "DELETE FROM patients WHERE user_id = %s",
+                    """
+                    UPDATE patients
+                    SET first_name = NULL,
+                        last_name = NULL,
+                        phone_number = NULL,
+                        date_of_birth = NULL,
+                        gender = NULL,
+                        emergency_contact = NULL,
+                        emergency_contact_name = NULL,
+                        profile_filled = FALSE
+                    WHERE user_id = %s
+                    """,
                     (user_id,),
                 )
                 connection.commit()
                 logger.info(
-                    "Patient profile deleted: user_id=%s request_id=%s",
+                    "Patient profile cleared: user_id=%s request_id=%s",
                     user_id,
                     getattr(context, "aws_request_id", "unknown"),
                 )
-                return response(200, {"message": "Patient profile deleted."})
+                return response(200, {"message": "Patient profile cleared."})
         finally:
             connection.close()
     except ValidationError as error:

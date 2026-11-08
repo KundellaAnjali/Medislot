@@ -115,6 +115,10 @@ def lambda_handler(event, context):
         role = body.get("role")
         first_name = body.get("first_name")
         last_name = body.get("last_name")
+        if isinstance(first_name, str):
+            first_name = first_name.strip()
+        if isinstance(last_name, str):
+            last_name = last_name.strip()
 
         logger.info("Registration started")
 
@@ -181,7 +185,7 @@ def lambda_handler(event, context):
             }
 
         # Name Validation
-        if not first_name:
+        if not isinstance(first_name, str) or not first_name:
             return {
                 "statusCode": 400,
                 "body": json.dumps(
@@ -191,7 +195,13 @@ def lambda_handler(event, context):
                 ),
             }
 
-        if not last_name:
+        if len(first_name) > 100:
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"message": "First name must be 100 characters or fewer"}),
+            }
+
+        if not isinstance(last_name, str) or not last_name:
             return {
                 "statusCode": 400,
                 "body": json.dumps(
@@ -199,6 +209,11 @@ def lambda_handler(event, context):
                         "message": "Last name is required"
                     }
                 ),
+            }
+        if len(last_name) > 100:
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"message": "Last name must be 100 characters or fewer"}),
             }
 
         # Hash Password
@@ -318,7 +333,7 @@ def lambda_handler(event, context):
                         user_id,
                         first_name,
                         last_name,
-                        False
+                        False,
                     )
                 )
 
