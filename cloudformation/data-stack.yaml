@@ -85,6 +85,8 @@ Resources:
           AttributeType: N
         - AttributeName: refresh_token_hash
           AttributeType: S
+        - AttributeName: jti
+          AttributeType: S
 
       KeySchema:
         - AttributeName: session_id
@@ -105,6 +107,12 @@ Resources:
           Projection:
             ProjectionType: ALL
 
+        - IndexName: SessionJtiIndex
+          KeySchema:
+            - AttributeName: jti
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
 
       TimeToLiveSpecification:
         AttributeName: expires_at

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import boto3
 import jwt
 
+from boto3.dynamodb.conditions import Key
 from jwt import ExpiredSignatureError
 from jwt import InvalidTokenError
 
@@ -88,19 +89,27 @@ def lambda_handler(event, context):
             algorithms=["HS256"]
         )
 
-        session_id = decoded_token.get("session_id")
+        token_jti = decoded_token.get("jti")
 
-        if not session_id:
-            raise InvalidTokenError("Missing session ID")
+        if not token_jti:
+            raise InvalidTokenError("Missing token JTI")
 
         sessions = dynamodb.Table(f"{ENVIRONMENT}-user-sessions")
-        session_response = sessions.get_item(
-            Key={"session_id": session_id},
-            ConsistentRead=True,
+        session_response = sessions.query(
+            IndexName="SessionJtiIndex",
+            KeyConditionExpression=Key("jti").eq(token_jti),
         )
-        active_session = session_response.get("Item")
+        active_sessions = session_response.get("Items", [])
+        indexed_session = active_sessions[0] if active_sessions else None
+        active_session = None
+        if indexed_session:
+            active_session = sessions.get_item(
+                Key={"session_id": indexed_session["session_id"]},
+                ConsistentRead=True,
+            ).get("Item")
         if (
             not active_session
+            or active_session.get("jti") != token_jti
             or int(active_session["expires_at"]) <= int(
                 datetime.now(timezone.utc).timestamp()
             )
