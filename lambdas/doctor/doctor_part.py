@@ -841,6 +841,24 @@ def availability_route(connection, cursor, doctor_id, method, body):
             (doctor_id, consultation_id, day_name, start, end),
         )
     connection.commit()
+
+    try:
+        invoke_result = lambda_client.invoke(
+            FunctionName=f"{ENVIRONMENT}-slot-materializer",
+            InvocationType="Event",
+            Payload=json.dumps({}),
+        )
+        if invoke_result.get("StatusCode") != 202:
+            logger.warning(
+                "Slot regeneration was not accepted for doctor %s",
+                doctor_id,
+            )
+    except Exception:
+        logger.exception(
+            "Failed to invoke slot-materializer after availability save for doctor %s",
+            doctor_id,
+        )
+
     logger.info("Availability saved for doctor %s: %s patterns", doctor_id, len(normalized))
     return response(200, {"patterns_saved": len(normalized)})
 
