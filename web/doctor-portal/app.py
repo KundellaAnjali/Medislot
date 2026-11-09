@@ -491,7 +491,115 @@ def old_doctor_dashboard():
 def patient_dashboard():
     profile_response = g.authorized_profile_response
     profile = profile_response.get("profile") if profile_response else None
-    return render_template("patient_dashboard.html", profile=profile)
+    active_view = request.args.get("view", "patient-crud")
+    dashboard_views = {
+        "patient-crud",
+        "doctor-search",
+        "public-doctor-profile",
+        "slot-availability",
+    }
+    if active_view not in dashboard_views:
+        active_view = "patient-crud"
+
+    doctor_id = request.args.get("doctor_id", type=int)
+    public_profile = None
+    profile_error = None
+    doctor_search = None
+    doctor_search_filters = {}
+    if active_view == "doctor-search" and request.args.get("search") == "1":
+        doctor_search_filters = {
+            field: request.args.get(field, "").strip()
+            for field in ("name", "hospital", "specialization", "city")
+        }
+        try:
+            doctor_search = api_request(
+                "GET",
+                "/doctors/search",
+                params={
+                    **doctor_search_filters,
+                    "page": request.args.get("page", "1"),
+                    "limit": request.args.get("limit", "10"),
+                },
+            )
+        except ApiError as error:
+            if error.status_code in {401, 403}:
+                return patient_api_error(error)
+            flash(str(error), "error")
+            doctor_search = {
+                "doctors": [],
+                "pagination": {
+                    "page": 1,
+                    "limit": 10,
+                    "total": 0,
+                    "total_pages": 0,
+                },
+            }
+
+    if active_view == "public-doctor-profile" and doctor_id:
+        try:
+            result = api_request(
+                "GET",
+                f"/doctors/{doctor_id}/profile",
+                authenticated=False,
+            )
+            if not isinstance(result, dict):
+                raise ApiError("Doctor profile API returned an invalid response.")
+            public_profile = result.get("profile")
+            if not isinstance(public_profile, dict):
+                raise ApiError("Doctor profile API returned an invalid response.")
+        except ApiError as error:
+            if error.status_code in {401, 403}:
+                return patient_api_error(error)
+            profile_error = (
+                "Doctor profile not found."
+                if error.status_code == 404
+                else str(error)
+            )
+
+    doctor_availability = None
+    availability_error = None
+    start_date = request.args.get("start_date") or datetime.now(
+        timezone.utc
+    ).date().isoformat()
+    end_date = request.args.get("end_date")
+    if not end_date:
+        try:
+            end_date = (
+                datetime.fromisoformat(start_date).date() + timedelta(days=7)
+            ).isoformat()
+        except ValueError:
+            end_date = start_date
+    if active_view == "slot-availability" and doctor_id:
+        try:
+            result = api_request(
+                "GET",
+                f"/doctors/{doctor_id}/availability",
+                params={"start_date": start_date, "end_date": end_date},
+            )
+            if not isinstance(result, dict):
+                raise ApiError("Availability API returned an invalid response.")
+            doctor_availability = result.get("slots")
+            if not isinstance(doctor_availability, list):
+                raise ApiError("Availability API returned an invalid response.")
+        except (ApiError, ValueError) as error:
+            if isinstance(error, ApiError) and error.status_code in {401, 403}:
+                return patient_api_error(error)
+            availability_error = str(error)
+
+    return render_template(
+        "patient_dashboard.html",
+        profile=profile,
+        active_view=active_view,
+        doctor_id=doctor_id,
+        public_profile=public_profile,
+        profile_error=profile_error,
+        doctor_search=doctor_search,
+        doctor_search_filters=doctor_search_filters,
+        doctor_availability=doctor_availability,
+        availability_error=availability_error,
+        start_date=start_date,
+        end_date=end_date,
+    )
 
 
 def patient_api_error(error):
@@ -536,6 +644,10 @@ def patient_doctor_search():
     return render_template(
         "patient_dashboard.html",
         profile=profile,
+        active_view="doctor-search",
+        doctor_id=None,
+        public_profile=None,
+        profile_error=None,
         doctor_search=results,
         doctor_search_filters=filters,
     )
@@ -579,13 +691,16 @@ def patient_doctor_availability(doctor_id):
         status_code = error.status_code if error.status_code >= 400 else 502
 
     return render_template(
-        "patient_availability.html",
+        "patient_dashboard.html",
         profile=profile,
+        active_view="slot-availability",
         doctor_id=doctor_id,
         start_date=start_date,
         end_date=end_date,
-        availability=availability,
-        error_message=error_message,
+        doctor_availability=availability,
+        availability_error=error_message,
+        public_profile=None,
+        profile_error=None,
     ), status_code
 
 

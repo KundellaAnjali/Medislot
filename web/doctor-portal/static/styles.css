@@ -279,7 +279,15 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
 .patient-page { min-height: 100vh; background: #f3f6f4; }
 .patient-topbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 5vw; border-bottom: 1px solid var(--line); background: #fff; }
 .patient-topbar form { margin: 0; }
-.patient-content { width: min(800px, 90%); padding: 100px 0; margin: 0 auto; }
+.patient-dashboard-layout { display: grid; grid-template-columns: 245px minmax(0, 1fr); min-height: calc(100vh - 65px); }
+.patient-sidebar { position: sticky; top: 0; height: calc(100vh - 0px); padding: 28px 14px; border-right: 1px solid var(--line); background: #fff; }
+.patient-sidebar-caption { margin: 0 10px 14px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .08em; }
+.patient-sidebar-nav { display: grid; gap: 5px; }
+.patient-sidebar-link { min-height: 43px; padding: 0 12px; border: 0; border-radius: 4px; background: transparent; color: #64747a; text-align: left; font-size: 13px; font-weight: 600; cursor: pointer; }
+.patient-sidebar-link:hover { background: #f3f8f6; color: var(--teal); }
+.patient-sidebar-link.is-active { background: #e8f3f0; color: var(--teal-dark); }
+.patient-view-panel[hidden] { display: none; }
+.patient-content { width: min(1100px, 100%); padding: 48px clamp(20px, 4vw, 56px); margin: 0; }
 .patient-content h1 { margin-bottom: 12px; }
 .patient-content > p:last-child { color: var(--muted); font-size: 14px; }
 .patient-profile { margin-top: 28px; padding: 25px; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
@@ -373,7 +381,12 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
   .consultation-edit { grid-template-columns: 1fr 1fr; }
   .consultation-edit select { grid-column: 1 / -1; }
   .blackout-form { width: 100%; }
-  .patient-content { padding: 55px 0; }
+  .patient-dashboard-layout { grid-template-columns: minmax(0, 1fr); }
+  .patient-sidebar { z-index: 4; top: 0; height: auto; padding: 9px 10px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .patient-sidebar-caption { display: none; }
+  .patient-sidebar-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+  .patient-sidebar-link { min-height: 38px; padding: 0 9px; font-size: 11px; }
+  .patient-content { width: 100%; padding: 32px 5%; }
   .patient-profile { padding: 18px 14px; }
   .patient-profile-form { grid-template-columns: 1fr; gap: 12px; }
   .patient-delete-form { align-items: flex-start; flex-direction: column; }

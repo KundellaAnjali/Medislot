@@ -8,18 +8,29 @@
 </head>
 <body class="patient-page">
   <header class="patient-topbar">
-    <a class="wordmark" href="/dashboard/patient">MediSlot<span>.</span></a>
+    <a class="wordmark" href="{{ url_for('patient_dashboard') }}">MediSlot<span>.</span></a>
     <form method="post" action="{{ url_for('logout') }}">
       <button class="button secondary" type="submit">Logout</button>
     </form>
   </header>
-  <main class="patient-content">
+  <div class="patient-dashboard-layout">
+    <aside class="patient-sidebar">
+      <p class="patient-sidebar-caption">PATIENT WORKSPACE</p>
+      <nav class="patient-sidebar-nav" aria-label="Patient dashboard">
+        <button class="patient-sidebar-link" type="button" data-patient-view="patient-crud">Patient CRUD</button>
+        <button class="patient-sidebar-link" type="button" data-patient-view="doctor-search">Doctor Search</button>
+        <button class="patient-sidebar-link" type="button" data-patient-view="public-doctor-profile" {% if doctor_id %}data-load-url="{{ url_for('patient_dashboard', view='public-doctor-profile', doctor_id=doctor_id) }}" data-loaded="{{ 'true' if public_profile else 'false' }}"{% endif %}>Public Doctor Profile</button>
+        <button class="patient-sidebar-link" type="button" data-patient-view="slot-availability" {% if doctor_id %}data-load-url="{{ url_for('patient_dashboard', view='slot-availability', doctor_id=doctor_id) }}" data-loaded="{{ 'true' if doctor_availability is defined and doctor_availability is not none else 'false' }}"{% endif %}>Slot Availability</button>
+      </nav>
+    </aside>
+    <main class="patient-content">
     <p class="eyebrow">Patient portal</p>
     <h1>Your care, in one place.</h1>
     <p>Manage your profile details and keep your account information up to date.</p>
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% for category, message in messages %}<p class="notice {{ category }}">{{ message }}</p>{% endfor %}
     {% endwith %}
+    <section class="patient-view-panel" data-patient-panel="patient-crud" {% if active_view|default('patient-crud') != 'patient-crud' %}hidden{% endif %}>
     <section class="patient-profile">
       <div class="patient-profile-heading">
         <div>
@@ -83,6 +94,9 @@
       {% endif %}
     </section>
 
+    </section>
+
+    <section class="patient-view-panel" data-patient-panel="doctor-search" {% if active_view|default('patient-crud') != 'doctor-search' %}hidden{% endif %}>
     <section class="doctor-search">
       <div class="patient-profile-heading">
         <div>
@@ -90,7 +104,9 @@
           <h2>Search doctors</h2>
         </div>
       </div>
-      <form method="get" action="{{ url_for('patient_doctor_search') }}" class="doctor-search-form">
+      <form method="get" action="{{ url_for('patient_dashboard') }}" class="doctor-search-form">
+        <input type="hidden" name="view" value="doctor-search">
+        <input type="hidden" name="search" value="1">
         <label for="doctor-name">Doctor name
           <input id="doctor-name" name="name" value="{{ doctor_search_filters.get('name', '') if doctor_search_filters else '' }}" maxlength="100">
         </label>
@@ -126,19 +142,19 @@
                 <p><strong>Hospital:</strong> {{ doctor.hospital or 'Not listed' }}</p>
                 <p><strong>Specialization:</strong> {{ doctor.specialization or 'Not listed' }}</p>
                 <p><strong>City:</strong> {{ doctor.city or 'Not listed' }}</p>
-                <a class="button secondary doctor-profile-link" href="{{ url_for('public_doctor_profile', doctor_id=doctor.doctor_id) }}">View profile</a>
-                <a class="button secondary doctor-profile-link" href="{{ url_for('patient_doctor_availability', doctor_id=doctor.doctor_id) }}">Check availability</a>
+                <a class="button secondary doctor-profile-link" href="{{ url_for('patient_dashboard', view='public-doctor-profile', doctor_id=doctor.doctor_id) }}">View profile</a>
+                <a class="button secondary doctor-profile-link" href="{{ url_for('patient_dashboard', view='slot-availability', doctor_id=doctor.doctor_id) }}">Check availability</a>
               </article>
             {% endfor %}
           </div>
           {% if doctor_search.pagination.total_pages > 1 %}
             <nav class="doctor-search-pagination" aria-label="Doctor search pages">
               {% if doctor_search.pagination.page > 1 %}
-                <a class="button secondary" href="{{ url_for('patient_doctor_search', name=doctor_search_filters.name, hospital=doctor_search_filters.hospital, specialization=doctor_search_filters.specialization, city=doctor_search_filters.city, page=doctor_search.pagination.page - 1, limit=doctor_search.pagination.limit) }}">Previous</a>
+                <a class="button secondary" href="{{ url_for('patient_dashboard', view='doctor-search', search=1, name=doctor_search_filters.name, hospital=doctor_search_filters.hospital, specialization=doctor_search_filters.specialization, city=doctor_search_filters.city, page=doctor_search.pagination.page - 1, limit=doctor_search.pagination.limit) }}">Previous</a>
               {% endif %}
               <span>Page {{ doctor_search.pagination.page }} of {{ doctor_search.pagination.total_pages }}</span>
               {% if doctor_search.pagination.page < doctor_search.pagination.total_pages %}
-                <a class="button secondary" href="{{ url_for('patient_doctor_search', name=doctor_search_filters.name, hospital=doctor_search_filters.hospital, specialization=doctor_search_filters.specialization, city=doctor_search_filters.city, page=doctor_search.pagination.page + 1, limit=doctor_search.pagination.limit) }}">Next</a>
+                <a class="button secondary" href="{{ url_for('patient_dashboard', view='doctor-search', search=1, name=doctor_search_filters.name, hospital=doctor_search_filters.hospital, specialization=doctor_search_filters.specialization, city=doctor_search_filters.city, page=doctor_search.pagination.page + 1, limit=doctor_search.pagination.limit) }}">Next</a>
               {% endif %}
             </nav>
           {% endif %}
@@ -147,8 +163,126 @@
         {% endif %}
       {% endif %}
     </section>
-  </main>
+    </section>
+
+    <section class="patient-view-panel" data-patient-panel="public-doctor-profile" {% if active_view|default('patient-crud') != 'public-doctor-profile' %}hidden{% endif %}>
+      <p class="eyebrow">Doctor profile</p>
+      {% if public_profile %}
+        <div class="public-doctor-heading">
+          <h2>{{ public_profile.doctor_name or 'Doctor' }}</h2>
+          {% if public_profile.verification_status %}
+            <span class="status-pill">Verified</span>
+          {% else %}
+            <span class="status-pill pending">Not verified</span>
+          {% endif %}
+        </div>
+        <section class="public-doctor-section">
+          <h2>Professional details</h2>
+          <dl class="public-doctor-details">
+            <div><dt>Specialization</dt><dd>{{ public_profile.specialization or 'Not listed' }}</dd></div>
+            <div><dt>Qualifications</dt><dd>{{ public_profile.qualifications or 'Not listed' }}</dd></div>
+            <div><dt>Languages</dt><dd>{{ public_profile.languages or 'Not listed' }}</dd></div>
+            <div><dt>Hospital</dt><dd>{{ public_profile.hospital or 'Not listed' }}</dd></div>
+            <div><dt>City</dt><dd>{{ public_profile.city or 'Not listed' }}</dd></div>
+          </dl>
+        </section>
+        <section class="public-doctor-section">
+          <h2>Consultation details</h2>
+          {% if public_profile.consultation_details %}
+            <div class="public-consultations">
+              {% for consultation in public_profile.consultation_details %}
+                <article class="public-consultation-card">
+                  <h3>{{ consultation.consultation_type }}</h3>
+                  <p><strong>Duration:</strong> {{ consultation.duration }} minutes</p>
+                  <p><strong>Capacity:</strong> {{ consultation.capacity }}</p>
+                  <p><strong>Fee:</strong> {{ consultation.fee }}</p>
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p class="public-doctor-empty">No consultation details are available.</p>
+          {% endif %}
+        </section>
+      {% else %}
+        <section class="public-doctor-section">
+          <p class="public-doctor-empty">{{ profile_error or 'Choose a doctor from Doctor Search to view their public profile.' }}</p>
+        </section>
+      {% endif %}
+    </section>
+
+    <section class="patient-view-panel" data-patient-panel="slot-availability" {% if active_view|default('patient-crud') != 'slot-availability' %}hidden{% endif %}>
+      <p class="eyebrow">Find care</p>
+      <h2>Slot availability</h2>
+      {% if doctor_id %}
+        <section class="patient-availability">
+          <form method="get" action="{{ url_for('patient_dashboard') }}" class="availability-form">
+            <input type="hidden" name="view" value="slot-availability">
+            <input type="hidden" name="doctor_id" value="{{ doctor_id }}">
+            <label for="availability-start-date">Start date
+              <input id="availability-start-date" name="start_date" type="date" value="{{ start_date }}" required>
+            </label>
+            <label for="availability-end-date">End date
+              <input id="availability-end-date" name="end_date" type="date" value="{{ end_date }}" required>
+            </label>
+            <button class="button primary" type="submit">Show availability</button>
+          </form>
+          {% if availability_error %}
+            <p class="notice error" role="alert">{{ availability_error }}</p>
+          {% elif doctor_availability is defined and doctor_availability is not none %}
+            <p class="doctor-search-count">
+              {{ doctor_availability|length }} slot{{ '' if doctor_availability|length == 1 else 's' }} available
+            </p>
+            {% if doctor_availability %}
+              <div class="availability-results">
+                {% for slot in doctor_availability %}
+                  <article class="availability-slot">
+                    <h3>{{ slot.consultation_type or 'Consultation' }}</h3>
+                    <p><strong>Slot:</strong> {{ slot.slot_id }}</p>
+                    <p><strong>Starts:</strong> {{ slot.start_time }}</p>
+                    <p><strong>Ends:</strong> {{ slot.end_time }}</p>
+                    <p><strong>Seats:</strong> {{ slot.available_seats }} available of {{ slot.capacity }}</p>
+                  </article>
+                {% endfor %}
+              </div>
+            {% else %}
+              <p class="doctor-search-empty">No available slots were found in this date range.</p>
+            {% endif %}
+          {% endif %}
+        </section>
+      {% else %}
+        <section class="patient-availability">
+          <p class="doctor-search-empty">Choose a doctor from Doctor Search to view available slots.</p>
+        </section>
+      {% endif %}
+    </section>
+    </main>
+  </div>
   <script>
+    const patientPanels = [...document.querySelectorAll('[data-patient-panel]')];
+    const patientNav = [...document.querySelectorAll('[data-patient-view]')];
+    const setPatientView = view => {
+      patientPanels.forEach(panel => {
+        panel.hidden = panel.dataset.patientPanel !== view;
+      });
+      patientNav.forEach(button => {
+        const selected = button.dataset.patientView === view;
+        button.classList.toggle('is-active', selected);
+        button.setAttribute('aria-current', selected ? 'page' : 'false');
+      });
+    };
+    patientNav.forEach(button => button.addEventListener('click', () => {
+      if (
+        ['public-doctor-profile', 'slot-availability'].includes(button.dataset.patientView)
+        && button.dataset.loadUrl
+        && button.dataset.loaded !== 'true'
+      ) {
+        window.location.assign(button.dataset.loadUrl);
+        return;
+      }
+      setPatientView(button.dataset.patientView);
+    }));
+    setPatientView({{ active_view|default('patient-crud')|tojson }});
+
     const profileForm = document.getElementById('patient-profile-form');
     const editProfile = document.getElementById('edit-patient-profile');
     const profileActions = document.getElementById('patient-profile-actions');
