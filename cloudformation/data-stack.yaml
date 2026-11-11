@@ -81,8 +81,6 @@ Resources:
       AttributeDefinitions:
         - AttributeName: session_id
           AttributeType: S
-        - AttributeName: user_id
-          AttributeType: N
         - AttributeName: refresh_token_hash
           AttributeType: S
         - AttributeName: jti
@@ -93,13 +91,6 @@ Resources:
           KeyType: HASH
 
       GlobalSecondaryIndexes:
-        - IndexName: UserIdIndex
-          KeySchema:
-            - AttributeName: user_id
-              KeyType: HASH
-          Projection:
-            ProjectionType: ALL
-
         - IndexName: RefreshTokenHashIndex
           KeySchema:
             - AttributeName: refresh_token_hash

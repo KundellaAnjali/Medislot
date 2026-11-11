@@ -176,19 +176,20 @@ def calculate_profile_filled(profile):
 
 
 def lambda_handler(event, context):
+    request_id = getattr(context, "aws_request_id", "unknown")
     authorizer = event.get("requestContext", {}).get("authorizer", {})
     user_id = authorizer.get("userId")
     if not user_id:
         logger.warning(
             "Patient profile request missing identity: request_id=%s",
-            getattr(context, "aws_request_id", "unknown"),
+            request_id,
         )
         return response(401, {"message": "Authentication is required."})
     if authorizer.get("role") != "PATIENT":
         logger.warning(
-            "Patient profile access denied: role=%s request_id=%s",
+            "Patient profile access denied: expected_role=PATIENT actual_role=%s request_id=%s",
             authorizer.get("role", "unknown"),
-            getattr(context, "aws_request_id", "unknown"),
+            request_id,
         )
         return response(
             403,
@@ -197,6 +198,10 @@ def lambda_handler(event, context):
     try:
         user_id = int(user_id)
     except (TypeError, ValueError):
+        logger.warning(
+            "Patient profile request has invalid user identity: request_id=%s",
+            request_id,
+        )
         return response(401, {"message": "Authentication is required."})
 
     method = event.get("httpMethod", "").upper()
@@ -204,15 +209,27 @@ def lambda_handler(event, context):
     if path == "/patients/me" and method in {"GET", "PUT", "DELETE"}:
         operation = method.lower()
     elif path != "/patients/me":
+        logger.warning(
+            "Patient profile route not found: method=%s path=%s request_id=%s",
+            method,
+            path,
+            request_id,
+        )
         return response(404, {"message": "Route not found."})
     else:
+        logger.warning(
+            "Patient profile method not allowed: method=%s path=%s request_id=%s",
+            method,
+            path,
+            request_id,
+        )
         return response(405, {"message": "Method not allowed."})
 
     logger.info(
         "Patient profile request: operation=%s user_id=%s request_id=%s",
         operation,
         user_id,
-        getattr(context, "aws_request_id", "unknown"),
+        request_id,
     )
     try:
         body = parse_body(event) if method in {"POST", "PUT", "DELETE"} else {}
@@ -223,6 +240,11 @@ def lambda_handler(event, context):
                 if operation == "get":
                     profile = get_profile(cursor, user_id)
                     if not profile or not profile["patient_id"]:
+                        logger.warning(
+                            "Patient profile not found: user_id=%s request_id=%s",
+                            user_id,
+                            request_id,
+                        )
                         connection.rollback()
                         return response(404, {"message": "Patient profile not found."})
                     connection.commit()
@@ -235,10 +257,20 @@ def lambda_handler(event, context):
                     current["patient_id"] if current else None,
                 )
                 if identity_error:
+                    logger.warning(
+                        "Patient profile identity mismatch: user_id=%s request_id=%s",
+                        user_id,
+                        request_id,
+                    )
                     connection.rollback()
                     return identity_error
 
                 if not current:
+                    logger.warning(
+                        "Patient profile not found for update: user_id=%s request_id=%s",
+                        user_id,
+                        request_id,
+                    )
                     connection.rollback()
                     return response(404, {"message": "Patient profile not found."})
 
@@ -291,7 +323,7 @@ def lambda_handler(event, context):
                     logger.info(
                         "Patient profile updated: user_id=%s request_id=%s",
                         user_id,
-                        getattr(context, "aws_request_id", "unknown"),
+                        request_id,
                     )
                     return response(200, {"profile": saved_profile})
 
@@ -314,27 +346,55 @@ def lambda_handler(event, context):
                 logger.info(
                     "Patient profile cleared: user_id=%s request_id=%s",
                     user_id,
-                    getattr(context, "aws_request_id", "unknown"),
+                    request_id,
                 )
                 return response(200, {"message": "Patient profile cleared."})
         finally:
             connection.close()
     except ValidationError as error:
+        logger.warning(
+            "Patient profile request rejected: user_id=%s reason=%s request_id=%s",
+            user_id,
+            str(error),
+            request_id,
+        )
         return response(400, {"message": str(error)})
     except pymysql.err.IntegrityError as error:
         if getattr(error, "args", [None])[0] == 1451:
+            logger.warning(
+                "Patient profile change blocked by existing appointments: user_id=%s request_id=%s",
+                user_id,
+                request_id,
+            )
             return response(
                 409,
                 {"message": "Profile cannot be deleted while appointments exist."},
             )
         if getattr(error, "args", [None])[0] == 1062:
+            logger.warning(
+                "Patient profile change rejected: duplicate email user_id=%s request_id=%s",
+                user_id,
+                request_id,
+            )
             return response(409, {"message": "Email address is already in use."})
-        logger.exception("Patient profile database constraint failed.")
+        logger.exception(
+            "Patient profile database constraint failed: user_id=%s request_id=%s",
+            user_id,
+            request_id,
+        )
         return response(500, {"message": "Could not save the patient profile."})
     except pymysql.MySQLError:
         logger.exception(
             "Patient profile database operation failed: user_id=%s request_id=%s",
             user_id,
-            getattr(context, "aws_request_id", "unknown"),
+            request_id,
         )
         return response(500, {"message": "Could not complete the profile request."})
+    except Exception:
+        logger.exception(
+            "Patient profile request failed unexpectedly: operation=%s user_id=%s request_id=%s",
+            operation,
+            user_id,
+            request_id,
+        )
+        raise

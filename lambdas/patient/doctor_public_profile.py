@@ -86,6 +86,7 @@ def get_consultation_details(cursor, doctor_id):
 
 
 def lambda_handler(event, context):
+    request_id = getattr(context, "aws_request_id", "unknown")
     method = event.get("httpMethod", "").upper()
     resource = event.get("resource", "")
     path = event.get("path", "").rstrip("/")
@@ -94,22 +95,36 @@ def lambda_handler(event, context):
         or re.search(r"/doctors/[^/]+/profile$", path) is not None
     )
     if not is_profile_route:
+        logger.warning(
+            "Public doctor profile route not found: method=%s path=%s request_id=%s",
+            method,
+            path,
+            request_id,
+        )
         return response(404, {"message": "Route not found."})
     if method != "GET":
+        logger.warning(
+            "Public doctor profile method not allowed: method=%s request_id=%s",
+            method,
+            request_id,
+        )
         return response(405, {"message": "Method not allowed."})
 
     doctor_id = get_doctor_id(event)
     if doctor_id is None:
+        logger.warning(
+            "Public doctor profile request rejected: invalid doctor_id request_id=%s",
+            request_id,
+        )
         return response(400, {"message": "doctor_id must be a positive integer."})
 
-    request_id = getattr(context, "aws_request_id", "unknown")
     connection = None
     try:
         connection = get_connection()
         with connection.cursor() as cursor:
             profile = get_public_profile(cursor, doctor_id)
             if not profile:
-                logger.info(
+                logger.warning(
                     "Public doctor profile not found: request_id=%s",
                     request_id,
                 )
@@ -131,6 +146,13 @@ def lambda_handler(event, context):
             request_id,
         )
         return response(500, {"message": "Could not load doctor profile right now."})
+    except Exception:
+        logger.exception(
+            "Public doctor profile request failed unexpectedly: doctor_id=%s request_id=%s",
+            doctor_id,
+            request_id,
+        )
+        raise
     finally:
         if connection:
             connection.close()

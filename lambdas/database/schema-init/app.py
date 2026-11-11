@@ -108,12 +108,14 @@ def ensure_index(cursor, table_name, index_name, columns):
 
 def lambda_handler(event, context):
     started_at = perf_counter()
+    request_id = getattr(context, "aws_request_id", "unknown")
 
     log_event(
         "INFO",
         "SchemaInitializationStarted",
         {
-            "environment": ENVIRONMENT
+            "environment": ENVIRONMENT,
+            "requestId": request_id,
         }
     )
 
@@ -325,7 +327,9 @@ def lambda_handler(event, context):
             "ERROR",
             "SchemaInitializationFailed",
             {
-                "error": str(exception)
+                "error": str(exception),
+                "errorType": type(exception).__name__,
+                "requestId": request_id,
             }
         )
 

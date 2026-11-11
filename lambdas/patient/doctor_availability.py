@@ -131,9 +131,18 @@ def lambda_handler(event, context):
 
     authorizer = event.get("requestContext", {}).get("authorizer", {})
     if not authorizer.get("userId"):
+        logger.warning(
+            "Doctor availability rejected: missing authenticated identity request_id=%s",
+            request_id,
+        )
         publish_metric("DoctorAvailabilityErrors", 1)
         return response(401, {"message": "Authentication is required."})
     if authorizer.get("role") != "PATIENT":
+        logger.warning(
+            "Doctor availability access denied: expected_role=PATIENT actual_role=%s request_id=%s",
+            authorizer.get("role", "unknown"),
+            request_id,
+        )
         publish_metric("DoctorAvailabilityErrors", 1)
         return response(
             403,
@@ -150,6 +159,11 @@ def lambda_handler(event, context):
                 "end_date must be on or after start_date."
             )
     except AvailabilityValidationError as error:
+        logger.warning(
+            "Doctor availability request rejected: reason=%s request_id=%s",
+            str(error),
+            request_id,
+        )
         publish_metric("DoctorAvailabilityErrors", 1)
         return response(400, {"message": str(error)})
 

@@ -109,7 +109,7 @@ def get_actor(event):
         raise PermissionError("Doctor identity is missing")
     return int(user_id)
 
-
+#by using the below function we can get the doctor id for the user id
 def doctor_id_for_user(cursor, user_id):
     cursor.execute(
         "SELECT doctor_id FROM doctors WHERE user_id = %s",
@@ -120,7 +120,7 @@ def doctor_id_for_user(cursor, user_id):
         raise LookupError("Doctor profile not found")
     return doctor["doctor_id"]
 
-
+#by using the below function we can get the doctor profile for the doctor id
 def get_profile(cursor, doctor_id):
     cursor.execute(
         """
@@ -167,7 +167,7 @@ def get_profile(cursor, doctor_id):
     )
     return profile
 
-
+#by using the below function we can refresh the doctor verification status based on the profile completeness
 def refresh_doctor_verification(cursor, doctor_id):
     cursor.execute(
         """
@@ -211,7 +211,7 @@ def refresh_doctor_verification(cursor, doctor_id):
     )
     return complete
 
-
+#by using the below function we can require the doctor to be verified before performing certain actions
 def require_verified_doctor(cursor, doctor_id):
     cursor.execute(
         "SELECT is_verified FROM doctors WHERE doctor_id = %s",
@@ -221,7 +221,7 @@ def require_verified_doctor(cursor, doctor_id):
     if not doctor or not doctor["is_verified"]:
         raise PermissionError("Before profile completion, you are not allowed to do this.")
 
-
+#by using this function validates a consultation type request before inserting it into the database.
 def validate_consultation(body):
     name = body.get("consultation_name")
     if name not in CONSULTATION_RULES:
@@ -243,14 +243,14 @@ def validate_consultation(body):
         raise ValueError("Fee must be a non-negative amount with up to 2 decimals")
     return name, duration, capacity, fee
 
-
+#these utility functions are generally required if your application deals with appointment slots, availability schedules, UTC conversions, and SQL TIME fields, which MediSlot does.
 def parse_sql_time(value):
     if isinstance(value, time):
         return value.replace(tzinfo=None)
     seconds = int(value.total_seconds())
     return (datetime.min + timedelta(seconds=seconds)).time()
 
-
+#Converts datetime into a standard UTC ISO string.
 def utc_iso(value):
     return value.astimezone(timezone.utc).isoformat(timespec="seconds").replace(
         "+00:00", "Z"
@@ -262,7 +262,7 @@ def utc_day_bounds(day):
     end = datetime.combine(day + timedelta(days=1), time.min, tzinfo=timezone.utc)
     return start, end
 
-
+#Converts incoming datetime strings into proper UTC datetime objects.
 def parse_utc_datetime(value):
     parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     if parsed.tzinfo is None:
@@ -1035,6 +1035,9 @@ def get_day_schedule(cursor, doctor_id, query):
 
 def lambda_handler(event, context):
     started_at = perf_counter()
+    request_id = getattr(context, "aws_request_id", "unknown")
+    method = event.get("httpMethod", "GET")
+    path = event.get("path", (event.get("pathParameters") or {}).get("proxy", "/me"))
     try:
         result = route_doctor_api(event)
     except PermissionError as error:
@@ -1046,13 +1049,43 @@ def lambda_handler(event, context):
     except (ValueError, TypeError, json.JSONDecodeError) as error:
         result = response(400, {"message": str(error)})
     except pymysql.err.IntegrityError:
-        logger.exception("Doctor API rejected a conflicting database change")
+        logger.exception(
+            "Doctor API rejected a conflicting database change: method=%s path=%s request_id=%s",
+            method,
+            path,
+            request_id,
+        )
         result = response(409, {"message": "The requested change conflicts with existing data"})
     except Exception:
-        logger.exception("Doctor API request failed")
+        logger.exception(
+            "Doctor API request failed unexpectedly: method=%s path=%s request_id=%s",
+            method,
+            path,
+            request_id,
+        )
         result = response(500, {"message": "Internal server error"})
     status_code = result["statusCode"]
     duration_ms = (perf_counter() - started_at) * 1000
+    if status_code >= 400:
+        error_body = result.get("body", {})
+        if isinstance(error_body, str):
+            try:
+                error_body = json.loads(error_body)
+            except json.JSONDecodeError:
+                error_body = {}
+        reason = (
+            error_body.get("message", "Request rejected")
+            if isinstance(error_body, dict)
+            else "Request rejected"
+        )
+        logger.warning(
+            "Doctor API request failed: method=%s path=%s status=%s reason=%s request_id=%s",
+            method,
+            path,
+            status_code,
+            reason,
+            request_id,
+        )
     metric_data = [
         ("DoctorApiRequests", 1, "Count"),
         ("DoctorApiDurationMs", duration_ms, "Milliseconds"),
@@ -1063,10 +1096,10 @@ def lambda_handler(event, context):
         publish_metric(metric_name, value, unit)
     logger.info(
         "Doctor API request completed: method=%s path=%s status=%s duration_ms=%.2f request_id=%s",
-        event.get("httpMethod", "GET"),
-        (event.get("pathParameters") or {}).get("proxy", "/me"),
+        method,
+        path,
         status_code,
         duration_ms,
-        getattr(context, "aws_request_id", "unknown"),
+        request_id,
     )
     return result

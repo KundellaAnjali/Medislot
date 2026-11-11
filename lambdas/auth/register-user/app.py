@@ -105,6 +105,7 @@ def validate_password(password):
 def lambda_handler(event, context):
 
     connection = None
+    request_id = getattr(context, "aws_request_id", "unknown")
 
     try:
 
@@ -124,6 +125,10 @@ def lambda_handler(event, context):
 
         # Email Validation
         if not email:
+            logger.warning(
+                "Registration rejected: missing email request_id=%s",
+                request_id,
+            )
             return {
                 "statusCode": 400,
                 "body": json.dumps(
@@ -134,6 +139,10 @@ def lambda_handler(event, context):
             }
 
         if not validate_email(email):
+            logger.warning(
+                "Registration rejected: invalid email format request_id=%s",
+                request_id,
+            )
             return {
                 "statusCode": 400,
                 "body": json.dumps(
@@ -145,6 +154,10 @@ def lambda_handler(event, context):
 
         # Password Validation
         if not password:
+            logger.warning(
+                "Registration rejected: missing password request_id=%s",
+                request_id,
+            )
             return {
                 "statusCode": 400,
                 "body": json.dumps(
@@ -155,6 +168,10 @@ def lambda_handler(event, context):
             }
 
         if not validate_password(password):
+            logger.warning(
+                "Registration rejected: password does not meet requirements request_id=%s",
+                request_id,
+            )
 
             publish_metric(
                 "RegistrationFailure",
@@ -175,6 +192,10 @@ def lambda_handler(event, context):
 
         # Role Validation
         if role not in ["DOCTOR", "PATIENT"]:
+            logger.warning(
+                "Registration rejected: invalid role request_id=%s",
+                request_id,
+            )
             return {
                 "statusCode": 400,
                 "body": json.dumps(
@@ -186,6 +207,10 @@ def lambda_handler(event, context):
 
         # Name Validation
         if not isinstance(first_name, str) or not first_name:
+            logger.warning(
+                "Registration rejected: missing first name request_id=%s",
+                request_id,
+            )
             return {
                 "statusCode": 400,
                 "body": json.dumps(
@@ -196,12 +221,20 @@ def lambda_handler(event, context):
             }
 
         if len(first_name) > 100:
+            logger.warning(
+                "Registration rejected: first name exceeds length limit request_id=%s",
+                request_id,
+            )
             return {
                 "statusCode": 400,
                 "body": json.dumps({"message": "First name must be 100 characters or fewer"}),
             }
 
         if not isinstance(last_name, str) or not last_name:
+            logger.warning(
+                "Registration rejected: missing last name request_id=%s",
+                request_id,
+            )
             return {
                 "statusCode": 400,
                 "body": json.dumps(
@@ -211,6 +244,10 @@ def lambda_handler(event, context):
                 ),
             }
         if len(last_name) > 100:
+            logger.warning(
+                "Registration rejected: last name exceeds length limit request_id=%s",
+                request_id,
+            )
             return {
                 "statusCode": 400,
                 "body": json.dumps({"message": "Last name must be 100 characters or fewer"}),
@@ -239,6 +276,10 @@ def lambda_handler(event, context):
             existing_user = cursor.fetchone()
 
             if existing_user:
+                logger.warning(
+                    "Registration rejected: email already exists request_id=%s",
+                    request_id,
+                )
 
                 publish_metric(
                     "RegistrationFailure",
@@ -340,7 +381,10 @@ def lambda_handler(event, context):
         connection.commit()
 
         logger.info(
-            f"Registration successful. User ID: {user_id}"
+            "Registration successful: user_id=%s role=%s request_id=%s",
+            user_id,
+            role,
+            request_id,
         )
 
         publish_metric(
@@ -366,7 +410,8 @@ def lambda_handler(event, context):
     except Exception as ex:
 
         logger.exception(
-            f"Registration failed: {str(ex)}"
+            "Registration failed: request_id=%s",
+            request_id,
         )
 
         if connection:
