@@ -451,19 +451,69 @@ def update_doctor_profile(connection, cursor, doctor_id, body):
         "languages",
     }
     values = {key: body[key] for key in allowed if key in body}
+
+    def validate_text(field, value, minimum, maximum):
+        if not isinstance(value, str):
+            raise ValueError(f"{field} must be a string")
+        if value != value.strip():
+            raise ValueError(f"{field} must not have leading or trailing spaces")
+        if not minimum <= len(value) <= maximum:
+            raise ValueError(f"{field} must be between {minimum} and {maximum} characters")
+
+    for field in ("first_name", "last_name"):
+        if field in values:
+            validate_text(field, values[field], 2, 50)
+            if not all(character.isalpha() or character == " " for character in values[field]):
+                raise ValueError(f"{field} must contain only letters and spaces")
+
+    for field in ("phone_number", "hospital_phone"):
+        if field in body:
+            phone = body[field]
+            if not isinstance(phone, str):
+                raise ValueError(f"{field} must be a 10-digit string starting with 6, 7, 8, or 9")
+            if phone != phone.strip():
+                raise ValueError(f"{field} must not have leading or trailing spaces")
+            if not re.fullmatch(r"^[6-9][0-9]{9}$", phone):
+                raise ValueError(f"{field} must be exactly 10 digits and start with 6, 7, 8, or 9")
+
     if "license_number" in values and (
         not isinstance(values["license_number"], str)
+        or values["license_number"] != values["license_number"].strip()
         or not re.fullmatch(r"^[A-Z]{2,5}[0-9]{4,10}$", values["license_number"])
     ):
         raise ValueError(
             "License number must be in uppercase and follow the format TSMC123456 "
             "(2-5 uppercase letters followed by 4-10 digits)."
         )
+
     if "experience_years" in values:
-        values["experience_years"] = int(values["experience_years"])
-        if values["experience_years"] < 0:
-            raise ValueError("Experience years cannot be negative")
+        experience_years = values["experience_years"]
+        if isinstance(experience_years, bool) or not (
+            isinstance(experience_years, int)
+            or (
+                isinstance(experience_years, str)
+                and experience_years == experience_years.strip()
+                and re.fullmatch(r"^[+-]?[0-9]+$", experience_years)
+            )
+        ):
+            raise ValueError("experience_years must be an integer between 0 and 70")
+        values["experience_years"] = int(experience_years)
+        if not 0 <= values["experience_years"] <= 70:
+            raise ValueError("experience_years must be between 0 and 70")
+
+    if "qualification" in values:
+        validate_text("qualification", values["qualification"], 2, 100)
+
+    if "languages" in values:
+        validate_text("languages", values["languages"], 1, 200)
+
     hospital_fields = {"hospital_name", "city", "address", "hospital_phone"}
+    if "hospital_name" in body:
+        validate_text("hospital_name", body["hospital_name"], 3, 100)
+    if "city" in body:
+        validate_text("city", body["city"], 2, 50)
+        if not all(character.isalpha() or character == " " for character in body["city"]):
+            raise ValueError("city must contain only letters and spaces")
     if hospital_fields.intersection(body):
         name = str(body.get("hospital_name", "")).strip()
         if not name:
