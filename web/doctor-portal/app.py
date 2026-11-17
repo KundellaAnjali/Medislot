@@ -203,17 +203,32 @@ def api_request(
             f"MediSlot API connection failed ({type(error).__name__}: {error})"
         ) from error
 
-    #
-    # Access token expired
-    #
+    authorization_denied = result.status_code == 401
+    if authenticated and result.status_code == 403:
+        try:
+            error_payload = result.json()
+        except ValueError:
+            error_payload = {}
+        denial_message = (
+            error_payload.get("message")
+            if isinstance(error_payload, dict)
+            else None
+        )
+        authorization_denied = denial_message == "Forbidden" or (
+            isinstance(denial_message, str)
+            and denial_message.startswith(
+                "User is not authorized to access this resource"
+            )
+        )
+
     if (
         authenticated
-        and result.status_code == 401
+        and authorization_denied
         and session.get("refresh_token")
     ):
 
         app.logger.info(
-            "Received 401. Attempting token refresh."
+            "Received an authorization denial. Attempting token refresh."
         )
 
         if refresh_access_token():
@@ -406,6 +421,7 @@ def auth():
     session["access_token"] = result["access_token"]
     session["refresh_token"] = result["refresh_token"]
     session["role"] = role
+    flash("Signed in successfully.", "success")
     endpoint = "doctor_dashboard" if role == "DOCTOR" else "patient_dashboard"
     return redirect(url_for(endpoint))
 
@@ -429,6 +445,7 @@ def patient_auth_alias():
 def logout():
     if not session.get("refresh_token"):
         session.clear()
+        flash("You have been logged out.", "success")
         return redirect(url_for("auth"))
     try:
         api_request(
@@ -440,6 +457,7 @@ def logout():
     except ApiError as error:
         app.logger.warning("Logout request failed: status=%s", error.status_code)
     session.clear()
+    flash("You have been logged out.", "success")
     return redirect(url_for("auth"))
 
 

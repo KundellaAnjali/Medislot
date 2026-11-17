@@ -93,12 +93,13 @@ def validate_identity_fields(body, user_id, patient_id=None):
     return None
 
 
-def validate_profile(body):
+def validate_profile(body, existing_phone_number=None):
     unknown_fields = set(body) - PROFILE_FIELDS - IDENTITY_FIELDS
     if unknown_fields:
         raise ValidationError("Request contains unsupported profile fields.")
 
     profile = {}
+    name_fields = {"first_name", "last_name", "emergency_contact_name"}
     for field in PROFILE_FIELDS:
         if field not in body:
             continue
@@ -107,14 +108,19 @@ def validate_profile(body):
         if not isinstance(value, str):
             raise ValidationError(f"{field} must be a string.")
         value = value.strip()
+        if field in name_fields:
+            value = re.sub(r" +", " ", value)
         if not value:
             if field in {"first_name", "last_name", "phone_number"}:
                 raise ValidationError(f"{field} is required.")
             profile[field] = None
             continue
 
-        if field in {"first_name", "last_name"} and len(value) > 100:
-            raise ValidationError(f"{field} must be 100 characters or fewer.")
+        if field in {"first_name", "last_name"}:
+            if not 2 <= len(value) <= 100:
+                raise ValidationError(f"{field} must be between 2 and 100 characters.")
+            if not all(character.isalpha() or character == " " for character in value):
+                raise ValidationError(f"{field} must contain only letters and spaces.")
         if field in {"phone_number", "emergency_contact"}:
             digit_count = sum(character.isdigit() for character in value)
             if not PHONE_PATTERN.fullmatch(value) or not 7 <= digit_count <= 15:
@@ -128,14 +134,39 @@ def validate_profile(body):
                 ) from error
             if parsed_date > date.today():
                 raise ValidationError("date_of_birth cannot be in the future.")
+            today = date.today()
+            age = today.year - parsed_date.year - (
+                (today.month, today.day) < (parsed_date.month, parsed_date.day)
+            )
+            if age > 120:
+                raise ValidationError("Age must be between 0 and 120 years.")
             value = parsed_date.isoformat()
         if field == "gender" and len(value) > 20:
             raise ValidationError("gender must be 20 characters or fewer.")
-        if field == "emergency_contact_name" and len(value) > 200:
-            raise ValidationError(
-                "emergency_contact_name must be 200 characters or fewer."
-            )
+        if field == "emergency_contact_name":
+            if len(value) > 200:
+                raise ValidationError(
+                    "emergency_contact_name must be 200 characters or fewer."
+                )
+            if not all(character.isalpha() or character == " " for character in value):
+                raise ValidationError(
+                    "emergency_contact_name must contain only letters and spaces."
+                )
         profile[field] = value
+
+    emergency_contact = profile.get("emergency_contact")
+    phone_number = profile.get("phone_number", existing_phone_number)
+    if emergency_contact and phone_number:
+        emergency_digits = "".join(
+            character for character in emergency_contact if character.isdigit()
+        )
+        phone_digits = "".join(
+            character for character in phone_number if character.isdigit()
+        )
+        if emergency_digits == phone_digits:
+            raise ValidationError(
+                "emergency_contact must be different from phone_number."
+            )
 
     if not profile:
         raise ValidationError("Provide at least one profile field to update.")
@@ -177,21 +208,41 @@ def calculate_profile_filled(profile):
 
 def lambda_handler(event, context):
     request_id = getattr(context, "aws_request_id", "unknown")
+    method = event.get("httpMethod", "").upper()
+    path = event.get("path", "").rstrip("/")
+
+    def respond(status_code, payload):
+        logger.info(
+            "HTTP response completed: method=%s path=%s status=%s user_id=%s request_id=%s",
+            method or "unknown",
+            path or "unknown",
+            status_code,
+            user_id if user_id is not None else "unknown",
+            request_id,
+        )
+        return response(status_code, payload)
+
+    logger.info(
+        "HTTP request received: method=%s path=%s request_id=%s",
+        method or "unknown",
+        path or "unknown",
+        request_id,
+    )
     authorizer = event.get("requestContext", {}).get("authorizer", {})
     user_id = authorizer.get("userId")
     if not user_id:
         logger.warning(
-            "Patient profile request missing identity: request_id=%s",
+            "Authentication rejected: reason=missing_identity request_id=%s",
             request_id,
         )
-        return response(401, {"message": "Authentication is required."})
+        return respond(401, {"message": "Authentication is required."})
     if authorizer.get("role") != "PATIENT":
         logger.warning(
-            "Patient profile access denied: expected_role=PATIENT actual_role=%s request_id=%s",
+            "Authorization denied: required_role=PATIENT actual_role=%s request_id=%s",
             authorizer.get("role", "unknown"),
             request_id,
         )
-        return response(
+        return respond(
             403,
             {"message": "You are not allowed to access this profile."},
         )
@@ -199,13 +250,21 @@ def lambda_handler(event, context):
         user_id = int(user_id)
     except (TypeError, ValueError):
         logger.warning(
-            "Patient profile request has invalid user identity: request_id=%s",
+            "Authentication rejected: reason=invalid_user_identity request_id=%s",
             request_id,
         )
-        return response(401, {"message": "Authentication is required."})
+        return respond(401, {"message": "Authentication is required."})
 
-    method = event.get("httpMethod", "").upper()
-    path = event.get("path", "").rstrip("/")
+    logger.info(
+        "Authentication succeeded: user_id=%s request_id=%s",
+        user_id,
+        request_id,
+    )
+    logger.info(
+        "Authorization granted: role=PATIENT user_id=%s request_id=%s",
+        user_id,
+        request_id,
+    )
     if path == "/patients/me" and method in {"GET", "PUT", "DELETE"}:
         operation = method.lower()
     elif path != "/patients/me":
@@ -215,7 +274,7 @@ def lambda_handler(event, context):
             path,
             request_id,
         )
-        return response(404, {"message": "Route not found."})
+        return respond(404, {"message": "Route not found."})
     else:
         logger.warning(
             "Patient profile method not allowed: method=%s path=%s request_id=%s",
@@ -223,10 +282,10 @@ def lambda_handler(event, context):
             path,
             request_id,
         )
-        return response(405, {"message": "Method not allowed."})
+        return respond(405, {"message": "Method not allowed."})
 
     logger.info(
-        "Patient profile request: operation=%s user_id=%s request_id=%s",
+        "Patient profile operation started: operation=%s user_id=%s request_id=%s",
         operation,
         user_id,
         request_id,
@@ -234,11 +293,29 @@ def lambda_handler(event, context):
     try:
         body = parse_body(event) if method in {"POST", "PUT", "DELETE"} else {}
         connection = get_connection()
+        logger.info(
+            "Database connection established: operation=%s user_id=%s request_id=%s",
+            operation,
+            user_id,
+            request_id,
+        )
         try:
             with connection.cursor() as cursor:
                 ensure_patient_record(cursor, user_id)
+                logger.info(
+                    "Patient record ensured: operation=%s user_id=%s request_id=%s",
+                    operation,
+                    user_id,
+                    request_id,
+                )
                 if operation == "get":
                     profile = get_profile(cursor, user_id)
+                    logger.info(
+                        "Patient profile lookup completed: found=%s user_id=%s request_id=%s",
+                        bool(profile and profile["patient_id"]),
+                        user_id,
+                        request_id,
+                    )
                     if not profile or not profile["patient_id"]:
                         logger.warning(
                             "Patient profile not found: user_id=%s request_id=%s",
@@ -246,11 +323,26 @@ def lambda_handler(event, context):
                             request_id,
                         )
                         connection.rollback()
-                        return response(404, {"message": "Patient profile not found."})
+                        logger.info(
+                            "Database transaction rolled back: reason=profile_not_found request_id=%s",
+                            request_id,
+                        )
+                        return respond(404, {"message": "Patient profile not found."})
                     connection.commit()
-                    return response(200, {"profile": profile})
+                    logger.info(
+                        "Database transaction committed: operation=get user_id=%s request_id=%s",
+                        user_id,
+                        request_id,
+                    )
+                    return respond(200, {"profile": profile})
 
                 current = get_profile(cursor, user_id)
+                logger.info(
+                    "Current patient profile lookup completed: found=%s user_id=%s request_id=%s",
+                    bool(current),
+                    user_id,
+                    request_id,
+                )
                 identity_error = validate_identity_fields(
                     body,
                     user_id,
@@ -263,6 +355,17 @@ def lambda_handler(event, context):
                         request_id,
                     )
                     connection.rollback()
+                    logger.info(
+                        "Database transaction rolled back: reason=identity_mismatch request_id=%s",
+                        request_id,
+                    )
+                    logger.info(
+                        "HTTP response completed: method=%s path=%s status=403 user_id=%s request_id=%s",
+                        method,
+                        path,
+                        user_id,
+                        request_id,
+                    )
                     return identity_error
 
                 if not current:
@@ -272,10 +375,23 @@ def lambda_handler(event, context):
                         request_id,
                     )
                     connection.rollback()
-                    return response(404, {"message": "Patient profile not found."})
+                    logger.info(
+                        "Database transaction rolled back: reason=profile_not_found request_id=%s",
+                        request_id,
+                    )
+                    return respond(404, {"message": "Patient profile not found."})
 
                 if operation == "put":
-                    updates = validate_profile(body)
+                    updates = validate_profile(
+                        body,
+                        existing_phone_number=current["phone_number"],
+                    )
+                    logger.info(
+                        "Patient profile validation succeeded: fields=%s user_id=%s request_id=%s",
+                        ",".join(sorted(updates)),
+                        user_id,
+                        request_id,
+                    )
                     updated_profile = {
                         "first_name": current["first_name"],
                         "last_name": current["last_name"],
@@ -318,14 +434,24 @@ def lambda_handler(event, context):
                             profile_filled,
                         ),
                     )
-                    connection.commit()
-                    saved_profile = get_profile(cursor, user_id)
                     logger.info(
-                        "Patient profile updated: user_id=%s request_id=%s",
+                        "Patient profile database update executed: user_id=%s request_id=%s",
                         user_id,
                         request_id,
                     )
-                    return response(200, {"profile": saved_profile})
+                    connection.commit()
+                    logger.info(
+                        "Database transaction committed: operation=put user_id=%s request_id=%s",
+                        user_id,
+                        request_id,
+                    )
+                    saved_profile = get_profile(cursor, user_id)
+                    logger.info(
+                        "Patient profile update completed: user_id=%s request_id=%s",
+                        user_id,
+                        request_id,
+                    )
+                    return respond(200, {"profile": saved_profile})
 
                 cursor.execute(
                     """
@@ -342,15 +468,31 @@ def lambda_handler(event, context):
                     """,
                     (user_id,),
                 )
+                logger.info(
+                    "Patient profile clear statement executed: user_id=%s request_id=%s",
+                    user_id,
+                    request_id,
+                )
                 connection.commit()
+                logger.info(
+                    "Database transaction committed: operation=delete user_id=%s request_id=%s",
+                    user_id,
+                    request_id,
+                )
                 logger.info(
                     "Patient profile cleared: user_id=%s request_id=%s",
                     user_id,
                     request_id,
                 )
-                return response(200, {"message": "Patient profile cleared."})
+                return respond(200, {"message": "Patient profile cleared."})
         finally:
             connection.close()
+            logger.info(
+                "Database connection closed: operation=%s user_id=%s request_id=%s",
+                operation,
+                user_id,
+                request_id,
+            )
     except ValidationError as error:
         logger.warning(
             "Patient profile request rejected: user_id=%s reason=%s request_id=%s",
@@ -358,7 +500,7 @@ def lambda_handler(event, context):
             str(error),
             request_id,
         )
-        return response(400, {"message": str(error)})
+        return respond(400, {"message": str(error)})
     except pymysql.err.IntegrityError as error:
         if getattr(error, "args", [None])[0] == 1451:
             logger.warning(
@@ -366,7 +508,7 @@ def lambda_handler(event, context):
                 user_id,
                 request_id,
             )
-            return response(
+            return respond(
                 409,
                 {"message": "Profile cannot be deleted while appointments exist."},
             )
@@ -376,20 +518,20 @@ def lambda_handler(event, context):
                 user_id,
                 request_id,
             )
-            return response(409, {"message": "Email address is already in use."})
+            return respond(409, {"message": "Email address is already in use."})
         logger.exception(
             "Patient profile database constraint failed: user_id=%s request_id=%s",
             user_id,
             request_id,
         )
-        return response(500, {"message": "Could not save the patient profile."})
+        return respond(500, {"message": "Could not save the patient profile."})
     except pymysql.MySQLError:
         logger.exception(
             "Patient profile database operation failed: user_id=%s request_id=%s",
             user_id,
             request_id,
         )
-        return response(500, {"message": "Could not complete the profile request."})
+        return respond(500, {"message": "Could not complete the profile request."})
     except Exception:
         logger.exception(
             "Patient profile request failed unexpectedly: operation=%s user_id=%s request_id=%s",

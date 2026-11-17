@@ -131,6 +131,13 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
 .notice { margin: 0 0 16px; padding: 10px 12px; border-radius: 3px; font-size: 12px; }
 .notice.success { background: #e8f4eb; color: #2e7148; }
 .notice.error { background: #faece8; color: #a64b37; }
+.notice.is-dismissible { display: flex; align-items: center; gap: 12px; }
+.notice-dismiss { flex: 0 0 auto; margin: -6px -8px -6px auto; padding: 2px 6px; border: 0; background: transparent; color: currentColor; font-size: 20px; line-height: 1; cursor: pointer; opacity: .7; }
+.notice-dismiss:hover { opacity: 1; }
+.notice.is-dismissing { overflow: hidden; max-height: 0 !important; margin-top: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0; opacity: 0; transform: translateY(-5px); transition: opacity .3s ease, transform .3s ease, max-height .3s ease, margin .3s ease, padding .3s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .notice.is-dismissing { transition-duration: .01ms; }
+}
 .muted { color: var(--muted) !important; }
 .login-page { min-height: 100vh; background: #f4f8f5; }
 .login-layout { display: grid; min-height: 100vh; grid-template-columns: 1.05fr .95fr; }
