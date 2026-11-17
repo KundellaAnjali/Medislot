@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from time import perf_counter
@@ -450,6 +451,14 @@ def update_doctor_profile(connection, cursor, doctor_id, body):
         "languages",
     }
     values = {key: body[key] for key in allowed if key in body}
+    if "license_number" in values and (
+        not isinstance(values["license_number"], str)
+        or not re.fullmatch(r"^[A-Z]{2,5}[0-9]{4,10}$", values["license_number"])
+    ):
+        raise ValueError(
+            "License number must be in uppercase and follow the format TSMC123456 "
+            "(2-5 uppercase letters followed by 4-10 digits)."
+        )
     if "experience_years" in values:
         values["experience_years"] = int(values["experience_years"])
         if values["experience_years"] < 0:
