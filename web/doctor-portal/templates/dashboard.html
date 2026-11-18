@@ -73,6 +73,7 @@
         <section class="dashboard-panel">
           <form method="post" action="{{ url_for('save_availability') }}" id="availability-form">
             <fieldset class="configuration-controls" {{ 'disabled' if not profile.is_verified else '' }}>
+              <div class="form-actions"><button class="button secondary" type="button" id="add-pattern">+ Add availability</button><button class="button primary" type="submit">Save availability</button></div>
               <div class="pattern-list" id="pattern-list">
                 {% for pattern in patterns %}
                   <div class="pattern-row" data-saved-pattern>
@@ -87,7 +88,6 @@
                   </div>
                 {% endfor %}
               </div>
-              <div class="form-actions"><button class="button secondary" type="button" id="add-pattern">+ Add availability</button><button class="button primary" type="submit">Save availability</button></div>
             </fieldset>
           </form>
         </section>
@@ -228,19 +228,28 @@
       const editButton = event.target.closest('.pattern-edit');
       if (editButton) {
         const editing = editButton.textContent.trim() === 'Edit';
-        row.querySelectorAll('select, input').forEach(field => { field.disabled = !editing; });
-        editButton.textContent = editing ? 'Done' : 'Edit';
-        showAvailabilityToast(
-          editing
-            ? 'Edit the availability pattern, then select Save availability to apply your changes.'
-            : 'Pattern changes are ready. Select Save availability to apply them.'
-        );
+        if (editing) {
+          row.querySelectorAll('select, input').forEach(field => { field.disabled = false; });
+          editButton.textContent = 'Done';
+          showAvailabilityToast('Edit the pattern, then select Done to save it.');
+          return;
+        }
+
+        if (!availabilityForm.reportValidity()) return;
+        showAvailabilityToast('Saving availability changes...');
+        availabilityForm.requestSubmit();
         return;
       }
 
       if (event.target.closest('.pattern-delete')) {
+        const isSavedPattern = row.hasAttribute('data-saved-pattern');
         row.remove();
-        showAvailabilityToast('Availability pattern removed. Select Save availability to apply the change.');
+        if (isSavedPattern) {
+          showAvailabilityToast('Deleting availability pattern...');
+          availabilityForm.requestSubmit();
+        } else {
+          showAvailabilityToast('New availability pattern removed.');
+        }
       }
     });
     availabilityForm?.addEventListener('submit', () => {

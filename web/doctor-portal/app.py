@@ -669,12 +669,16 @@ def patient_dashboard():
             ).isoformat()
         except ValueError:
             end_date = start_date
-    if active_view == "slot-availability" and doctor_id:
+    if active_view == "slot-availability" and request.args.get("search") == "1":
         try:
             result = api_request(
                 "GET",
-                f"/doctors/{doctor_id}/availability",
-                params={"start_date": start_date, "end_date": end_date},
+                "/doctors/availability",
+                params={
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    **({"doctor_id": doctor_id} if doctor_id else {}),
+                },
             )
             if not isinstance(result, dict):
                 raise ApiError("Availability API returned an invalid response.")
@@ -776,8 +780,12 @@ def patient_doctor_availability(doctor_id):
     try:
         payload = api_request(
             "GET",
-            f"/doctors/{doctor_id}/availability",
-            params={"start_date": start_date, "end_date": end_date},
+            "/doctors/availability",
+            params={
+                "start_date": start_date,
+                "end_date": end_date,
+                "doctor_id": doctor_id,
+            },
         )
         if not isinstance(payload, dict) or not isinstance(
             payload.get("slots"), list
