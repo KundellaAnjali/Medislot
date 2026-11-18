@@ -15,7 +15,6 @@
       <p class="patient-sidebar-caption">PATIENT WORKSPACE</p>
       <nav class="patient-sidebar-nav" aria-label="Patient dashboard">
         <button class="patient-sidebar-link" type="button" data-patient-view="doctor-search">Doctor Search</button>
-        <button class="patient-sidebar-link" type="button" data-patient-view="public-doctor-profile" {% if doctor_id %}data-load-url="{{ url_for('patient_dashboard', view='public-doctor-profile', doctor_id=doctor_id) }}" data-loaded="{{ 'true' if public_profile else 'false' }}"{% endif %}>Public Doctor Profile</button>
         <button class="patient-sidebar-link" type="button" data-patient-view="slot-availability">Slot Availability</button>
       </nav>
       <div class="patient-sidebar-bottom">
@@ -26,9 +25,6 @@
       </div>
     </aside>
     <main class="patient-content">
-    <p class="eyebrow">Patient portal</p>
-    <h1>Your care, in one place.</h1>
-    <p>Manage your profile details and keep your account information up to date.</p>
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% for category, message in messages %}<p class="notice {{ category }}">{{ message }}</p>{% endfor %}
     {% endwith %}

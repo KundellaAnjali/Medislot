@@ -84,16 +84,17 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
 .availability-toolbar .view-subtitle { margin: 0; }
 .availability-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .availability-fieldset:disabled { opacity: .7; }
+.availability-panel { padding: 24px; }
 .availability-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 4px; }
-.availability-table { width: 100%; min-width: 950px; table-layout: fixed; border-collapse: collapse; background: #fff; }
-.availability-table th:nth-child(1), .availability-table td:nth-child(1) { width: 23%; }
+.availability-table { width: 100%; min-width: 950px; table-layout: fixed; border-collapse: separate; border-spacing: 16px 12px; background: #fff; }
+.availability-table th:nth-child(1), .availability-table td:nth-child(1) { width: 22%; }
 .availability-table th:nth-child(2), .availability-table td:nth-child(2),
-.availability-table th:nth-child(3), .availability-table td:nth-child(3) { width: 12%; }
-.availability-table th:nth-child(4), .availability-table td:nth-child(4) { width: 19%; }
-.availability-table th:nth-child(5), .availability-table td:nth-child(5) { width: 12%; }
-.availability-table th:nth-child(6), .availability-table td:nth-child(6) { width: 22%; }
+.availability-table th:nth-child(3), .availability-table td:nth-child(3) { width: 11%; }
+.availability-table th:nth-child(4), .availability-table td:nth-child(4) { width: 20%; }
+.availability-table th:nth-child(5), .availability-table td:nth-child(5) { width: 16%; }
+.availability-table th:nth-child(6), .availability-table td:nth-child(6) { width: 20%; }
 .availability-table th { padding: 12px 10px; border-bottom: 1px solid var(--line); background: #f5f8f6; color: var(--muted); text-align: left; font-size: 10px; font-weight: 700; white-space: nowrap; }
-.availability-table td { min-width: 0; padding: 10px; border-bottom: 1px solid #e8eeeb; vertical-align: middle; }
+.availability-table td { height: 56px; min-width: 0; padding: 8px; border-bottom: 1px solid #e8eeeb; vertical-align: middle; }
 .availability-table td:first-child { min-width: 175px; }
 .availability-table td:nth-child(4) { min-width: 150px; }
 .availability-table td:last-child { min-width: 145px; }
@@ -101,8 +102,9 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
 .availability-table .pattern-row { display: table-row; padding: 0; border: 0; }
 .availability-table select, .availability-table input { width: 100%; min-width: 0; min-height: 36px; padding: 0 8px; border: 1px solid #cfdad7; border-radius: 4px; background: #fff; color: var(--ink); font-size: 11px; }
 .availability-table select:disabled, .availability-table input:disabled { border-color: transparent; background: #f5f8f6; color: #536368; opacity: 1; }
-.availability-table .pattern-actions { justify-content: flex-start; }
+.availability-table .pattern-actions { flex-wrap: wrap; justify-content: flex-start; }
 .availability-table .pattern-actions .button { min-height: 34px; }
+.availability-table .pattern-actions .pattern-cancel { color: var(--muted); }
 .availability-table .pattern-save, .availability-table .pattern-update { min-width: 65px; }
 .weekday-picker { min-width: 0; }
 .weekday-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 36px; padding: 0 9px; border: 1px solid #cfdad7; border-radius: 4px; background: #fff; color: var(--ink); cursor: pointer; font-size: 11px; text-align: left; }
@@ -437,6 +439,7 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
   .metric-panel { min-height: 105px; padding: 12px; }
   .metric-panel strong { font-size: 20px; }
   .dashboard-panel { padding: 15px 12px; }
+  .availability-panel { padding: 24px; }
   .summary-hospital { display: none; }
   .doctor-main .configuration-controls { grid-template-columns: 1fr 1fr; }
   .doctor-main .configuration-controls select:first-child { grid-column: 1 / -1; }

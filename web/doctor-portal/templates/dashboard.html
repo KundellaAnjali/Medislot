@@ -70,7 +70,7 @@
 
       <section class="dashboard-view" id="availability-view" data-view hidden>
         <div class="view-heading"><div><h1>Availability</h1></div></div>
-        <section class="dashboard-panel">
+        <section class="dashboard-panel availability-panel">
           <div class="availability-toolbar">
             <button class="button primary" type="button" id="add-pattern" {{ 'disabled' if not profile.is_verified else '' }}>+ Add Availability</button>
           </div>
@@ -291,7 +291,7 @@
       const row = document.createElement('tr');
       row.className = 'pattern-row is-editing';
       const weekdayPickerId = `weekday-options-new-${++weekdayPickerSequence}`;
-      row.innerHTML = `<td><select name="consultation_type_id" aria-label="Consultation type" required><option value="">Choose type</option>${activeConsultations.map(item => `<option value="${item.consultation_type_id}">${escapeHtml(item.consultation_name)}</option>`).join('')}</select></td><td><input name="start_time" type="time" aria-label="Start time" required></td><td><input name="end_time" type="time" aria-label="End time" required></td><td><div class="weekday-picker"><button class="weekday-toggle" type="button" aria-expanded="false" aria-controls="${weekdayPickerId}"><span class="weekday-selection-label">Select days</span><span aria-hidden="true">&#9662;</span></button><div class="weekday-options" id="${weekdayPickerId}" popover="auto" role="group" aria-label="Repeat days">${weekdays.map(day => `<label><input name="repeat_days" type="checkbox" value="${day}" aria-label="${day.slice(0, 3)}">${day.slice(0, 3)[0] + day.slice(1, 3).toLowerCase()}</label>`).join('')}</div></div></td><td><select name="is_active" aria-label="Status" required><option value="true" selected>Active</option><option value="false">Inactive</option></select></td><td class="pattern-actions-cell"><div class="pattern-actions"><button class="button primary pattern-save" type="button">Save</button></div></td>`;
+      row.innerHTML = `<td><select name="consultation_type_id" aria-label="Consultation type" required><option value="">Choose type</option>${activeConsultations.map(item => `<option value="${item.consultation_type_id}">${escapeHtml(item.consultation_name)}</option>`).join('')}</select></td><td><input name="start_time" type="time" aria-label="Start time" required></td><td><input name="end_time" type="time" aria-label="End time" required></td><td><div class="weekday-picker"><button class="weekday-toggle" type="button" aria-expanded="false" aria-controls="${weekdayPickerId}"><span class="weekday-selection-label">Select days</span><span aria-hidden="true">&#9662;</span></button><div class="weekday-options" id="${weekdayPickerId}" popover="auto" role="group" aria-label="Repeat days">${weekdays.map(day => `<label><input name="repeat_days" type="checkbox" value="${day}" aria-label="${day.slice(0, 3)}">${day.slice(0, 3)[0] + day.slice(1, 3).toLowerCase()}</label>`).join('')}</div></div></td><td><select name="is_active" aria-label="Status" required><option value="true" selected>Active</option><option value="false">Inactive</option></select></td><td class="pattern-actions-cell"><div class="pattern-actions"><button class="button primary pattern-save" type="button">Save</button><button class="button secondary pattern-cancel" type="button">Cancel</button></div></td>`;
       patternList.appendChild(row);
       initializeWeekdayPicker(row);
       row.querySelector('[name="consultation_type_id"]').focus();
@@ -321,11 +321,45 @@
         return;
       }
 
+      if (button.classList.contains('pattern-cancel')) {
+        if (!row.hasAttribute('data-saved-pattern')) {
+          row.remove();
+          return;
+        }
+        row.querySelectorAll('input, select').forEach((field, index) => {
+          const original = row._availabilityOriginalValues?.[index];
+          if (!original) return;
+          if (field.type === 'checkbox') field.checked = original.checked;
+          else field.value = original.value;
+          field.disabled = true;
+        });
+        const selectedDays = [...row.querySelectorAll('[name="repeat_days"]:checked')]
+          .map(input => input.value.slice(0, 3)[0] + input.value.slice(1, 3).toLowerCase());
+        row.querySelector('.weekday-selection-label').textContent =
+          selectedDays.length ? selectedDays.join(', ') : 'Select days';
+        row.querySelector('.weekday-toggle').disabled = true;
+        const weekdayPopover = row.querySelector('.weekday-options');
+        if (weekdayPopover.matches(':popover-open')) weekdayPopover.hidePopover();
+        const updateButton = row.querySelector('.pattern-update');
+        updateButton.textContent = 'Edit';
+        updateButton.classList.remove('pattern-update');
+        updateButton.classList.add('pattern-edit');
+        row.querySelector('.pattern-cancel').remove();
+        row.classList.remove('is-editing');
+        delete row._availabilityOriginalValues;
+        return;
+      }
+
       if (button.classList.contains('pattern-edit')) {
+        row._availabilityOriginalValues = [...row.querySelectorAll('input, select')].map(field => ({
+          value: field.value,
+          checked: field.type === 'checkbox' ? field.checked : undefined,
+        }));
         row.querySelectorAll('select, input, .weekday-toggle').forEach(field => { field.disabled = false; });
         button.textContent = 'Update';
         button.classList.remove('pattern-edit');
         button.classList.add('pattern-update');
+        button.insertAdjacentHTML('afterend', '<button class="button secondary pattern-cancel" type="button">Cancel</button>');
         row.classList.add('is-editing');
         return;
       }
@@ -377,6 +411,7 @@
           row.classList.remove('is-editing');
           const actions = row.querySelector('.pattern-actions');
           actions.innerHTML = '<button class="button secondary pattern-edit" type="button">Edit</button><button class="button secondary danger-text pattern-delete" type="button">Delete</button>';
+          delete row._availabilityOriginalValues;
           showAvailabilityToast(isNew ? 'Availability saved.' : 'Availability updated.');
         }).catch(error => {
           showAvailabilityToast(error.message || 'Could not save availability.', 'error');
