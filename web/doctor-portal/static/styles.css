@@ -85,20 +85,35 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
 .availability-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .availability-fieldset:disabled { opacity: .7; }
 .availability-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 4px; }
-.availability-table { width: 100%; min-width: 950px; border-collapse: collapse; background: #fff; }
+.availability-table { width: 100%; min-width: 950px; table-layout: fixed; border-collapse: collapse; background: #fff; }
+.availability-table th:nth-child(1), .availability-table td:nth-child(1) { width: 23%; }
+.availability-table th:nth-child(2), .availability-table td:nth-child(2),
+.availability-table th:nth-child(3), .availability-table td:nth-child(3) { width: 12%; }
+.availability-table th:nth-child(4), .availability-table td:nth-child(4) { width: 19%; }
+.availability-table th:nth-child(5), .availability-table td:nth-child(5) { width: 12%; }
+.availability-table th:nth-child(6), .availability-table td:nth-child(6) { width: 22%; }
 .availability-table th { padding: 12px 10px; border-bottom: 1px solid var(--line); background: #f5f8f6; color: var(--muted); text-align: left; font-size: 10px; font-weight: 700; white-space: nowrap; }
-.availability-table td { min-width: 115px; padding: 10px; border-bottom: 1px solid #e8eeeb; vertical-align: middle; }
+.availability-table td { min-width: 0; padding: 10px; border-bottom: 1px solid #e8eeeb; vertical-align: middle; }
 .availability-table td:first-child { min-width: 175px; }
-.availability-table td:nth-child(4) { min-width: 170px; }
-.availability-table td:last-child { min-width: 150px; }
+.availability-table td:nth-child(4) { min-width: 150px; }
+.availability-table td:last-child { min-width: 145px; }
 .availability-table tbody tr:last-child td { border-bottom: 0; }
 .availability-table .pattern-row { display: table-row; padding: 0; border: 0; }
 .availability-table select, .availability-table input { width: 100%; min-width: 0; min-height: 36px; padding: 0 8px; border: 1px solid #cfdad7; border-radius: 4px; background: #fff; color: var(--ink); font-size: 11px; }
-.availability-table select[multiple] { height: 74px; padding: 4px 8px; }
 .availability-table select:disabled, .availability-table input:disabled { border-color: transparent; background: #f5f8f6; color: #536368; opacity: 1; }
 .availability-table .pattern-actions { justify-content: flex-start; }
 .availability-table .pattern-actions .button { min-height: 34px; }
 .availability-table .pattern-save, .availability-table .pattern-update { min-width: 65px; }
+.weekday-picker { min-width: 0; }
+.weekday-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; min-height: 36px; padding: 0 9px; border: 1px solid #cfdad7; border-radius: 4px; background: #fff; color: var(--ink); cursor: pointer; font-size: 11px; text-align: left; }
+.weekday-toggle:focus-visible { outline: 2px solid #9bd1c4; outline-offset: 1px; border-color: var(--teal); }
+.weekday-toggle[aria-expanded="true"] { border-color: var(--teal); }
+.weekday-toggle:disabled { border-color: transparent; background: #f5f8f6; color: #536368; cursor: default; opacity: 1; }
+.weekday-options[popover] { position: fixed; inset: auto; width: 180px; max-width: calc(100vw - 16px); max-height: min(280px, calc(100vh - 16px)); overflow-y: auto; margin: 0; padding: 5px; border: 1px solid var(--teal); border-radius: 4px; background: #fff; color: var(--ink); box-shadow: 0 6px 14px #1b2b321c; }
+.weekday-options label { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 3px 6px; border-radius: 3px; color: var(--ink); cursor: pointer; font-size: 11px; }
+.weekday-options label:hover { background: #f3f7f5; }
+.availability-table .weekday-options input[type="checkbox"] { width: 14px; height: 14px; min-height: 14px; margin: 0; accent-color: var(--teal); }
+.availability-table .weekday-options input:disabled { opacity: 1; }
 .availability-verification-note { margin: 12px 0 0; }
 .availability-toast { position: fixed; right: 24px; bottom: 24px; z-index: 1100; max-width: min(420px, calc(100vw - 32px)); margin: 0; box-shadow: 0 8px 24px rgb(27 43 50 / 16%); }
 .form-actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 12px; }

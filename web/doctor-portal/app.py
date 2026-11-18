@@ -63,6 +63,10 @@ class ApiError(Exception):
         self.status_code = status_code
 
 
+def request_expects_json():
+    return request.is_json or request.accept_mimetypes.best == "application/json"
+
+
 def role_required(role, profile_path, missing_profile_message):
     def decorate(handler):
         @wraps(handler)
@@ -72,6 +76,10 @@ def role_required(role, profile_path, missing_profile_message):
                 not refresh_token
                 or session.get("role") != role
             ):
+                if request_expects_json():
+                    return jsonify(
+                        {"message": "Your session has expired. Please sign in again."}
+                    ), 401
                 return redirect(url_for("auth", mode="login", role=role))
 
             try:
@@ -82,6 +90,15 @@ def role_required(role, profile_path, missing_profile_message):
             except ApiError as error:
                 if error.status_code in {401, 403}:
                     session.clear()
+                    if request_expects_json():
+                        return jsonify(
+                            {
+                                "message": (
+                                    "Your session is invalid or has expired. "
+                                    "Please sign in again."
+                                )
+                            }
+                        ), 401
                     flash(
                         "Your session is invalid or has expired. Please sign in again.",
                         "error",
@@ -95,6 +112,15 @@ def role_required(role, profile_path, missing_profile_message):
                 else:
                     if error.status_code == 404:
                         session.clear()
+                        if request_expects_json():
+                            return jsonify(
+                                {
+                                    "message": (
+                                        "Your session could not be verified. "
+                                        "Please sign in again."
+                                    )
+                                }
+                            ), 401
                         flash(
                             "Your session could not be verified. Please sign in again.",
                             "error",
@@ -108,7 +134,15 @@ def role_required(role, profile_path, missing_profile_message):
                         error.status_code,
                     )
                     return (
-                        "Unable to verify your session. Please try again.",
+                        jsonify(
+                            {
+                                "message": (
+                                    "Unable to verify your session. Please try again."
+                                )
+                            }
+                        )
+                        if request_expects_json()
+                        else "Unable to verify your session. Please try again.",
                         503,
                     )
 
