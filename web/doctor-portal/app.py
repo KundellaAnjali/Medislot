@@ -135,6 +135,7 @@ def refresh_access_token():
     refresh_token = session.get("refresh_token")
 
     if not refresh_token:
+        app.logger.warning("Access token refresh skipped: no refresh token in session")
         return False
 
     try:
@@ -147,11 +148,26 @@ def refresh_access_token():
         )
 
         if not result.ok:
+            app.logger.warning(
+                "Access token refresh rejected: status=%s",
+                result.status_code,
+            )
             return False
 
-        payload = result.json()
+        try:
+            payload = result.json()
+        except ValueError:
+            app.logger.error("Access token refresh failed: invalid JSON response")
+            return False
 
-        session["access_token"] = payload["access_token"]
+        access_token = payload.get("access_token") if isinstance(payload, dict) else None
+        if not access_token:
+            app.logger.error(
+                "Access token refresh failed: response did not contain an access token"
+            )
+            return False
+
+        session["access_token"] = access_token
         session.modified = True
 
         app.logger.info(
@@ -165,6 +181,31 @@ def refresh_access_token():
             "Failed to refresh access token"
         )
         return False
+
+
+def is_access_token_denial(result):
+    if result.status_code == 401:
+        return True
+    if result.status_code != 403:
+        return False
+
+    try:
+        error_payload = result.json()
+    except ValueError:
+        return False
+    if not isinstance(error_payload, dict):
+        return False
+
+    denial_message = error_payload.get("message") or error_payload.get("Message")
+    if not isinstance(denial_message, str):
+        return False
+    normalized_message = denial_message.lower()
+    return (
+        normalized_message == "forbidden"
+        or "not authorized to access this resource" in normalized_message
+        or "not authorized to perform: execute-api:invoke" in normalized_message
+    )
+
 
 def api_request(
     method,
@@ -203,32 +244,15 @@ def api_request(
             f"MediSlot API connection failed ({type(error).__name__}: {error})"
         ) from error
 
-    authorization_denied = result.status_code == 401
-    if authenticated and result.status_code == 403:
-        try:
-            error_payload = result.json()
-        except ValueError:
-            error_payload = {}
-        denial_message = (
-            error_payload.get("message")
-            if isinstance(error_payload, dict)
-            else None
-        )
-        authorization_denied = denial_message == "Forbidden" or (
-            isinstance(denial_message, str)
-            and denial_message.startswith(
-                "User is not authorized to access this resource"
-            )
-        )
-
     if (
         authenticated
-        and authorization_denied
+        and is_access_token_denial(result)
         and session.get("refresh_token")
     ):
 
         app.logger.info(
-            "Received an authorization denial. Attempting token refresh."
+            "Received an access-token denial: status=%s. Attempting token refresh.",
+            result.status_code,
         )
 
         if refresh_access_token():
@@ -257,6 +281,14 @@ def api_request(
                     f"MediSlot API connection failed "
                     f"({type(error).__name__}: {error})"
                 ) from error
+        else:
+            app.logger.warning(
+                "Access token refresh failed; retaining original API response: "
+                "method=%s path=%s status=%s",
+                method,
+                path,
+                result.status_code,
+            )
 
     try:
         payload = result.json()

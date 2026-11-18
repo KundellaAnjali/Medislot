@@ -94,6 +94,7 @@ def build_filters(filters):
 
 def search_doctors(connection, filters, page, limit):
     clauses, filter_values = build_filters(filters)
+    clauses.insert(0, "d.is_verified = TRUE")
     where_clause = f"WHERE {' AND '.join(clauses)}" if clauses else ""
 
     with connection.cursor() as cursor:

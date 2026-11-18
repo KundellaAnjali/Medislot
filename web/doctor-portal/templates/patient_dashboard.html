@@ -43,9 +43,6 @@
           <span class="status-pill pending"><span></span>Needs details</span>
         {% endif %}
       </div>
-      {% if profile and profile.get('profile_filled') %}
-        <button class="button secondary" id="edit-patient-profile" type="button">Edit profile</button>
-      {% endif %}
       <form method="post" action="{{ url_for('update_patient_profile') }}" class="patient-profile-form" id="patient-profile-form">
         <label for="patient-first-name">First name
           <input data-editable id="patient-first-name" name="first_name" autocomplete="given-name" maxlength="100" required value="{{ profile.get('first_name') or '' if profile else '' }}" {% if profile and profile.get('profile_filled') %}readonly{% endif %}>
@@ -88,6 +85,9 @@
       </form>
       {% if profile %}
         <form method="post" action="{{ url_for('delete_patient_profile') }}" class="patient-delete-form" onsubmit="return confirm('Clear your patient profile details?')">
+          {% if profile.get('profile_filled') %}
+            <button class="button secondary" id="edit-patient-profile" type="button">Edit profile</button>
+          {% endif %}
           <button class="button secondary danger-text" type="submit">Clear profile</button>
           <span>This clears your profile details but keeps your account active.</span>
         </form>

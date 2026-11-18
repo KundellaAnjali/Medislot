@@ -271,24 +271,6 @@ def parse_utc_datetime(value):
     return parsed.astimezone(timezone.utc)
 
 
-def consultation_type_ids_with_slots(doctor_id):
-    query_args = {
-        "IndexName": "DoctorStartIndex",
-        "KeyConditionExpression": Key("doctor_id").eq(doctor_id),
-        "ProjectionExpression": "consultation_type_id",
-    }
-    consultation_ids = set()
-    while True:
-        result = slots_table.query(**query_args)
-        for slot in result.get("Items", []):
-            consultation_ids.add(int(slot["consultation_type_id"]))
-        last_key = result.get("LastEvaluatedKey")
-        if not last_key:
-            break
-        query_args["ExclusiveStartKey"] = last_key
-    return consultation_ids
-
-
 def consultation_type_has_slots(doctor_id, consultation_id):
     query_args = {
         "IndexName": "DoctorStartIndex",
@@ -356,6 +338,101 @@ def delete_slots_for_blackout(doctor_id, start_utc, end_utc):
             break
 
         query_args["ExclusiveStartKey"] = result["LastEvaluatedKey"]
+
+
+def slots_for_availability_patterns(doctor_id, patterns):
+    query_args = {
+        "IndexName": "DoctorStartIndex",
+        "KeyConditionExpression": Key("doctor_id").eq(doctor_id),
+    }
+    matching_slots = []
+    while True:
+        result = slots_table.query(**query_args)
+        for slot in result.get("Items", []):
+            slot_start = parse_utc_datetime(slot["start_time"])
+            slot_day = date.fromisoformat(
+                slot.get("local_date", slot_start.date().isoformat())
+            )
+            slot_time = slot_start.time().replace(tzinfo=None)
+            for consultation_id, day_name, start, end in patterns:
+                if (
+                    int(slot["consultation_type_id"]) == consultation_id
+                    and slot_day.strftime("%A").upper() == day_name
+                    and start <= slot_time < end
+                ):
+                    matching_slots.append(slot)
+                    break
+        last_key = result.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        query_args["ExclusiveStartKey"] = last_key
+    return matching_slots
+
+
+def ensure_availability_slots_unbooked(cursor, doctor_id, slots):
+    if any(int(slot.get("booked_count", 0)) > 0 for slot in slots):
+        raise ConflictError(
+            "This availability cannot be modified because one or more generated "
+            "slots have already been booked."
+        )
+
+    slot_ids = list({int(slot["slot_id"]) for slot in slots})
+    for offset in range(0, len(slot_ids), 500):
+        batch = slot_ids[offset:offset + 500]
+        placeholders = ",".join(["%s"] * len(batch))
+        cursor.execute(
+            f"""
+            SELECT slot_id FROM appointments
+            WHERE doctor_id = %s AND slot_id IN ({placeholders})
+            LIMIT 1
+            """,
+            (doctor_id, *batch),
+        )
+        if cursor.fetchone():
+            raise ConflictError(
+                "This availability cannot be modified because one or more generated "
+                "slots have already been booked."
+            )
+
+    deleted_slots = []
+    try:
+        for slot in slots:
+            slots_table.delete_item(
+                Key={"slot_id": slot["slot_id"]},
+                ConditionExpression="booked_count = :zero",
+                ExpressionAttributeValues={":zero": 0},
+            )
+            deleted_slots.append(slot)
+    except Exception as error:
+        try:
+            restore_availability_slots(deleted_slots)
+        except Exception:
+            logger.exception("Could not restore availability slots after deletion failed")
+        if (
+            isinstance(error, ClientError)
+            and error.response.get("Error", {}).get("Code")
+            == "ConditionalCheckFailedException"
+        ):
+            raise ConflictError(
+                "This availability cannot be modified because one or more "
+                "generated slots have already been booked."
+            ) from error
+        raise
+
+
+def restore_availability_slots(slots):
+    for slot in slots:
+        try:
+            slots_table.put_item(
+                Item=slot,
+                ConditionExpression="attribute_not_exists(slot_id)",
+            )
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") != (
+                "ConditionalCheckFailedException"
+            ):
+                raise
+
 
 def route_doctor_api(event):
     user_id = get_actor(event)
@@ -855,7 +932,6 @@ def availability_route(connection, cursor, doctor_id, method, body):
         normalized.append((consultation_id, day_name, start, end))
 
     requested_patterns = set(normalized)
-    slot_consultation_ids = consultation_type_ids_with_slots(doctor_id)
     cursor.execute(
         """
         SELECT pattern_id, consultation_type_id, day_of_week, start_time, end_time
@@ -866,6 +942,7 @@ def availability_route(connection, cursor, doctor_id, method, body):
     )
     existing_patterns = cursor.fetchall()
     existing_values = set()
+    removed_patterns = []
     for pattern in existing_patterns:
         value = (
             int(pattern["consultation_type_id"]),
@@ -874,32 +951,45 @@ def availability_route(connection, cursor, doctor_id, method, body):
             parse_sql_time(pattern["end_time"]),
         )
         existing_values.add(value)
-        if (
-            value[0] in slot_consultation_ids
-            and value not in requested_patterns
-        ):
-            raise ConflictError(
-                "Availability can't be removed or changed after its slots are generated."
-            )
-        if value not in requested_patterns and value[0] not in slot_consultation_ids:
+        if value not in requested_patterns:
+            removed_patterns.append((pattern["pattern_id"], value))
+
+    affected_slots = []
+    if removed_patterns:
+        affected_patterns = [value for _, value in removed_patterns]
+        affected_slots = slots_for_availability_patterns(
+            doctor_id,
+            affected_patterns,
+        )
+        ensure_availability_slots_unbooked(cursor, doctor_id, affected_slots)
+    try:
+        for pattern_id, _ in removed_patterns:
             cursor.execute(
                 "DELETE FROM availability_patterns WHERE pattern_id = %s",
-                (pattern["pattern_id"],),
+                (pattern_id,),
             )
 
-    for consultation_id, day_name, start, end in normalized:
-        value = (consultation_id, day_name, start, end)
-        if value in existing_values:
-            continue
-        cursor.execute(
-            """
-            INSERT INTO availability_patterns
-                (doctor_id, consultation_type_id, day_of_week, start_time, end_time)
-            VALUES (%s, %s, %s, %s, %s)
-            """,
-            (doctor_id, consultation_id, day_name, start, end),
-        )
-    connection.commit()
+        for consultation_id, day_name, start, end in normalized:
+            value = (consultation_id, day_name, start, end)
+            if value in existing_values:
+                continue
+            cursor.execute(
+                """
+                INSERT INTO availability_patterns
+                    (doctor_id, consultation_type_id, day_of_week, start_time, end_time)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (doctor_id, consultation_id, day_name, start, end),
+            )
+        connection.commit()
+    except Exception:
+        try:
+            restore_availability_slots(affected_slots)
+        except Exception:
+            logger.exception(
+                "Could not restore availability slots after database update failed"
+            )
+        raise
 
     try:
         invoke_result = lambda_client.invoke(
