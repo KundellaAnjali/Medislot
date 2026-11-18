@@ -77,7 +77,6 @@ Resources:
         Fn::ImportValue: !Sub "${EnvironmentName}-PatientLambdaRoleArn"
       Environment:
         Variables:
-          ENVIRONMENT_NAME: !Ref EnvironmentName
           SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots"
       VpcConfig:
         SecurityGroupIds:
@@ -131,15 +130,6 @@ Resources:
       ParentId:
         Fn::ImportValue: !Sub "${EnvironmentName}-DoctorsResourceId"
       PathPart: search
-
-  DoctorAvailabilitySearchResource:
-    Type: AWS::ApiGateway::Resource
-    Properties:
-      RestApiId:
-        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
-      ParentId:
-        Fn::ImportValue: !Sub "${EnvironmentName}-DoctorsResourceId"
-      PathPart: availability
 
   PublicDoctorProfileDoctorResource:
     Type: AWS::ApiGateway::Resource
@@ -257,20 +247,6 @@ Resources:
         IntegrationHttpMethod: POST
         Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DoctorAvailabilityFunction.Arn}/invocations"
 
-  DoctorAvailabilitySearchMethod:
-    Type: AWS::ApiGateway::Method
-    Properties:
-      RestApiId:
-        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
-      ResourceId: !Ref DoctorAvailabilitySearchResource
-      HttpMethod: GET
-      AuthorizationType: CUSTOM
-      AuthorizerId: !Ref PatientApiAuthorizer
-      Integration:
-        Type: AWS_PROXY
-        IntegrationHttpMethod: POST
-        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DoctorAvailabilityFunction.Arn}/invocations"
-
   PatientProfileInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
@@ -316,18 +292,6 @@ Resources:
       SourceArn:
         Fn::Sub:
           - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*/GET/doctors/*/availability"
-          - ApiId:
-              Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
-
-  DoctorAvailabilitySearchInvokePermission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      Action: lambda:InvokeFunction
-      FunctionName: !Ref DoctorAvailabilityFunction
-      Principal: apigateway.amazonaws.com
-      SourceArn:
-        Fn::Sub:
-          - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*/GET/doctors/availability"
           - ApiId:
               Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
 

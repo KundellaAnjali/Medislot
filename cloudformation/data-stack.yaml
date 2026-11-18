@@ -204,8 +204,6 @@ Resources:
           AttributeType: N
         - AttributeName: start_time
           AttributeType: S
-        - AttributeName: local_date
-          AttributeType: S
         - AttributeName: status
           AttributeType: N
 
@@ -224,15 +222,6 @@ Resources:
         - IndexName: DoctorStartIndex
           KeySchema:
             - AttributeName: doctor_id
-              KeyType: HASH
-            - AttributeName: start_time
-              KeyType: RANGE
-          Projection:
-            ProjectionType: ALL
-
-        - IndexName: LocalDateStartIndex
-          KeySchema:
-            - AttributeName: local_date
               KeyType: HASH
             - AttributeName: start_time
               KeyType: RANGE

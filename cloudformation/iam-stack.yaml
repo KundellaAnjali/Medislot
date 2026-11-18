@@ -255,7 +255,6 @@ Resources:
                   - dynamodb:Query
                 Resource:
                   - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-slots/index/DoctorStartIndex"
-                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-slots/index/LocalDateStartIndex"
               - Effect: Allow
                 Action:
                   - cloudwatch:PutMetricData
