@@ -98,7 +98,6 @@
     <section class="doctor-search">
       <div class="patient-profile-heading">
         <div>
-          <p class="eyebrow">Find care</p>
           <h2>Search doctors</h2>
         </div>
       </div>
@@ -210,7 +209,6 @@
     </section>
 
     <section class="patient-view-panel" data-patient-panel="slot-availability" {% if active_view|default('patient-crud') != 'slot-availability' %}hidden{% endif %}>
-      <p class="eyebrow">Find care</p>
       <h2>Slot availability</h2>
       <section class="patient-availability">
         <form method="get" action="{{ url_for('patient_dashboard') }}" class="availability-form">

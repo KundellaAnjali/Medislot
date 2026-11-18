@@ -580,8 +580,7 @@ def doctor_dashboard():
         for item in consultations
         if item.get("is_active")
     }
-    current_time = datetime.now(timezone.utc)
-    today_date = current_time.date().isoformat()
+    today_date = datetime.now(timezone.utc).date().isoformat()
     try:
         schedule_date = request.args.get("date") or today_date
         schedule = api_request(
@@ -592,31 +591,29 @@ def doctor_dashboard():
             schedule = {"slots": [], "date": schedule_date}
         else:
             raise
-    today_schedule = schedule
-    if schedule_date != today_date:
-        try:
-            today_schedule = api_request(
-                "GET", "/doctors/me/schedule", params={"date": today_date}
-            )
-        except ApiError as error:
-            if error.status_code == 404:
-                today_schedule = {"slots": [], "date": today_date}
-            else:
-                raise
-
+    current_time = datetime.now(timezone.utc)
+    schedule_day = datetime.strptime(
+        schedule.get("date", schedule_date), "%Y-%m-%d"
+    ).date()
+    today = current_time.date()
     upcoming_slots = []
-    for slot in today_schedule.get("slots", []):
-        slot_start = datetime.fromisoformat(
-            slot["start_time"].replace("Z", "+00:00")
-        )
-        if slot_start.tzinfo is None:
-            slot_start = slot_start.replace(tzinfo=timezone.utc)
-        slot_start = slot_start.astimezone(timezone.utc)
-        if slot_start >= current_time:
-            upcoming_slots.append((slot_start, slot))
-    upcoming_slots = [
-        slot for _, slot in sorted(upcoming_slots, key=lambda item: item[0])
-    ]
+    if schedule_day >= today:
+        for slot in schedule.get("slots", []):
+            slot_start = datetime.fromisoformat(
+                slot["start_time"].replace("Z", "+00:00")
+            )
+            slot_end = datetime.fromisoformat(
+                slot["end_time"].replace("Z", "+00:00")
+            )
+            if slot_start.tzinfo is None:
+                slot_start = slot_start.replace(tzinfo=timezone.utc)
+            if slot_end.tzinfo is None:
+                slot_end = slot_end.replace(tzinfo=timezone.utc)
+            slot_start = slot_start.astimezone(timezone.utc)
+            slot_end = slot_end.astimezone(timezone.utc)
+            if schedule_day > today or slot_end > current_time:
+                upcoming_slots.append((slot_start, slot))
+    upcoming_slots = [slot for _, slot in sorted(upcoming_slots, key=lambda item: item[0])]
 
     return render_template(
         "dashboard.html",
@@ -628,7 +625,7 @@ def doctor_dashboard():
         patterns=availability,
         blackouts=blackouts,
         schedule=schedule,
-        today_schedule=today_schedule,
+        current_utc_date=today.isoformat(),
         upcoming_slots=upcoming_slots,
     )
 
@@ -1003,7 +1000,7 @@ def update_profile():
     payload = {key: value for key, value in payload.items() if value != ""}
     api_request("PUT", "/doctors/me", json_body=payload)
     flash("Profile saved.", "success")
-    return redirect(url_for("doctor_dashboard"))
+    return redirect(url_for("doctor_dashboard", view="profile-view-tab"))
 
 
 @app.post("/doctor/consultation-types")
@@ -1021,7 +1018,7 @@ def create_consultation_type():
         },
     )
     flash("Consultation type added.", "success")
-    return redirect(url_for("doctor_dashboard"))
+    return redirect(url_for("doctor_dashboard", view="consulting-view"))
 
 
 @app.post("/doctor/consultation-types/<int:consultation_id>")
@@ -1039,7 +1036,7 @@ def update_consultation_type(consultation_id):
         },
     )
     flash("Consultation type updated.", "success")
-    return redirect(url_for("doctor_dashboard"))
+    return redirect(url_for("doctor_dashboard", view="consulting-view"))
 
 
 @app.post("/doctor/consultation-types/<int:consultation_id>/delete")
@@ -1048,7 +1045,7 @@ def update_consultation_type(consultation_id):
 def delete_consultation_type(consultation_id):
     api_request("DELETE", f"/doctors/me/consultation-types/{consultation_id}")
     flash("Consultation type deleted.", "success")
-    return redirect(url_for("doctor_dashboard"))
+    return redirect(url_for("doctor_dashboard", view="consulting-view"))
 
 
 @app.post("/doctor/availability")
@@ -1111,7 +1108,7 @@ def add_blackout():
         },
     )
     flash("Blackout day added.", "success")
-    return redirect(url_for("doctor_dashboard"))
+    return redirect(url_for("doctor_dashboard", view="blackout-view"))
 
 
 @app.post("/doctor/blackouts/<int:blackout_id>/delete")
@@ -1120,7 +1117,7 @@ def add_blackout():
 def delete_blackout(blackout_id):
     api_request("DELETE", f"/doctors/me/blackouts/{blackout_id}")
     flash("Blackout day removed.", "success")
-    return redirect(url_for("doctor_dashboard"))
+    return redirect(url_for("doctor_dashboard", view="blackout-view"))
 
 
 @app.post("/doctor/photo-url")
