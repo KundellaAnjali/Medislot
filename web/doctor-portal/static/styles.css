@@ -86,24 +86,25 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
 .availability-fieldset:disabled { opacity: .7; }
 .availability-panel { padding: 24px; }
 .availability-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 4px; }
-.availability-table { width: 100%; min-width: 950px; table-layout: fixed; border-collapse: separate; border-spacing: 16px 12px; background: #fff; }
-.availability-table th:nth-child(1), .availability-table td:nth-child(1) { width: 22%; }
+.availability-table { width: 100%; min-width: 1120px; table-layout: fixed; border-collapse: separate; border-spacing: 16px 12px; background: #fff; }
+.availability-table th:nth-child(1), .availability-table td:nth-child(1) { width: 20%; }
 .availability-table th:nth-child(2), .availability-table td:nth-child(2),
-.availability-table th:nth-child(3), .availability-table td:nth-child(3) { width: 11%; }
+.availability-table th:nth-child(3), .availability-table td:nth-child(3) { width: 10%; }
 .availability-table th:nth-child(4), .availability-table td:nth-child(4) { width: 20%; }
-.availability-table th:nth-child(5), .availability-table td:nth-child(5) { width: 16%; }
+.availability-table th:nth-child(5), .availability-table td:nth-child(5) { width: 20%; }
 .availability-table th:nth-child(6), .availability-table td:nth-child(6) { width: 20%; }
 .availability-table th { padding: 12px 10px; border-bottom: 1px solid var(--line); background: #f5f8f6; color: var(--muted); text-align: left; font-size: 10px; font-weight: 700; white-space: nowrap; }
-.availability-table td { height: 56px; min-width: 0; padding: 8px; border-bottom: 1px solid #e8eeeb; vertical-align: middle; }
+.availability-table td { height: 56px; min-width: 0; padding: 6px 8px; border-bottom: 1px solid #e8eeeb; vertical-align: middle; }
 .availability-table td:first-child { min-width: 175px; }
 .availability-table td:nth-child(4) { min-width: 150px; }
-.availability-table td:last-child { min-width: 145px; }
+.availability-table td:nth-child(5) select { min-width: 120px; }
+.availability-table td:last-child { min-width: 190px; }
 .availability-table tbody tr:last-child td { border-bottom: 0; }
 .availability-table .pattern-row { display: table-row; padding: 0; border: 0; }
-.availability-table select, .availability-table input { width: 100%; min-width: 0; min-height: 36px; padding: 0 8px; border: 1px solid #cfdad7; border-radius: 4px; background: #fff; color: var(--ink); font-size: 11px; }
+.availability-table select, .availability-table input { width: 100%; min-width: 0; height: 40px; min-height: 40px; padding: 0 8px; border: 1px solid #cfdad7; border-radius: 4px; background: #fff; color: var(--ink); font-size: 11px; }
 .availability-table select:disabled, .availability-table input:disabled { border-color: transparent; background: #f5f8f6; color: #536368; opacity: 1; }
-.availability-table .pattern-actions { flex-wrap: wrap; justify-content: flex-start; }
-.availability-table .pattern-actions .button { min-height: 34px; }
+.availability-table .pattern-actions { flex-wrap: nowrap; align-items: center; justify-content: flex-start; gap: 8px; white-space: nowrap; }
+.availability-table .pattern-actions .button { min-height: 40px; }
 .availability-table .pattern-actions .pattern-cancel { color: var(--muted); }
 .availability-table .pattern-save, .availability-table .pattern-update { min-width: 65px; }
 .weekday-picker { min-width: 0; }
@@ -369,6 +370,7 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
 .doctor-search-pagination { display: flex; align-items: center; justify-content: center; gap: 16px; margin-top: 18px; color: var(--muted); font-size: 12px; }
 .doctor-search-empty { padding: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; text-align: center; }
 .availability-back-link { display: inline-block; margin-bottom: 20px; color: var(--teal); font-size: 12px; font-weight: 700; }
+.doctor-profile-back { margin-bottom: 18px; }
 .patient-availability { margin-top: 24px; padding: 25px; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
 .availability-form { display: flex; align-items: end; flex-wrap: wrap; gap: 14px; }
 .availability-form label { display: grid; gap: 7px; color: var(--muted); font-size: 12px; }
@@ -465,4 +467,346 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
   .availability-slot-heading { flex-direction: column; }
   .public-doctor-details { grid-template-columns: 1fr; gap: 14px; }
   .public-doctor-section { padding: 18px 14px; }
+}
+
+:root {
+  color-scheme: dark;
+  --ink: #e6edf6;
+  --muted: #9aaabd;
+  --line: #2a394d;
+  --paper: #0b1220;
+  --white: #121c2b;
+  --teal: #36c7b5;
+  --teal-dark: #20a997;
+  --mint: #143b3a;
+  --coral: #f08a75;
+  --gold: #e8ba58;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+body,
+.doctor-app,
+.patient-page {
+  background: #0b1220;
+  color: var(--ink);
+}
+
+.topbar,
+.summary-strip,
+.section-block,
+.doctor-sidebar,
+.main-header,
+.metric-panel,
+.dashboard-panel,
+.patient-topbar,
+.patient-sidebar,
+.patient-profile,
+.doctor-search,
+.patient-availability,
+.public-doctor-section,
+.availability-slot,
+.availability-slot-card,
+.public-consultation-card,
+.availability-table {
+  border-color: var(--line);
+  background-color: #121c2b;
+  color: var(--ink);
+}
+
+.topbar,
+.patient-topbar,
+.main-header {
+  background-color: rgb(18 28 43 / 94%);
+}
+
+.wordmark,
+.sidebar-brand,
+.metric-panel strong,
+.header-date,
+.doctor-search-card p strong,
+.availability-slot p strong,
+.public-consultation-card p strong,
+.patient-profile-form label,
+.auth-form label,
+.auth-form legend {
+  color: var(--ink);
+}
+
+.topnav a,
+.sidebar-caption,
+.nav-icon,
+.metric-label,
+.metric-panel small,
+.sidebar-user strong,
+.profile-form label,
+.profile-details dt,
+.profile-view-heading span,
+.doctor-search-card p,
+.public-doctor-details dt,
+.consultation-list small,
+.consultation-list b {
+  color: var(--muted);
+}
+
+h1,
+h2,
+h3,
+h4,
+p,
+label,
+dd,
+dt,
+strong,
+span {
+  color: inherit;
+}
+
+.eyebrow,
+.text-button,
+.form-link a,
+.upload-status {
+  color: var(--teal);
+}
+
+.topnav a:hover,
+.sidebar-link:hover,
+.patient-sidebar-link:hover {
+  color: #71e1d3;
+}
+
+.sidebar-link,
+.patient-sidebar-link {
+  color: #b4c1d1;
+}
+
+.sidebar-link:hover,
+.patient-sidebar-link:hover {
+  background: #1a2a3d;
+}
+
+.sidebar-link.is-active,
+.patient-sidebar-link.is-active {
+  background: #173a3a;
+  color: #72e3d4;
+}
+
+.sidebar-link.is-active::before {
+  background: var(--teal);
+}
+
+.sidebar-user,
+.summary-profile,
+.blackout-list,
+.schedule-list,
+.patient-sidebar-bottom,
+.patient-delete-form {
+  border-color: var(--line);
+}
+
+.sidebar-avatar,
+.header-avatar,
+.profile-image {
+  background: #1c3441;
+  color: #81ded2;
+}
+
+.main-header {
+  border-color: #26364a;
+}
+
+.metric-panel,
+.dashboard-panel {
+  box-shadow: 0 8px 26px rgb(0 0 0 / 18%);
+}
+
+.availability-table-wrap,
+.doctor-search-card,
+.availability-slot,
+.public-consultation-card {
+  border-color: var(--line);
+  background: #151f30;
+}
+
+.availability-table th {
+  border-color: var(--line);
+  background: #192638;
+  color: var(--muted);
+}
+
+.availability-table td {
+  border-color: #243348;
+}
+
+input,
+select,
+.availability-table select,
+.availability-table input,
+.patient-profile-form select,
+.weekday-toggle,
+.weekday-options[popover],
+.auth-mode-switch,
+.role-button,
+.icon-button {
+  border-color: #35475e;
+  background-color: #0e1725;
+  color: var(--ink);
+  color-scheme: dark;
+}
+
+input::placeholder {
+  color: #8293a8;
+}
+
+input:focus,
+select:focus,
+.weekday-toggle:focus-visible {
+  outline-color: #31bfae;
+  border-color: var(--teal);
+}
+
+.availability-table select:disabled,
+.availability-table input:disabled,
+.weekday-toggle:disabled,
+.patient-profile-form input[readonly],
+.patient-profile-form select:disabled,
+.pattern-row select:disabled,
+.pattern-row input:disabled {
+  border-color: transparent;
+  background: #1a2637;
+  color: #aab8ca;
+  opacity: 1;
+}
+
+.button.secondary,
+.icon-button {
+  border-color: #35475e;
+  background: #182538;
+  color: #d7e1ed;
+}
+
+.button.secondary:hover,
+.icon-button:hover {
+  border-color: var(--teal);
+  background: #1b3440;
+  color: #8ce8dc;
+}
+
+.button.primary {
+  background: #138f83;
+  color: #f4fffe;
+}
+
+.button.primary:hover {
+  background: #0d766d;
+}
+
+.danger-text,
+.logout-link,
+.patient-logout-link {
+  color: #f29380;
+}
+
+.logout-link:hover,
+.patient-logout-link:hover {
+  background: #38252d;
+  color: #ffad9c;
+}
+
+.status-pill {
+  border-color: #285447;
+  background: #17352f;
+  color: #8ee0ae;
+}
+
+.status-pill.pending {
+  border-color: #5b4b2b;
+  background: #352d1b;
+  color: #f0cb78;
+}
+
+.slot-state,
+.consultation-badge {
+  border-color: #285447;
+  background: #17352f;
+  color: #8ee0ae;
+}
+
+.availability-full-badge,
+.notice.error {
+  border-color: #63403c;
+  background: #382724;
+  color: #ffab99;
+}
+
+.notice.success {
+  border: 1px solid #285447;
+  background: #17352f;
+  color: #8ee0ae;
+}
+
+.empty-state,
+.doctor-search-empty {
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+.weekday-options label:hover {
+  background: #1c2a3d;
+}
+
+.weekday-options label {
+  color: var(--ink);
+}
+
+.auth-page,
+.login-page {
+  background: radial-gradient(circle at 8% 8%, #173c42 0, transparent 34%), #0b1220;
+}
+
+.auth-shell {
+  border-color: #2a394d;
+  background: #121c2b;
+  box-shadow: 0 24px 70px rgb(0 0 0 / 35%);
+}
+
+.auth-brand-panel {
+  background: linear-gradient(150deg, #102d35, #0d5d5a 62%, #173c49);
+}
+
+.auth-mode-switch {
+  background: #0d1724;
+}
+
+.mode-indicator,
+.role-button {
+  border-color: #35475e;
+  background: #182538;
+  color: #bdc9d8;
+}
+
+.mode-button[aria-selected="true"] {
+  color: var(--ink);
+}
+
+.mode-indicator {
+  background: #26374c;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 22%);
+}
+
+.role-button[aria-pressed="true"] {
+  border-color: #258f83;
+  background: #173a3a;
+  color: #8ce8dc;
+  box-shadow: inset 0 0 0 1px #258f83;
+}
+
+.login-foot,
+.auth-footnote {
+  color: var(--muted);
+}
+
+::selection {
+  background: #1b665f;
+  color: #fff;
 }

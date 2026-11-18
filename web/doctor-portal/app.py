@@ -580,8 +580,10 @@ def doctor_dashboard():
         for item in consultations
         if item.get("is_active")
     }
+    current_time = datetime.now(timezone.utc)
+    today_date = current_time.date().isoformat()
     try:
-        schedule_date = request.args.get("date") or datetime.now(timezone.utc).date().isoformat()
+        schedule_date = request.args.get("date") or today_date
         schedule = api_request(
             "GET", "/doctors/me/schedule", params={"date": schedule_date}
         )
@@ -590,16 +592,31 @@ def doctor_dashboard():
             schedule = {"slots": [], "date": schedule_date}
         else:
             raise
-    current_time = datetime.now(timezone.utc)
+    today_schedule = schedule
+    if schedule_date != today_date:
+        try:
+            today_schedule = api_request(
+                "GET", "/doctors/me/schedule", params={"date": today_date}
+            )
+        except ApiError as error:
+            if error.status_code == 404:
+                today_schedule = {"slots": [], "date": today_date}
+            else:
+                raise
+
     upcoming_slots = []
-    for slot in schedule.get("slots", []):
+    for slot in today_schedule.get("slots", []):
         slot_start = datetime.fromisoformat(
             slot["start_time"].replace("Z", "+00:00")
         )
         if slot_start.tzinfo is None:
             slot_start = slot_start.replace(tzinfo=timezone.utc)
-        if slot_start.astimezone(timezone.utc) >= current_time:
-            upcoming_slots.append(slot)
+        slot_start = slot_start.astimezone(timezone.utc)
+        if slot_start >= current_time:
+            upcoming_slots.append((slot_start, slot))
+    upcoming_slots = [
+        slot for _, slot in sorted(upcoming_slots, key=lambda item: item[0])
+    ]
 
     return render_template(
         "dashboard.html",
@@ -611,6 +628,7 @@ def doctor_dashboard():
         patterns=availability,
         blackouts=blackouts,
         schedule=schedule,
+        today_schedule=today_schedule,
         upcoming_slots=upcoming_slots,
     )
 

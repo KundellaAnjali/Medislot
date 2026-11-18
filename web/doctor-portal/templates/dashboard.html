@@ -45,7 +45,7 @@
         <div class="metric-grid">
           <article class="metric-panel"><span class="metric-label">Consultation types</span><strong>{{ consultations|selectattr('is_active')|list|length }}</strong><small>Active services</small></article>
           <article class="metric-panel"><span class="metric-label">Weekly availability</span><strong>{{ patterns|length }}</strong><small>Configured patterns</small></article>
-          <article class="metric-panel"><span class="metric-label">Slots on {{ schedule.date }}</span><strong>{{ schedule.slots|length }}</strong><small>UTC schedule</small></article>
+          <article class="metric-panel"><span class="metric-label">Slots today</span><strong>{{ today_schedule.slots|length }}</strong><small>UTC schedule</small></article>
           <article class="metric-panel"><span class="metric-label">Practice location</span><strong class="metric-location">{{ profile.hospital_name or 'Not set' }}</strong><small>{{ profile.city or 'Add a city' }}</small></article>
         </div>
         <section class="dashboard-panel">
@@ -56,7 +56,7 @@
                 <article class="schedule-row"><time class="slot-time">{{ slot.start_time[11:16] }}</time><div class="slot-main"><strong>{{ slot.consultation_name or 'Consultation' }}</strong><span>{{ slot.appointments|length }} of {{ slot.capacity }} seats booked</span></div><div class="slot-patients">{% for appointment in slot.appointments %}<span>{{ appointment.first_name }} {{ appointment.last_name }}</span>{% else %}<span class="muted">No patients booked</span>{% endfor %}</div><span class="slot-state">{{ 'Blocked' if slot.status == 0 else ('Booked' if slot.appointments else 'Open') }}</span></article>
               {% endfor %}
             </div>
-          {% else %}<div class="empty-state compact-empty"><span class="empty-symbol">&#9711;</span><p>No upcoming slots for this date</p></div>{% endif %}
+          {% else %}<div class="empty-state compact-empty"><span class="empty-symbol">&#9711;</span><p>No upcoming slots for today</p></div>{% endif %}
         </section>
         <section class="dashboard-panel profile-summary-panel">
           <div class="panel-heading"><div><p class="eyebrow">Profile</p><h2>Professional details</h2></div><button class="text-button" type="button" data-go-view="profile-view-tab">View profile</button></div>

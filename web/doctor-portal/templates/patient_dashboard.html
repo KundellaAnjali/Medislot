@@ -140,7 +140,7 @@
                 <p><strong>Hospital:</strong> {{ doctor.hospital or 'Not listed' }}</p>
                 <p><strong>Specialization:</strong> {{ doctor.specialization or 'Not listed' }}</p>
                 <p><strong>City:</strong> {{ doctor.city or 'Not listed' }}</p>
-                <a class="button secondary doctor-profile-link" href="{{ url_for('patient_dashboard', view='public-doctor-profile', doctor_id=doctor.doctor_id) }}">View profile</a>
+                <a class="button secondary doctor-profile-link" href="{{ url_for('patient_dashboard', view='public-doctor-profile', doctor_id=doctor.doctor_id, search=1, name=doctor_search_filters.name, hospital=doctor_search_filters.hospital, specialization=doctor_search_filters.specialization, city=doctor_search_filters.city, page=doctor_search.pagination.page, limit=doctor_search.pagination.limit) }}">View profile</a>
                 <a class="button secondary doctor-profile-link" href="{{ url_for('patient_dashboard', view='slot-availability', doctor_id=doctor.doctor_id) }}">Check availability</a>
               </article>
             {% endfor %}
@@ -164,6 +164,7 @@
     </section>
 
     <section class="patient-view-panel" data-patient-panel="public-doctor-profile" {% if active_view|default('patient-crud') != 'public-doctor-profile' %}hidden{% endif %}>
+      <a class="button secondary doctor-profile-back" href="{{ url_for('patient_dashboard', view='doctor-search', search=1, name=request.args.get('name', ''), hospital=request.args.get('hospital', ''), specialization=request.args.get('specialization', ''), city=request.args.get('city', ''), page=request.args.get('page', '1'), limit=request.args.get('limit', '10')) }}">Back to Search Results</a>
       <p class="eyebrow">Doctor profile</p>
       {% if public_profile %}
         <div class="public-doctor-heading">
