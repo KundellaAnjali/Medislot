@@ -893,7 +893,7 @@ def availability_date(value, field):
     return parsed
 
 
-def normalize_availability_pattern(cursor, doctor_id, body, creating, exclude_id=None):
+def normalize_availability_pattern(cursor, doctor_id, body, exclude_id=None):
     try:
         consultation_id = int(body["consultation_type_id"])
         start = time.fromisoformat(body["start_time"])
@@ -923,8 +923,6 @@ def normalize_availability_pattern(cursor, doctor_id, body, creating, exclude_id
 
     start_date = availability_date(body.get("start_date"), "Start date")
     end_date = availability_date(body.get("end_date"), "End date")
-    if creating and (start_date is None or end_date is None):
-        raise ValueError("Start date and end date are required.")
     if (start_date is None) != (end_date is None):
         raise ValueError("Enter both dates or leave both dates empty.")
     if start_date and end_date and end_date < start_date:
@@ -1092,7 +1090,7 @@ def availability_route(connection, cursor, doctor_id, method, tail, body):
 
     if not tail and method == "POST":
         pattern = normalize_availability_pattern(
-            cursor, doctor_id, body, creating=True
+            cursor, doctor_id, body
         )
         cursor.execute(
             """
@@ -1142,7 +1140,6 @@ def availability_route(connection, cursor, doctor_id, method, tail, body):
                 cursor,
                 doctor_id,
                 body,
-                creating=False,
                 exclude_id=pattern_id,
             )
 

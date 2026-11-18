@@ -85,11 +85,11 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
 .availability-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .availability-fieldset:disabled { opacity: .7; }
 .availability-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 4px; }
-.availability-table { width: 100%; min-width: 1180px; border-collapse: collapse; background: #fff; }
+.availability-table { width: 100%; min-width: 950px; border-collapse: collapse; background: #fff; }
 .availability-table th { padding: 12px 10px; border-bottom: 1px solid var(--line); background: #f5f8f6; color: var(--muted); text-align: left; font-size: 10px; font-weight: 700; white-space: nowrap; }
 .availability-table td { min-width: 115px; padding: 10px; border-bottom: 1px solid #e8eeeb; vertical-align: middle; }
 .availability-table td:first-child { min-width: 175px; }
-.availability-table td:nth-child(6) { min-width: 170px; }
+.availability-table td:nth-child(4) { min-width: 170px; }
 .availability-table td:last-child { min-width: 150px; }
 .availability-table tbody tr:last-child td { border-bottom: 0; }
 .availability-table .pattern-row { display: table-row; padding: 0; border: 0; }
@@ -360,6 +360,20 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
 .availability-slot h2 { margin-bottom: 10px; font-size: 14px; }
 .availability-slot p { margin: 6px 0 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .availability-slot p strong { color: var(--ink); }
+.availability-date-groups { display: grid; gap: 24px; }
+.availability-date-group { display: grid; gap: 12px; }
+.availability-date-heading { padding-bottom: 9px; border-bottom: 1px solid var(--line); color: var(--teal-dark); font-size: 15px; }
+.availability-slot-card { display: grid; gap: 14px; background: #fff; }
+.availability-slot-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.availability-slot-heading h4 { margin: 0; font: 700 15px 'Manrope', sans-serif; }
+.consultation-badge { display: inline-flex; align-items: center; padding: 5px 9px; border: 1px solid #cfe4d4; border-radius: 999px; background: #edf7ef; color: #286d49; font-size: 10px; font-weight: 700; }
+.availability-slot-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 11px 16px; margin: 0; }
+.availability-slot-details > div { min-width: 0; }
+.availability-slot-details dt { color: var(--muted); font-size: 10px; }
+.availability-slot-details dd { margin: 4px 0 0; color: var(--ink); font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+.availability-slot-card .button:disabled { cursor: not-allowed; opacity: .58; }
+.booking-unavailable-note { color: var(--muted); font-size: 10px; }
+.availability-full-badge { justify-self: start; padding: 6px 9px; border-radius: 4px; background: #fff1ed; color: #9c4b3b; font-size: 10px; font-weight: 700; }
 .public-doctor-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .public-doctor-section { margin-top: 24px; padding: 25px; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
 .public-doctor-section h2 { margin-bottom: 18px; font-size: 18px; }
@@ -430,6 +444,7 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
   .doctor-search-form { grid-template-columns: 1fr; gap: 12px; }
   .patient-availability { padding: 18px 14px; }
   .availability-form { align-items: stretch; flex-direction: column; }
+  .availability-slot-heading { flex-direction: column; }
   .public-doctor-details { grid-template-columns: 1fr; gap: 14px; }
   .public-doctor-section { padding: 18px 14px; }
 }

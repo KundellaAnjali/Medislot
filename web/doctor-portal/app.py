@@ -657,6 +657,7 @@ def patient_dashboard():
             )
 
     doctor_availability = None
+    availability_groups = []
     availability_error = None
     start_date = request.args.get("start_date") or datetime.now(
         timezone.utc
@@ -669,11 +670,11 @@ def patient_dashboard():
             ).isoformat()
         except ValueError:
             end_date = start_date
-    if active_view == "slot-availability" and doctor_id:
+    if active_view == "slot-availability" and request.args.get("search") == "1":
         try:
             result = api_request(
                 "GET",
-                f"/doctors/{doctor_id}/availability",
+                "/doctors/availability/search",
                 params={"start_date": start_date, "end_date": end_date},
             )
             if not isinstance(result, dict):
@@ -681,6 +682,46 @@ def patient_dashboard():
             doctor_availability = result.get("slots")
             if not isinstance(doctor_availability, list):
                 raise ApiError("Availability API returned an invalid response.")
+            grouped_slots = {}
+            for slot in doctor_availability:
+                if not isinstance(slot, dict) or not isinstance(
+                    slot.get("start_time"), str
+                ):
+                    raise ApiError("Availability API returned an invalid slot.")
+                try:
+                    slot_start = datetime.fromisoformat(
+                        slot["start_time"].replace("Z", "+00:00")
+                    ).astimezone(timezone.utc)
+                except ValueError as error:
+                    raise ApiError(
+                        "Availability API returned an invalid slot time."
+                    ) from error
+                date_key = slot_start.date().isoformat()
+                slot["slot_time"] = slot_start.strftime("%H:%M")
+                if not isinstance(slot.get("end_time"), str):
+                    raise ApiError("Availability API returned an invalid slot.")
+                try:
+                    slot_end = datetime.fromisoformat(
+                        slot["end_time"].replace("Z", "+00:00")
+                    ).astimezone(timezone.utc)
+                except ValueError as error:
+                    raise ApiError(
+                        "Availability API returned an invalid slot time."
+                    ) from error
+                slot["slot_end_time"] = slot_end.strftime("%H:%M")
+                grouped_slots.setdefault(date_key, []).append(slot)
+            availability_groups = []
+            for date_key in sorted(grouped_slots):
+                group_date = datetime.strptime(date_key, "%Y-%m-%d")
+                availability_groups.append(
+                    {
+                        "date": date_key,
+                        "label": group_date.strftime("%A, %B %d, %Y").replace(
+                            " 0", " "
+                        ),
+                        "slots": grouped_slots[date_key],
+                    }
+                )
         except (ApiError, ValueError) as error:
             if isinstance(error, ApiError) and error.status_code in {401, 403}:
                 return patient_api_error(error)
@@ -696,6 +737,7 @@ def patient_dashboard():
         doctor_search=doctor_search,
         doctor_search_filters=doctor_search_filters,
         doctor_availability=doctor_availability,
+        availability_groups=availability_groups,
         availability_error=availability_error,
         start_date=start_date,
         end_date=end_date,

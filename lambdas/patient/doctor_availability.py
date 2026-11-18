@@ -7,6 +7,8 @@ from datetime import date, datetime, time, timezone
 import boto3
 from boto3.dynamodb.conditions import Key
 
+from profile import get_connection
+
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -125,6 +127,84 @@ def get_slots(doctor_id, start_date, end_date):
     return slots
 
 
+def get_verified_doctors(cursor):
+    cursor.execute(
+        """
+        SELECT
+            d.doctor_id,
+            TRIM(CONCAT_WS(' ', d.first_name, d.last_name)) AS doctor_name,
+            GROUP_CONCAT(
+                DISTINCT s.specialization_name
+                ORDER BY s.specialization_name
+                SEPARATOR ', '
+            ) AS specialization,
+            h.city
+        FROM doctors d
+        LEFT JOIN hospitals h ON h.hospital_id = d.hospital_id
+        LEFT JOIN doctor_specializations ds ON ds.doctor_id = d.doctor_id
+        LEFT JOIN specializations s
+          ON s.specialization_id = ds.specialization_id
+        WHERE d.is_verified = TRUE
+        GROUP BY d.doctor_id, d.first_name, d.last_name, h.city
+        ORDER BY d.doctor_id
+        """
+    )
+    return cursor.fetchall()
+
+
+def get_consultation_fees(cursor):
+    cursor.execute(
+        """
+        SELECT
+            dct.doctor_id,
+            ct.consultation_name,
+            dct.fee
+        FROM doctor_consulting_types dct
+        JOIN consultation_types ct
+          ON ct.consultation_type_id = dct.consultation_type_id
+        WHERE dct.is_active = TRUE
+        """
+    )
+    fees = {}
+    for row in cursor.fetchall():
+        fees.setdefault(row["doctor_id"], {})[
+            row["consultation_name"]
+        ] = row["fee"]
+    return fees
+
+
+def get_verified_doctor_slots(start_date, end_date):
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            doctors = get_verified_doctors(cursor)
+            fees_by_doctor = get_consultation_fees(cursor)
+
+        slots = []
+        for doctor in doctors:
+            doctor_id = int(doctor["doctor_id"])
+            doctor_fees = fees_by_doctor.get(doctor["doctor_id"], {})
+            for slot in get_slots(doctor_id, start_date, end_date):
+                slot.update(
+                    {
+                        "doctor_id": doctor_id,
+                        "doctor_name": doctor["doctor_name"],
+                        "specialization": doctor["specialization"],
+                        "city": doctor["city"],
+                        "consultation_fee": (
+                            str(doctor_fees[slot["consultation_type"]])
+                            if slot["consultation_type"] in doctor_fees
+                            else None
+                        ),
+                    }
+                )
+                slots.append(slot)
+        slots.sort(key=lambda slot: (slot["start_time"], slot["doctor_id"]))
+        return slots
+    finally:
+        connection.close()
+
+
 def lambda_handler(event, context):
     request_id = getattr(context, "aws_request_id", "unknown")
     publish_metric("DoctorAvailabilityRequests", 1)
@@ -149,8 +229,15 @@ def lambda_handler(event, context):
             {"message": "You are not allowed to view doctor availability."},
         )
 
+    resource = event.get("resource", "")
+    path = event.get("path", "").rstrip("/")
+    is_search_route = (
+        resource == "/doctors/availability/search"
+        or path.endswith("/doctors/availability/search")
+    )
+
     try:
-        doctor_id = get_doctor_id(event)
+        doctor_id = None if is_search_route else get_doctor_id(event)
         query_parameters = event.get("queryStringParameters") or {}
         start_date = parse_date(query_parameters.get("start_date"), "start_date")
         end_date = parse_date(query_parameters.get("end_date"), "end_date")
@@ -168,29 +255,46 @@ def lambda_handler(event, context):
         return response(400, {"message": str(error)})
 
     try:
-        slots = get_slots(doctor_id, start_date, end_date)
+        slots = (
+            get_verified_doctor_slots(start_date, end_date)
+            if is_search_route
+            else get_slots(doctor_id, start_date, end_date)
+        )
         publish_metric("DoctorAvailabilitySuccesses", 1)
         publish_metric("DoctorAvailabilitySlotsReturned", len(slots))
-        logger.info(
-            "Doctor availability retrieved: doctor_id=%s slots=%s request_id=%s",
-            doctor_id,
-            len(slots),
-            request_id,
-        )
+        if is_search_route:
+            logger.info(
+                "Verified doctor availability search completed: slots=%s request_id=%s",
+                len(slots),
+                request_id,
+            )
+        else:
+            logger.info(
+                "Doctor availability retrieved: doctor_id=%s slots=%s request_id=%s",
+                doctor_id,
+                len(slots),
+                request_id,
+            )
         return response(
             200,
             {
-                "doctor_id": doctor_id,
                 "start_date": start_date.isoformat(),
                 "end_date": end_date.isoformat(),
                 "slots": slots,
+                **({"doctor_id": doctor_id} if doctor_id is not None else {}),
             },
         )
     except Exception:
         publish_metric("DoctorAvailabilityErrors", 1)
-        logger.exception(
-            "Doctor availability query failed: doctor_id=%s request_id=%s",
-            doctor_id,
-            request_id,
-        )
+        if is_search_route:
+            logger.exception(
+                "Verified doctor availability search failed: request_id=%s",
+                request_id,
+            )
+        else:
+            logger.exception(
+                "Doctor availability query failed: doctor_id=%s request_id=%s",
+                doctor_id,
+                request_id,
+            )
         return response(500, {"message": "Could not load doctor availability."})

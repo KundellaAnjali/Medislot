@@ -69,10 +69,9 @@
       </section>
 
       <section class="dashboard-view" id="availability-view" data-view hidden>
-        <div class="view-heading"><div><p class="eyebrow">Recurring weekly</p><h1>Availability</h1><p class="view-subtitle">Manage the date ranges and weekly days that generate bookable slots.</p></div></div>
+        <div class="view-heading"><div><h1>Availability</h1></div></div>
         <section class="dashboard-panel">
           <div class="availability-toolbar">
-            <p class="view-subtitle">Each saved row can be managed independently.</p>
             <button class="button primary" type="button" id="add-pattern" {{ 'disabled' if not profile.is_verified else '' }}>+ Add Availability</button>
           </div>
           <fieldset class="availability-fieldset" {{ 'disabled' if not profile.is_verified else '' }}>
@@ -81,8 +80,6 @@
                 <thead>
                   <tr>
                     <th scope="col">Consultation Type</th>
-                    <th scope="col">Start Date</th>
-                    <th scope="col">End Date</th>
                     <th scope="col">Start Time</th>
                     <th scope="col">End Time</th>
                     <th scope="col">Repeat Days</th>
@@ -93,10 +90,8 @@
                 <tbody class="pattern-list" id="pattern-list">
                   {% for pattern in patterns %}
                     {% set selected_days = pattern.repeat_days if pattern.repeat_days is iterable and pattern.repeat_days is not string else (pattern.repeat_days.split(',') if pattern.repeat_days else [pattern.day_of_week]) %}
-                    <tr class="pattern-row" data-saved-pattern data-pattern-id="{{ pattern.pattern_id }}">
+                    <tr class="pattern-row" data-saved-pattern data-pattern-id="{{ pattern.pattern_id }}" data-start-date="{{ pattern.start_date or '' }}" data-end-date="{{ pattern.end_date or '' }}">
                       <td><select name="consultation_type_id" aria-label="Consultation type" required disabled>{% for consultation in consultations if consultation.is_active %}<option value="{{ consultation.consultation_type_id }}" {{ 'selected' if consultation.consultation_type_id == pattern.consultation_type_id else '' }}>{{ consultation.consultation_name }}</option>{% endfor %}</select></td>
-                      <td><input name="start_date" type="date" aria-label="Start date" value="{{ pattern.start_date or '' }}" disabled></td>
-                      <td><input name="end_date" type="date" aria-label="End date" value="{{ pattern.end_date or '' }}" disabled></td>
                       <td><input name="start_time" type="time" aria-label="Start time" value="{{ pattern.start_time|string|truncate(5, True, '') }}" required disabled></td>
                       <td><input name="end_time" type="time" aria-label="End time" value="{{ pattern.end_time|string|truncate(5, True, '') }}" required disabled></td>
                       <td><select name="repeat_days" aria-label="Repeat days" multiple required disabled>{% for day in ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY'] %}<option value="{{ day }}" {{ 'selected' if day in selected_days else '' }}>{{ day[:3].title() }}</option>{% endfor %}</select></td>
@@ -236,7 +231,7 @@
     document.getElementById('add-pattern')?.addEventListener('click', () => {
       const row = document.createElement('tr');
       row.className = 'pattern-row is-editing';
-      row.innerHTML = `<td><select name="consultation_type_id" aria-label="Consultation type" required><option value="">Choose type</option>${activeConsultations.map(item => `<option value="${item.consultation_type_id}">${escapeHtml(item.consultation_name)}</option>`).join('')}</select></td><td><input name="start_date" type="date" aria-label="Start date" required></td><td><input name="end_date" type="date" aria-label="End date" required></td><td><input name="start_time" type="time" aria-label="Start time" required></td><td><input name="end_time" type="time" aria-label="End time" required></td><td><select name="repeat_days" aria-label="Repeat days" multiple required>${weekdays.map(day => `<option value="${day}">${day.slice(0, 3)[0] + day.slice(1, 3).toLowerCase()}</option>`).join('')}</select></td><td><select name="is_active" aria-label="Status" required><option value="true" selected>Active</option><option value="false">Inactive</option></select></td><td class="pattern-actions-cell"><div class="pattern-actions"><button class="button primary pattern-save" type="button">Save</button></div></td>`;
+      row.innerHTML = `<td><select name="consultation_type_id" aria-label="Consultation type" required><option value="">Choose type</option>${activeConsultations.map(item => `<option value="${item.consultation_type_id}">${escapeHtml(item.consultation_name)}</option>`).join('')}</select></td><td><input name="start_time" type="time" aria-label="Start time" required></td><td><input name="end_time" type="time" aria-label="End time" required></td><td><select name="repeat_days" aria-label="Repeat days" multiple required>${weekdays.map(day => `<option value="${day}">${day.slice(0, 3)[0] + day.slice(1, 3).toLowerCase()}</option>`).join('')}</select></td><td><select name="is_active" aria-label="Status" required><option value="true" selected>Active</option><option value="false">Inactive</option></select></td><td class="pattern-actions-cell"><div class="pattern-actions"><button class="button primary pattern-save" type="button">Save</button></div></td>`;
       patternList.appendChild(row);
       row.querySelector('[name="consultation_type_id"]').focus();
     });
@@ -264,25 +259,11 @@
           [...row.querySelectorAll('input, select:not([multiple])')].map(field => [field.name, field.value])
         );
         const repeatDays = [...row.querySelector('[name="repeat_days"]').selectedOptions].map(option => option.value);
-        const startDate = values.start_date || null;
-        const endDate = values.end_date || null;
         const isNew = button.classList.contains('pattern-save');
-        if (isNew && (!startDate || !endDate)) {
-          showAvailabilityToast('Start date and end date are required.', 'error');
-          return;
-        }
-        if (Boolean(startDate) !== Boolean(endDate)) {
-          showAvailabilityToast('Enter both dates or leave both dates empty.', 'error');
-          return;
-        }
-        if (startDate && endDate && endDate < startDate) {
-          showAvailabilityToast('End date must be on or after start date.', 'error');
-          return;
-        }
         const payload = {
           consultation_type_id: values.consultation_type_id,
-          start_date: startDate,
-          end_date: endDate,
+          start_date: row.dataset.startDate || null,
+          end_date: row.dataset.endDate || null,
           start_time: values.start_time,
           end_time: values.end_time,
           repeat_days: repeatDays,
@@ -305,6 +286,8 @@
           if (isNew) {
             row.dataset.patternId = result.pattern_id;
             row.setAttribute('data-saved-pattern', '');
+            row.dataset.startDate = '';
+            row.dataset.endDate = '';
           }
           row.querySelectorAll('select, input').forEach(field => { field.disabled = true; });
           row.classList.remove('is-editing');

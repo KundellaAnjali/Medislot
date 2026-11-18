@@ -16,7 +16,7 @@
       <nav class="patient-sidebar-nav" aria-label="Patient dashboard">
         <button class="patient-sidebar-link" type="button" data-patient-view="doctor-search">Doctor Search</button>
         <button class="patient-sidebar-link" type="button" data-patient-view="public-doctor-profile" {% if doctor_id %}data-load-url="{{ url_for('patient_dashboard', view='public-doctor-profile', doctor_id=doctor_id) }}" data-loaded="{{ 'true' if public_profile else 'false' }}"{% endif %}>Public Doctor Profile</button>
-        <button class="patient-sidebar-link" type="button" data-patient-view="slot-availability" {% if doctor_id %}data-load-url="{{ url_for('patient_dashboard', view='slot-availability', doctor_id=doctor_id) }}" data-loaded="{{ 'true' if doctor_availability is defined and doctor_availability is not none else 'false' }}"{% endif %}>Slot Availability</button>
+        <button class="patient-sidebar-link" type="button" data-patient-view="slot-availability">Slot Availability</button>
       </nav>
       <div class="patient-sidebar-bottom">
         <button class="patient-sidebar-link" type="button" data-patient-view="patient-crud">Patient Profile</button>
@@ -215,47 +215,60 @@
     <section class="patient-view-panel" data-patient-panel="slot-availability" {% if active_view|default('patient-crud') != 'slot-availability' %}hidden{% endif %}>
       <p class="eyebrow">Find care</p>
       <h2>Slot availability</h2>
-      {% if doctor_id %}
-        <section class="patient-availability">
-          <form method="get" action="{{ url_for('patient_dashboard') }}" class="availability-form">
-            <input type="hidden" name="view" value="slot-availability">
-            <input type="hidden" name="doctor_id" value="{{ doctor_id }}">
-            <label for="availability-start-date">Start date
-              <input id="availability-start-date" name="start_date" type="date" value="{{ start_date }}" required>
-            </label>
-            <label for="availability-end-date">End date
-              <input id="availability-end-date" name="end_date" type="date" value="{{ end_date }}" required>
-            </label>
-            <button class="button primary" type="submit">Show availability</button>
-          </form>
-          {% if availability_error %}
-            <p class="notice error" role="alert">{{ availability_error }}</p>
-          {% elif doctor_availability is defined and doctor_availability is not none %}
+      <section class="patient-availability">
+        <form method="get" action="{{ url_for('patient_dashboard') }}" class="availability-form">
+          <input type="hidden" name="view" value="slot-availability">
+          <input type="hidden" name="search" value="1">
+          <label for="availability-start-date">Start Date
+            <input id="availability-start-date" name="start_date" type="date" value="{{ start_date }}" required>
+          </label>
+          <label for="availability-end-date">End Date
+            <input id="availability-end-date" name="end_date" type="date" value="{{ end_date }}" required>
+          </label>
+          <button class="button primary" type="submit">Search</button>
+        </form>
+        {% if availability_error %}
+          <p class="notice error" role="alert">{{ availability_error }}</p>
+        {% elif doctor_availability is defined and doctor_availability is not none %}
+          {% if availability_groups %}
             <p class="doctor-search-count">
               {{ doctor_availability|length }} slot{{ '' if doctor_availability|length == 1 else 's' }} available
             </p>
-            {% if doctor_availability %}
-              <div class="availability-results">
-                {% for slot in doctor_availability %}
-                  <article class="availability-slot">
-                    <h3>{{ slot.consultation_type or 'Consultation' }}</h3>
-                    <p><strong>Slot:</strong> {{ slot.slot_id }}</p>
-                    <p><strong>Starts:</strong> {{ slot.start_time }}</p>
-                    <p><strong>Ends:</strong> {{ slot.end_time }}</p>
-                    <p><strong>Seats:</strong> {{ slot.available_seats }} available of {{ slot.capacity }}</p>
-                  </article>
-                {% endfor %}
-              </div>
-            {% else %}
-              <p class="doctor-search-empty">No available slots were found in this date range.</p>
+            <div class="availability-date-groups">
+              {% for group in availability_groups %}
+                <section class="availability-date-group" aria-labelledby="availability-date-{{ loop.index }}">
+                  <h3 id="availability-date-{{ loop.index }}" class="availability-date-heading">{{ group.label }}</h3>
+                  <div class="availability-results">
+                    {% for slot in group.slots %}
+                      <article class="availability-slot availability-slot-card">
+                        <div class="availability-slot-heading">
+                          <h4>{{ slot.doctor_name or 'Doctor' }}</h4>
+                          <span class="consultation-badge">{{ slot.consultation_type or 'Consultation' }}</span>
+                        </div>
+                        <dl class="availability-slot-details">
+                          <div><dt>Specialization</dt><dd>{{ slot.specialization or 'Not listed' }}</dd></div>
+                          <div><dt>City</dt><dd>{{ slot.city or 'Not listed' }}</dd></div>
+                          <div><dt>Consultation fee</dt><dd>{{ slot.consultation_fee or 'Not listed' }}</dd></div>
+                          <div><dt>Slot timing</dt><dd>{{ slot.slot_time }} - {{ slot.slot_end_time }} UTC</dd></div>
+                          <div><dt>Booking status</dt><dd>{{ slot.booked_count }}/{{ slot.capacity }}</dd></div>
+                        </dl>
+                        {% if slot.available_seats > 0 %}
+                          <button class="button primary" type="button" disabled aria-describedby="booking-unavailable-note-{{ slot.doctor_id }}-{{ slot.slot_id }}">Book appointment</button>
+                          <small class="booking-unavailable-note" id="booking-unavailable-note-{{ slot.doctor_id }}-{{ slot.slot_id }}">Online booking is not available yet.</small>
+                        {% else %}
+                          <span class="availability-full-badge">Fully booked</span>
+                        {% endif %}
+                      </article>
+                    {% endfor %}
+                  </div>
+                </section>
+              {% endfor %}
             {% endif %}
+          {% if not availability_groups %}
+            <p class="doctor-search-empty">No slots available for the selected date range</p>
           {% endif %}
-        </section>
-      {% else %}
-        <section class="patient-availability">
-          <p class="doctor-search-empty">Choose a doctor from Doctor Search to view available slots.</p>
-        </section>
-      {% endif %}
+        {% endif %}
+      </section>
     </section>
     </main>
   </div>
