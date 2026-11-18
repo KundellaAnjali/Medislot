@@ -1,3 +1,5 @@
+import base64
+import binascii
 import json
 import logging
 import os
@@ -65,11 +67,9 @@ def role_required(role, profile_path, missing_profile_message):
     def decorate(handler):
         @wraps(handler)
         def wrapped(*args, **kwargs):
-            access_token = session.get("access_token")
             refresh_token = session.get("refresh_token")
             if (
-                not access_token
-                or not refresh_token
+                not refresh_token
                 or session.get("role") != role
             ):
                 return redirect(url_for("auth", mode="login", role=role))
@@ -129,6 +129,29 @@ patient_required = role_required(
     "/patients/me",
     "Patient profile not found.",
 )
+
+
+def access_token_needs_refresh(token, leeway_seconds=60):
+    if not isinstance(token, str):
+        return True
+    try:
+        token_parts = token.split(".")
+        if len(token_parts) != 3:
+            return True
+        encoded_payload = token_parts[1]
+        encoded_payload += "=" * (-len(encoded_payload) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(encoded_payload))
+        expires_at = float(payload["exp"])
+    except (
+        binascii.Error,
+        KeyError,
+        TypeError,
+        UnicodeDecodeError,
+        ValueError,
+    ):
+        return True
+    return expires_at <= datetime.now(timezone.utc).timestamp() + leeway_seconds
+
 
 def refresh_access_token():
 
@@ -216,8 +239,22 @@ def api_request(
     authenticated=True
 ):
     headers = {}
+    refresh_attempted = False
 
     if authenticated:
+        access_token = session.get("access_token")
+        if session.get("refresh_token") and access_token_needs_refresh(access_token):
+            refresh_attempted = True
+            app.logger.info(
+                "Access token is missing, expired, or near expiry; refreshing before API request."
+            )
+            refresh_access_token()
+            access_token = session.get("access_token")
+        if not access_token:
+            raise ApiError(
+                "Your session has expired. Please sign in again.",
+                401,
+            )
         headers["Authorization"] = (
             f"Bearer {session['access_token']}"
         )
@@ -246,6 +283,7 @@ def api_request(
 
     if (
         authenticated
+        and not refresh_attempted
         and is_access_token_denial(result)
         and session.get("refresh_token")
     ):
@@ -518,6 +556,17 @@ def doctor_dashboard():
             schedule = {"slots": [], "date": schedule_date}
         else:
             raise
+    current_time = datetime.now(timezone.utc)
+    upcoming_slots = []
+    for slot in schedule.get("slots", []):
+        slot_start = datetime.fromisoformat(
+            slot["start_time"].replace("Z", "+00:00")
+        )
+        if slot_start.tzinfo is None:
+            slot_start = slot_start.replace(tzinfo=timezone.utc)
+        if slot_start.astimezone(timezone.utc) >= current_time:
+            upcoming_slots.append(slot)
+
     return render_template(
         "dashboard.html",
         profile=profile,
@@ -528,6 +577,7 @@ def doctor_dashboard():
         patterns=availability,
         blackouts=blackouts,
         schedule=schedule,
+        upcoming_slots=upcoming_slots,
     )
 
 

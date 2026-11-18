@@ -50,13 +50,13 @@
         </div>
         <section class="dashboard-panel">
           <div class="panel-heading"><div><p class="eyebrow">Today</p><h2>Next on your schedule</h2></div><button class="text-button" type="button" data-go-view="schedule-view">Open schedule</button></div>
-          {% if schedule.slots %}
+          {% if upcoming_slots %}
             <div class="schedule-list">
-              {% for slot in schedule.slots[:4] %}
+              {% for slot in upcoming_slots[:4] %}
                 <article class="schedule-row"><time class="slot-time">{{ slot.start_time[11:16] }}</time><div class="slot-main"><strong>{{ slot.consultation_name or 'Consultation' }}</strong><span>{{ slot.appointments|length }} of {{ slot.capacity }} seats booked</span></div><div class="slot-patients">{% for appointment in slot.appointments %}<span>{{ appointment.first_name }} {{ appointment.last_name }}</span>{% else %}<span class="muted">No patients booked</span>{% endfor %}</div><span class="slot-state">{{ 'Blocked' if slot.status == 0 else ('Booked' if slot.appointments else 'Open') }}</span></article>
               {% endfor %}
             </div>
-          {% else %}<div class="empty-state compact-empty"><span class="empty-symbol">&#9711;</span><p>No slots on this date</p></div>{% endif %}
+          {% else %}<div class="empty-state compact-empty"><span class="empty-symbol">&#9711;</span><p>No upcoming slots for this date</p></div>{% endif %}
         </section>
         <section class="dashboard-panel profile-summary-panel">
           <div class="panel-heading"><div><p class="eyebrow">Profile</p><h2>Professional details</h2></div><button class="text-button" type="button" data-go-view="profile-view-tab">View profile</button></div>
@@ -75,7 +75,16 @@
             <fieldset class="configuration-controls" {{ 'disabled' if not profile.is_verified else '' }}>
               <div class="pattern-list" id="pattern-list">
                 {% for pattern in patterns %}
-                  <div class="pattern-row"><select name="consultation_type_id" aria-label="Consultation type" required>{% for consultation in consultations if consultation.is_active %}<option value="{{ consultation.consultation_type_id }}" {{ 'selected' if consultation.consultation_type_id == pattern.consultation_type_id else '' }}>{{ consultation.consultation_name }}</option>{% endfor %}</select><select name="day_of_week" aria-label="Weekday" required>{% for day in ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY'] %}<option value="{{ day }}" {{ 'selected' if day == pattern.day_of_week else '' }}>{{ day.title() }}</option>{% endfor %}</select><input name="start_time" type="time" aria-label="Start time" value="{{ pattern.start_time|string|truncate(5, True, '') }}" required><input name="end_time" type="time" aria-label="End time" value="{{ pattern.end_time|string|truncate(5, True, '') }}" required><button class="remove-row" type="button" title="Remove availability pattern" aria-label="Remove availability pattern">&times;</button></div>
+                  <div class="pattern-row" data-saved-pattern>
+                    <select name="consultation_type_id" aria-label="Consultation type" required disabled>{% for consultation in consultations if consultation.is_active %}<option value="{{ consultation.consultation_type_id }}" {{ 'selected' if consultation.consultation_type_id == pattern.consultation_type_id else '' }}>{{ consultation.consultation_name }}</option>{% endfor %}</select>
+                    <select name="day_of_week" aria-label="Weekday" required disabled>{% for day in ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY'] %}<option value="{{ day }}" {{ 'selected' if day == pattern.day_of_week else '' }}>{{ day.title() }}</option>{% endfor %}</select>
+                    <input name="start_time" type="time" aria-label="Start time" value="{{ pattern.start_time|string|truncate(5, True, '') }}" required disabled>
+                    <input name="end_time" type="time" aria-label="End time" value="{{ pattern.end_time|string|truncate(5, True, '') }}" required disabled>
+                    <div class="pattern-actions">
+                      <button class="button secondary pattern-edit" type="button">Edit</button>
+                      <button class="button secondary danger-text pattern-delete" type="button">Delete</button>
+                    </div>
+                  </div>
                 {% endfor %}
               </div>
               <div class="form-actions"><button class="button secondary" type="button" id="add-pattern">+ Add availability</button><button class="button primary" type="submit">Save availability</button></div>
@@ -188,15 +197,57 @@
     }));
 
     const patternList = document.getElementById('pattern-list');
+    const availabilityForm = document.getElementById('availability-form');
     const weekdays = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY'];
     const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    const showAvailabilityToast = (message, category = 'success') => {
+      document.querySelector('.availability-toast')?.remove();
+      const toast = document.createElement('p');
+      toast.className = `notice ${category} availability-toast`;
+      toast.setAttribute('role', category === 'error' ? 'alert' : 'status');
+      toast.setAttribute('aria-live', category === 'error' ? 'assertive' : 'polite');
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      window.setTimeout(() => {
+        toast.style.maxHeight = `${toast.scrollHeight}px`;
+        toast.classList.add('is-dismissing');
+        window.setTimeout(() => toast.remove(), 350);
+      }, 3000);
+    };
     document.getElementById('add-pattern')?.addEventListener('click', () => {
       const row = document.createElement('div');
       row.className = 'pattern-row';
-      row.innerHTML = `<select name="consultation_type_id" aria-label="Consultation type" required>${activeConsultations.map(item => `<option value="${item.consultation_type_id}">${escapeHtml(item.consultation_name)}</option>`).join('')}</select><select name="day_of_week" aria-label="Weekday" required>${weekdays.map(day => `<option value="${day}">${day[0] + day.slice(1).toLowerCase()}</option>`).join('')}</select><input name="start_time" type="time" aria-label="Start time" required><input name="end_time" type="time" aria-label="End time" required><button class="remove-row" type="button" title="Remove availability pattern" aria-label="Remove availability pattern">&times;</button>`;
+      row.innerHTML = `<select name="consultation_type_id" aria-label="Consultation type" required>${activeConsultations.map(item => `<option value="${item.consultation_type_id}">${escapeHtml(item.consultation_name)}</option>`).join('')}</select><select name="day_of_week" aria-label="Weekday" required>${weekdays.map(day => `<option value="${day}">${day[0] + day.slice(1).toLowerCase()}</option>`).join('')}</select><input name="start_time" type="time" aria-label="Start time" required><input name="end_time" type="time" aria-label="End time" required><div class="pattern-actions"><button class="button secondary danger-text pattern-delete" type="button">Delete</button></div>`;
       patternList.appendChild(row);
+      showAvailabilityToast('Availability pattern added. Select Save availability to apply it.');
     });
-    patternList?.addEventListener('click', event => { if (event.target.closest('.remove-row')) event.target.closest('.pattern-row').remove(); });
+    patternList?.addEventListener('click', event => {
+      const row = event.target.closest('.pattern-row');
+      if (!row) return;
+
+      const editButton = event.target.closest('.pattern-edit');
+      if (editButton) {
+        const editing = editButton.textContent.trim() === 'Edit';
+        row.querySelectorAll('select, input').forEach(field => { field.disabled = !editing; });
+        editButton.textContent = editing ? 'Done' : 'Edit';
+        showAvailabilityToast(
+          editing
+            ? 'Edit the availability pattern, then select Save availability to apply your changes.'
+            : 'Pattern changes are ready. Select Save availability to apply them.'
+        );
+        return;
+      }
+
+      if (event.target.closest('.pattern-delete')) {
+        row.remove();
+        showAvailabilityToast('Availability pattern removed. Select Save availability to apply the change.');
+      }
+    });
+    availabilityForm?.addEventListener('submit', () => {
+      patternList.querySelectorAll('select:disabled, input:disabled').forEach(field => {
+        field.disabled = false;
+      });
+    });
 
     const durations = {'Quick Consult':15,'Standard Consult':30,'Detailed Consult':60,'Health Camp Session':60};
     const configureCapacity = (form, typeName) => {
