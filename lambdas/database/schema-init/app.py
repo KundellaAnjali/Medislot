@@ -208,6 +208,27 @@ def lambda_handler(event, context):
             availability_columns = {
                 column[0] for column in cursor.fetchall()
             }
+            availability_column_definitions = {
+                "repeat_days": "VARCHAR(100) NULL",
+                "start_date": "DATE NULL",
+                "end_date": "DATE NULL",
+                "is_active": "BOOLEAN NOT NULL DEFAULT TRUE",
+            }
+            for column_name, definition in availability_column_definitions.items():
+                if column_name not in availability_columns:
+                    cursor.execute(
+                        f"ALTER TABLE availability_patterns ADD COLUMN "
+                        f"`{column_name}` {definition}"
+                    )
+
+            cursor.execute(
+                """
+                UPDATE availability_patterns
+                SET repeat_days = day_of_week
+                WHERE repeat_days IS NULL
+                """
+            )
+
             if "doctor_id" not in availability_columns:
                 cursor.execute(
                     "ALTER TABLE availability_patterns ADD COLUMN doctor_id INT NULL"

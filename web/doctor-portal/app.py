@@ -959,30 +959,49 @@ def delete_consultation_type(consultation_id):
 
 @app.post("/doctor/availability")
 @doctor_required
-@with_api_errors
 def save_availability():
-    consultation_ids = request.form.getlist("consultation_type_id")
-    weekdays = request.form.getlist("day_of_week")
-    starts = request.form.getlist("start_time")
-    ends = request.form.getlist("end_time")
-    patterns = []
-    for consultation_id, weekday, start, end in zip(
-        consultation_ids, weekdays, starts, ends
-    ):
-        if consultation_id and weekday and start and end:
-            patterns.append(
-                {
-                    "consultation_type_id": int(consultation_id),
-                    "day_of_week": weekday,
-                    "start_time": start,
-                    "end_time": end,
-                }
-            )
-    api_request("PUT", "/doctors/me/availability", json_body={"patterns": patterns})
-    flash("Weekly availability saved.", "success")
-    return redirect(
-        url_for("doctor_dashboard", view="availability-view")
-    )
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"message": "Availability data must be a JSON object."}), 400
+    try:
+        result = api_request(
+            "POST",
+            "/doctors/me/availability",
+            json_body=payload,
+        )
+    except ApiError as error:
+        return jsonify({"message": str(error)}), error.status_code
+    return jsonify(result)
+
+
+@app.put("/doctor/availability/<int:pattern_id>")
+@doctor_required
+def update_availability(pattern_id):
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({"message": "Availability data must be a JSON object."}), 400
+    try:
+        result = api_request(
+            "PUT",
+            f"/doctors/me/availability/{pattern_id}",
+            json_body=payload,
+        )
+    except ApiError as error:
+        return jsonify({"message": str(error)}), error.status_code
+    return jsonify(result)
+
+
+@app.delete("/doctor/availability/<int:pattern_id>")
+@doctor_required
+def delete_availability(pattern_id):
+    try:
+        result = api_request(
+            "DELETE",
+            f"/doctors/me/availability/{pattern_id}",
+        )
+    except ApiError as error:
+        return jsonify({"message": str(error)}), error.status_code
+    return jsonify(result)
 
 
 @app.post("/doctor/blackouts")

@@ -495,11 +495,11 @@ def route_doctor_api(event):
                     connection, cursor, doctor_id, method, parts[2:], body
                 )
 
-            if parts == ["me", "availability"]:
+            if parts[:2] == ["me", "availability"]:
                 if method != "GET":
                     require_verified_doctor(cursor, doctor_id)
                 return availability_route(
-                    connection, cursor, doctor_id, method, body
+                    connection, cursor, doctor_id, method, parts[2:], body
                 )
 
             if parts[:2] == ["me", "blackouts"]:
@@ -868,27 +868,334 @@ def consultation_types_route(connection, cursor, doctor_id, method, tail, body):
     raise LookupError("Consultation type endpoint not found")
 
 
-def availability_route(connection, cursor, doctor_id, method, body):
-    if method == "GET":
+AVAILABILITY_WEEKDAYS = (
+    "MONDAY",
+    "TUESDAY",
+    "WEDNESDAY",
+    "THURSDAY",
+    "FRIDAY",
+    "SATURDAY",
+    "SUNDAY",
+)
+
+
+def availability_date(value, field):
+    if value in (None, ""):
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must use YYYY-MM-DD format.")
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as error:
+        raise ValueError(f"{field} must use YYYY-MM-DD format.") from error
+    if parsed.isoformat() != value:
+        raise ValueError(f"{field} must use YYYY-MM-DD format.")
+    return parsed
+
+
+def normalize_availability_pattern(cursor, doctor_id, body, creating, exclude_id=None):
+    try:
+        consultation_id = int(body["consultation_type_id"])
+        start = time.fromisoformat(body["start_time"])
+        end = time.fromisoformat(body["end_time"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError(
+            "Choose a consultation type and enter valid start and end times."
+        ) from error
+    if start.tzinfo is not None or end.tzinfo is not None:
+        raise ValueError("Start time and end time must be local times without a timezone.")
+
+    repeat_days = body.get("repeat_days")
+    if not isinstance(repeat_days, list) or not repeat_days:
+        raise ValueError("Select at least one repeat day.")
+    normalized_days = []
+    for day_name in repeat_days:
+        if not isinstance(day_name, str):
+            raise ValueError("Repeat days must be weekday names.")
+        day_name = day_name.upper()
+        if day_name not in AVAILABILITY_WEEKDAYS:
+            raise ValueError("Repeat days must be valid weekdays.")
+        if day_name not in normalized_days:
+            normalized_days.append(day_name)
+
+    if start >= end:
+        raise ValueError("End time must be after start time.")
+
+    start_date = availability_date(body.get("start_date"), "Start date")
+    end_date = availability_date(body.get("end_date"), "End date")
+    if creating and (start_date is None or end_date is None):
+        raise ValueError("Start date and end date are required.")
+    if (start_date is None) != (end_date is None):
+        raise ValueError("Enter both dates or leave both dates empty.")
+    if start_date and end_date and end_date < start_date:
+        raise ValueError("End date must be on or after start date.")
+
+    is_active = body.get("is_active")
+    if not isinstance(is_active, bool):
+        raise ValueError("Status must be active or inactive.")
+
+    cursor.execute(
+        """
+        SELECT consultation_type_id FROM doctor_consulting_types
+        WHERE consultation_type_id = %s AND doctor_id = %s AND is_active = TRUE
+        """,
+        (consultation_id, doctor_id),
+    )
+    if not cursor.fetchone():
+        raise ValueError("Consultation type does not belong to this doctor.")
+
+    cursor.execute(
+        """
+        SELECT pattern_id, consultation_type_id, day_of_week, repeat_days,
+               start_date, end_date, start_time, end_time, is_active
+        FROM availability_patterns
+        WHERE doctor_id = %s
+        """,
+        (doctor_id,),
+    )
+    for existing in cursor.fetchall():
+        if exclude_id is not None and int(existing["pattern_id"]) == exclude_id:
+            continue
+        if not is_active or not bool(existing.get("is_active", True)):
+            continue
+        existing_days = existing.get("repeat_days") or existing["day_of_week"]
+        if isinstance(existing_days, str):
+            existing_days = existing_days.split(",")
+        existing_days = {str(day).upper() for day in existing_days}
+        if not existing_days.intersection(normalized_days):
+            continue
+
+        existing_start_date = existing.get("start_date")
+        existing_end_date = existing.get("end_date")
+        if isinstance(existing_start_date, str):
+            existing_start_date = date.fromisoformat(existing_start_date[:10])
+        if isinstance(existing_end_date, str):
+            existing_end_date = date.fromisoformat(existing_end_date[:10])
+        dates_overlap = (
+            (end_date is None or existing_start_date is None or end_date >= existing_start_date)
+            and (existing_end_date is None or start_date is None or start_date <= existing_end_date)
+        )
+        existing_start = parse_sql_time(existing["start_time"])
+        existing_end = parse_sql_time(existing["end_time"])
+        if (
+            dates_overlap
+            and start < existing_end
+            and end > existing_start
+        ):
+            raise ValueError(
+                "These hours overlap another availability pattern for the selected days."
+            )
+
+    return {
+        "consultation_type_id": consultation_id,
+        "repeat_days": normalized_days,
+        "day_of_week": normalized_days[0],
+        "start_date": start_date,
+        "end_date": end_date,
+        "start_time": start,
+        "end_time": end,
+        "is_active": is_active,
+    }
+
+
+def slots_for_availability_rows(doctor_id, patterns):
+    query_args = {
+        "IndexName": "DoctorStartIndex",
+        "KeyConditionExpression": Key("doctor_id").eq(doctor_id),
+    }
+    matching_slots = []
+    while True:
+        result = slots_table.query(**query_args)
+        for slot in result.get("Items", []):
+            slot_start = parse_utc_datetime(slot["start_time"])
+            slot_day = date.fromisoformat(
+                slot.get("local_date", slot_start.date().isoformat())
+            )
+            slot_time = slot_start.time().replace(tzinfo=None)
+            for pattern in patterns:
+                repeat_days = pattern.get("repeat_days") or pattern["day_of_week"]
+                if isinstance(repeat_days, str):
+                    repeat_days = repeat_days.split(",")
+                start_date = pattern.get("start_date")
+                end_date = pattern.get("end_date")
+                if isinstance(start_date, str):
+                    start_date = date.fromisoformat(start_date[:10])
+                if isinstance(end_date, str):
+                    end_date = date.fromisoformat(end_date[:10])
+                if (
+                    int(slot["consultation_type_id"])
+                    == int(pattern["consultation_type_id"])
+                    and slot_day.strftime("%A").upper()
+                    in {str(day).upper() for day in repeat_days}
+                    and (start_date is None or slot_day >= start_date)
+                    and (end_date is None or slot_day <= end_date)
+                    and parse_sql_time(pattern["start_time"])
+                    <= slot_time
+                    < parse_sql_time(pattern["end_time"])
+                ):
+                    matching_slots.append(slot)
+                    break
+        last_key = result.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        query_args["ExclusiveStartKey"] = last_key
+    return matching_slots
+
+
+def regenerate_availability_slots(doctor_id):
+    try:
+        invoke_result = lambda_client.invoke(
+            FunctionName=f"{ENVIRONMENT}-slot-materializer",
+            InvocationType="Event",
+            Payload=json.dumps({"doctor_id": doctor_id}),
+        )
+        if invoke_result.get("StatusCode") != 202:
+            logger.warning(
+                "Slot regeneration was not accepted for doctor %s",
+                doctor_id,
+            )
+    except Exception:
+        logger.exception(
+            "Failed to invoke slot-materializer after availability change for doctor %s",
+            doctor_id,
+        )
+
+
+def availability_route(connection, cursor, doctor_id, method, tail, body):
+    if not tail and method == "GET":
         cursor.execute(
             """
             SELECT ap.pattern_id, ap.consultation_type_id, ap.day_of_week,
-                   ap.start_time, ap.end_time
+                   ap.repeat_days, ap.start_date, ap.end_date, ap.start_time,
+                   ap.end_time, ap.is_active
             FROM availability_patterns ap
-                        JOIN doctor_consulting_types dct
-                            ON dct.consultation_type_id = ap.consultation_type_id
-                         AND dct.doctor_id = ap.doctor_id
-                        WHERE ap.doctor_id = %s
+            JOIN doctor_consulting_types dct
+              ON dct.consultation_type_id = ap.consultation_type_id
+             AND dct.doctor_id = ap.doctor_id
+            WHERE ap.doctor_id = %s
             ORDER BY ap.day_of_week, ap.start_time
             """,
             (doctor_id,),
         )
         patterns = cursor.fetchall()
         for pattern in patterns:
+            days = pattern.get("repeat_days") or pattern["day_of_week"]
+            pattern["repeat_days"] = (
+                [day for day in days.split(",") if day]
+                if isinstance(days, str)
+                else days
+            )
             pattern["start_time"] = parse_sql_time(pattern["start_time"]).strftime("%H:%M")
             pattern["end_time"] = parse_sql_time(pattern["end_time"]).strftime("%H:%M")
+            pattern["is_active"] = bool(pattern.get("is_active", True))
         return response(200, {"patterns": patterns})
-    if method != "PUT":
+
+    if not tail and method == "POST":
+        pattern = normalize_availability_pattern(
+            cursor, doctor_id, body, creating=True
+        )
+        cursor.execute(
+            """
+            INSERT INTO availability_patterns
+                (doctor_id, consultation_type_id, day_of_week, repeat_days,
+                 start_date, end_date, start_time, end_time, is_active)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                doctor_id,
+                pattern["consultation_type_id"],
+                pattern["day_of_week"],
+                ",".join(pattern["repeat_days"]),
+                pattern["start_date"],
+                pattern["end_date"],
+                pattern["start_time"],
+                pattern["end_time"],
+                pattern["is_active"],
+            ),
+        )
+        connection.commit()
+        pattern_id = cursor.lastrowid
+        regenerate_availability_slots(doctor_id)
+        return response(201, {"pattern_id": pattern_id, "message": "Availability created."})
+
+    if len(tail) == 1 and method in {"PUT", "DELETE"}:
+        try:
+            pattern_id = int(tail[0])
+        except ValueError as error:
+            raise LookupError("Availability pattern not found.") from error
+        cursor.execute(
+            """
+            SELECT pattern_id, consultation_type_id, day_of_week, repeat_days,
+                   start_date, end_date, start_time, end_time, is_active
+            FROM availability_patterns
+            WHERE pattern_id = %s AND doctor_id = %s
+            """,
+            (pattern_id, doctor_id),
+        )
+        existing = cursor.fetchone()
+        if not existing:
+            raise LookupError("Availability pattern not found.")
+
+        new_pattern = None
+        if method == "PUT":
+            new_pattern = normalize_availability_pattern(
+                cursor,
+                doctor_id,
+                body,
+                creating=False,
+                exclude_id=pattern_id,
+            )
+
+        affected_slots = slots_for_availability_rows(doctor_id, [existing])
+        ensure_availability_slots_unbooked(cursor, doctor_id, affected_slots)
+        try:
+            if method == "DELETE":
+                cursor.execute(
+                    "DELETE FROM availability_patterns "
+                    "WHERE pattern_id = %s AND doctor_id = %s",
+                    (pattern_id, doctor_id),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE availability_patterns
+                    SET consultation_type_id = %s, day_of_week = %s,
+                        repeat_days = %s, start_date = %s, end_date = %s,
+                        start_time = %s, end_time = %s, is_active = %s
+                    WHERE pattern_id = %s AND doctor_id = %s
+                    """,
+                    (
+                        new_pattern["consultation_type_id"],
+                        new_pattern["day_of_week"],
+                        ",".join(new_pattern["repeat_days"]),
+                        new_pattern["start_date"],
+                        new_pattern["end_date"],
+                        new_pattern["start_time"],
+                        new_pattern["end_time"],
+                        new_pattern["is_active"],
+                        pattern_id,
+                        doctor_id,
+                    ),
+                )
+            connection.commit()
+        except Exception:
+            try:
+                restore_availability_slots(affected_slots)
+            except Exception:
+                logger.exception(
+                    "Could not restore availability slots after row update failed"
+                )
+            raise
+
+        regenerate_availability_slots(doctor_id)
+        message = (
+            "Availability deleted."
+            if method == "DELETE"
+            else "Availability updated."
+        )
+        return response(200, {"pattern_id": pattern_id, "message": message})
+
+    if tail or method != "PUT":
         raise LookupError("Availability endpoint not found")
 
     patterns = body.get("patterns")
@@ -903,10 +1210,7 @@ def availability_route(connection, cursor, doctor_id, method, body):
             end = time.fromisoformat(pattern["end_time"])
         except (KeyError, TypeError, ValueError):
             raise ValueError("Each pattern needs a consultation type, weekday, start, and end") from None
-        if day_name not in {
-            "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY",
-            "FRIDAY", "SATURDAY", "SUNDAY",
-        }:
+        if day_name not in AVAILABILITY_WEEKDAYS:
             raise ValueError("day_of_week must be a weekday name")
         if start >= end:
             raise ValueError("Pattern end_time must be after start_time")
@@ -921,9 +1225,9 @@ def availability_route(connection, cursor, doctor_id, method, body):
             )
         cursor.execute(
             """
-                        SELECT consultation_type_id FROM doctor_consulting_types
-                        WHERE consultation_type_id = %s AND doctor_id = %s
-                            AND is_active = TRUE
+            SELECT consultation_type_id FROM doctor_consulting_types
+            WHERE consultation_type_id = %s AND doctor_id = %s
+              AND is_active = TRUE
             """,
             (consultation_id, doctor_id),
         )
@@ -935,8 +1239,7 @@ def availability_route(connection, cursor, doctor_id, method, body):
     cursor.execute(
         """
         SELECT pattern_id, consultation_type_id, day_of_week, start_time, end_time
-        FROM availability_patterns
-        WHERE doctor_id = %s
+        FROM availability_patterns WHERE doctor_id = %s
         """,
         (doctor_id,),
     )
@@ -956,10 +1259,9 @@ def availability_route(connection, cursor, doctor_id, method, body):
 
     affected_slots = []
     if removed_patterns:
-        affected_patterns = [value for _, value in removed_patterns]
         affected_slots = slots_for_availability_patterns(
             doctor_id,
-            affected_patterns,
+            [value for _, value in removed_patterns],
         )
         ensure_availability_slots_unbooked(cursor, doctor_id, affected_slots)
     try:
@@ -968,7 +1270,6 @@ def availability_route(connection, cursor, doctor_id, method, body):
                 "DELETE FROM availability_patterns WHERE pattern_id = %s",
                 (pattern_id,),
             )
-
         for consultation_id, day_name, start, end in normalized:
             value = (consultation_id, day_name, start, end)
             if value in existing_values:
@@ -991,23 +1292,7 @@ def availability_route(connection, cursor, doctor_id, method, body):
             )
         raise
 
-    try:
-        invoke_result = lambda_client.invoke(
-            FunctionName=f"{ENVIRONMENT}-slot-materializer",
-            InvocationType="Event",
-            Payload=json.dumps({}),
-        )
-        if invoke_result.get("StatusCode") != 202:
-            logger.warning(
-                "Slot regeneration was not accepted for doctor %s",
-                doctor_id,
-            )
-    except Exception:
-        logger.exception(
-            "Failed to invoke slot-materializer after availability save for doctor %s",
-            doctor_id,
-        )
-
+    regenerate_availability_slots(doctor_id)
     logger.info("Availability saved for doctor %s: %s patterns", doctor_id, len(normalized))
     return response(200, {"patterns_saved": len(normalized)})
 

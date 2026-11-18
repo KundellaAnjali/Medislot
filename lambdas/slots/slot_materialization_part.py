@@ -116,7 +116,26 @@ def materialize_for_doctor_day(
 
     for pattern in patterns:
 
-        if weekday_name(pattern["day_of_week"]) != local_day.strftime("%A").upper():
+        if not bool(pattern.get("is_active", True)):
+            continue
+
+        repeat_days = pattern.get("repeat_days") or pattern["day_of_week"]
+        if isinstance(repeat_days, str):
+            repeat_days = repeat_days.split(",")
+        if local_day.strftime("%A").upper() not in {
+            weekday_name(day) for day in repeat_days
+        }:
+            continue
+
+        start_date = pattern.get("start_date")
+        if isinstance(start_date, str):
+            start_date = date.fromisoformat(start_date[:10])
+        end_date = pattern.get("end_date")
+        if isinstance(end_date, str):
+            end_date = date.fromisoformat(end_date[:10])
+        if (start_date is not None and local_day < start_date) or (
+            end_date is not None and local_day > end_date
+        ):
             continue
 
         start_time = parse_sql_time(pattern["start_time"])
@@ -234,7 +253,8 @@ def materialize_handler(event, context):
                 """
                 SELECT d.doctor_id, ct.consultation_type_id,
                        ct.consultation_name, ct.duration_minutes, ct.capacity,
-                       ap.day_of_week, ap.start_time, ap.end_time
+                       ap.day_of_week, ap.repeat_days, ap.start_date, ap.end_date,
+                       ap.is_active, ap.start_time, ap.end_time
                 FROM doctors d
                 JOIN doctor_consulting_types dct
                   ON dct.doctor_id = d.doctor_id AND dct.is_active = TRUE
