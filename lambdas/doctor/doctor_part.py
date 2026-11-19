@@ -566,6 +566,18 @@ def update_doctor_profile(connection, cursor, doctor_id, body):
             "License number must be in uppercase and follow the format TSMC123456 "
             "(2-5 uppercase letters followed by 4-10 digits)."
         )
+    if "license_number" in values:
+        cursor.execute(
+            """
+            SELECT doctor_id
+            FROM doctors
+            WHERE license_number = %s AND doctor_id <> %s
+            LIMIT 1
+            """,
+            (values["license_number"], doctor_id),
+        )
+        if cursor.fetchone():
+            raise ConflictError("License number already exists.")
 
     if "experience_years" in values:
         experience_years = values["experience_years"]
@@ -1501,14 +1513,31 @@ def lambda_handler(event, context):
         result = response(404, {"message": str(error)})
     except (ValueError, TypeError, json.JSONDecodeError) as error:
         result = response(400, {"message": str(error)})
-    except pymysql.err.IntegrityError:
-        logger.exception(
-            "Doctor API rejected a conflicting database change: method=%s path=%s request_id=%s",
-            method,
-            path,
-            request_id,
-        )
-        result = response(409, {"message": "The requested change conflicts with existing data"})
+    except pymysql.err.IntegrityError as error:
+        if (
+            error.args
+            and error.args[0] == 1062
+            and "license_number" in str(error).lower()
+        ):
+            logger.warning(
+                "Doctor profile rejected: duplicate license number "
+                "method=%s path=%s request_id=%s",
+                method,
+                path,
+                request_id,
+            )
+            result = response(409, {"message": "License number already exists."})
+        else:
+            logger.exception(
+                "Doctor API rejected a conflicting database change: method=%s path=%s request_id=%s",
+                method,
+                path,
+                request_id,
+            )
+            result = response(
+                409,
+                {"message": "The requested change conflicts with existing data"},
+            )
     except Exception:
         logger.exception(
             "Doctor API request failed unexpectedly: method=%s path=%s request_id=%s",

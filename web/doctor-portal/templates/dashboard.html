@@ -36,12 +36,12 @@
     </header>
     <div class="main-content">
       {% with messages = get_flashed_messages(with_categories=true) %}
-        {% for category, message in messages %}<p class="notice {{ category }}">{{ message }}</p>{% endfor %}
+        {% for category, message in messages %}<p class="notice {{ category }} {{ 'availability-toast' if category == 'error' else '' }}">{{ message }}</p>{% endfor %}
       {% endwith %}
       {% if not profile.is_verified %}<p class="notice verification-notice">Complete your contact, licence, experience, qualification, specialization, hospital details and profile photo to unlock availability and consultation settings.</p>{% endif %}
 
       <section class="dashboard-view" id="dashboard-view" data-view>
-        <div class="view-heading"><div><p class="eyebrow">Overview</p><h1>Good day, {{ profile.first_name or 'Doctor' }}</h1><p class="view-subtitle">Here is your practice at a glance.</p></div><button class="button secondary" type="button" data-go-view="schedule-view">View schedule <span aria-hidden="true">&#8594;</span></button></div>
+        <div class="view-heading"><div><h1>Good day, {{ profile.first_name or 'Doctor' }}</h1></div><button class="button secondary" type="button" data-go-view="schedule-view">View schedule <span aria-hidden="true">&#8594;</span></button></div>
         <div class="metric-grid">
           <article class="metric-panel"><span class="metric-label">Consultation types</span><strong>{{ consultations|selectattr('is_active')|list|length }}</strong><small>Active services</small></article>
           <article class="metric-panel"><span class="metric-label">Weekly availability</span><strong>{{ patterns|length }}</strong><small>Configured patterns</small></article>

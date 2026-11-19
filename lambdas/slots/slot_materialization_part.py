@@ -116,26 +116,7 @@ def materialize_for_doctor_day(
 
     for pattern in patterns:
 
-        if not bool(pattern.get("is_active", True)):
-            continue
-
-        repeat_days = pattern.get("repeat_days") or pattern["day_of_week"]
-        if isinstance(repeat_days, str):
-            repeat_days = repeat_days.split(",")
-        if local_day.strftime("%A").upper() not in {
-            weekday_name(day) for day in repeat_days
-        }:
-            continue
-
-        start_date = pattern.get("start_date")
-        if isinstance(start_date, str):
-            start_date = date.fromisoformat(start_date[:10])
-        end_date = pattern.get("end_date")
-        if isinstance(end_date, str):
-            end_date = date.fromisoformat(end_date[:10])
-        if (start_date is not None and local_day < start_date) or (
-            end_date is not None and local_day > end_date
-        ):
+        if weekday_name(pattern["day_of_week"]) != local_day.strftime("%A").upper():
             continue
 
         start_time = parse_sql_time(pattern["start_time"])
@@ -203,20 +184,21 @@ def materialize_for_doctor_day(
                         Item={
                             "slot_id": slot_id,
                             "doctor_id": doctor["doctor_id"],
-                            "slot_start_time": start_iso,
-                            "slot_end_time": end_iso,
                             "consultation_type_id": pattern[
                                 "consultation_type_id"
                             ],
+                            "consultation_name": pattern[
+                                "consultation_name"
+                            ],
+                            "start_time": start_iso,
+                            "end_time": end_iso,
+                            "local_date": local_day.isoformat(),
                             "capacity": int(pattern["capacity"]),
                             "booked_count": 0,
                             "version": 0,
                             "status": 1
                         },
-                        ConditionExpression=(
-                            "attribute_not_exists(doctor_id) AND "
-                            "attribute_not_exists(slot_start_time)"
-                        )
+                        ConditionExpression="attribute_not_exists(slot_id)"
                     )
 
                     created += 1
@@ -252,8 +234,7 @@ def materialize_handler(event, context):
                 """
                 SELECT d.doctor_id, ct.consultation_type_id,
                        ct.consultation_name, ct.duration_minutes, ct.capacity,
-                       ap.day_of_week, ap.repeat_days, ap.start_date, ap.end_date,
-                       ap.is_active, ap.start_time, ap.end_time
+                       ap.day_of_week, ap.start_time, ap.end_time
                 FROM doctors d
                 JOIN doctor_consulting_types dct
                   ON dct.doctor_id = d.doctor_id AND dct.is_active = TRUE
