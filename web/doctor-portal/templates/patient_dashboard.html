@@ -15,7 +15,6 @@
       <p class="patient-sidebar-caption">PATIENT WORKSPACE</p>
       <nav class="patient-sidebar-nav" aria-label="Patient dashboard">
         <button class="patient-sidebar-link" type="button" data-patient-view="doctor-search">Doctor Search</button>
-        <button class="patient-sidebar-link" type="button" data-patient-view="slot-availability">Slot Availability</button>
       </nav>
       <div class="patient-sidebar-bottom">
         <button class="patient-sidebar-link" type="button" data-patient-view="patient-crud">Patient Profile</button>
@@ -139,8 +138,10 @@
                 <p><strong>Hospital:</strong> {{ doctor.hospital or 'Not listed' }}</p>
                 <p><strong>Specialization:</strong> {{ doctor.specialization or 'Not listed' }}</p>
                 <p><strong>City:</strong> {{ doctor.city or 'Not listed' }}</p>
-                <a class="button secondary doctor-profile-link" href="{{ url_for('patient_dashboard', view='public-doctor-profile', doctor_id=doctor.doctor_id, search=1, name=doctor_search_filters.name, hospital=doctor_search_filters.hospital, specialization=doctor_search_filters.specialization, city=doctor_search_filters.city, page=doctor_search.pagination.page, limit=doctor_search.pagination.limit) }}">View profile</a>
-                <a class="button secondary doctor-profile-link" href="{{ url_for('patient_dashboard', view='slot-availability', doctor_id=doctor.doctor_id) }}">Check availability</a>
+                <p><strong>Qualifications:</strong> {{ doctor.qualifications or 'Not listed' }}</p>
+                <p><strong>Experience:</strong> {{ doctor.experience_years if doctor.experience_years is not none else 'Not listed' }}{% if doctor.experience_years is not none %} years{% endif %}</p>
+                <p><strong>Languages:</strong> {{ doctor.languages or 'Not listed' }}</p>
+                <a class="button secondary doctor-profile-link" href="{{ url_for('patient_dashboard', view='slot-availability', doctor_id=doctor.doctor_id, return_name=doctor_search_filters.name, return_hospital=doctor_search_filters.hospital, return_specialization=doctor_search_filters.specialization, return_city=doctor_search_filters.city, return_page=doctor_search.pagination.page, return_limit=doctor_search.pagination.limit) }}">Check slots</a>
               </article>
             {% endfor %}
           </div>
@@ -209,12 +210,61 @@
     </section>
 
     <section class="patient-view-panel" data-patient-panel="slot-availability" {% if active_view|default('patient-crud') != 'slot-availability' %}hidden{% endif %}>
+      <a class="button secondary doctor-profile-back" href="{{ url_for('patient_dashboard', view='doctor-search', search=1, name=request.args.get('return_name', ''), hospital=request.args.get('return_hospital', ''), specialization=request.args.get('return_specialization', ''), city=request.args.get('return_city', ''), page=request.args.get('return_page', '1'), limit=request.args.get('return_limit', '10')) }}">Back to Search Results</a>
+      {% if public_profile %}
+        <div class="public-doctor-heading">
+          <h1>{{ public_profile.doctor_name or 'Doctor' }}</h1>
+          {% if public_profile.verification_status %}
+            <span class="status-pill">Verified</span>
+          {% else %}
+            <span class="status-pill pending">Not verified</span>
+          {% endif %}
+        </div>
+        <section class="public-doctor-section">
+          <h2>Doctor details</h2>
+          <dl class="public-doctor-details">
+            <div><dt>Specialization</dt><dd>{{ public_profile.specialization or 'Not listed' }}</dd></div>
+            <div><dt>Qualifications</dt><dd>{{ public_profile.qualifications or 'Not listed' }}</dd></div>
+            <div><dt>Experience</dt><dd>{{ public_profile.experience_years if public_profile.experience_years is not none else 'Not listed' }}{% if public_profile.experience_years is not none %} years{% endif %}</dd></div>
+            <div><dt>Languages</dt><dd>{{ public_profile.languages or 'Not listed' }}</dd></div>
+            <div><dt>Hospital</dt><dd>{{ public_profile.hospital or 'Not listed' }}</dd></div>
+            <div><dt>City</dt><dd>{{ public_profile.city or 'Not listed' }}</dd></div>
+          </dl>
+        </section>
+        <section class="public-doctor-section">
+          <h2>Consultation details</h2>
+          {% if public_profile.consultation_details %}
+            <div class="public-consultations">
+              {% for consultation in public_profile.consultation_details %}
+                <article class="public-consultation-card">
+                  <h3>{{ consultation.consultation_type }}</h3>
+                  <p><strong>Duration:</strong> {{ consultation.duration }} minutes</p>
+                  <p><strong>Capacity:</strong> {{ consultation.capacity }}</p>
+                  <p><strong>Fee:</strong> {{ consultation.fee }}</p>
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p class="public-doctor-empty">No consultation details are available.</p>
+          {% endif %}
+        </section>
+      {% elif doctor_id is not none %}
+        <section class="public-doctor-section">
+          <p class="public-doctor-empty">{{ profile_error or 'Doctor details could not be loaded.' }}</p>
+        </section>
+      {% endif %}
       <h2>Slot availability</h2>
       <section class="patient-availability">
         <form method="get" action="{{ url_for('patient_dashboard') }}" class="availability-form">
           <input type="hidden" name="view" value="slot-availability">
           <input type="hidden" name="search" value="1">
           {% if doctor_id is not none %}<input type="hidden" name="doctor_id" value="{{ doctor_id }}">{% endif %}
+          <input type="hidden" name="return_name" value="{{ request.args.get('return_name', '') }}">
+          <input type="hidden" name="return_hospital" value="{{ request.args.get('return_hospital', '') }}">
+          <input type="hidden" name="return_specialization" value="{{ request.args.get('return_specialization', '') }}">
+          <input type="hidden" name="return_city" value="{{ request.args.get('return_city', '') }}">
+          <input type="hidden" name="return_page" value="{{ request.args.get('return_page', '1') }}">
+          <input type="hidden" name="return_limit" value="{{ request.args.get('return_limit', '10') }}">
           <label for="availability-start-date">Start Date
             <input id="availability-start-date" name="start_date" type="date" value="{{ start_date }}" required>
           </label>
@@ -246,13 +296,9 @@
                     {% for slot in group.slots %}
                       <article class="availability-slot availability-slot-card">
                         <div class="availability-slot-heading">
-                          <h4>{{ slot.doctor_name or 'Doctor' }}</h4>
                           <span class="consultation-badge">{{ slot.consultation_type or 'Consultation' }}</span>
                         </div>
                         <dl class="availability-slot-details">
-                          <div><dt>Hospital</dt><dd>{{ slot.hospital_name or 'Not listed' }}</dd></div>
-                          <div><dt>Specialization</dt><dd>{{ slot.specialization or 'Not listed' }}</dd></div>
-                          <div><dt>City</dt><dd>{{ slot.city or 'Not listed' }}</dd></div>
                           <div><dt>Consultation fee</dt><dd>{{ slot.consultation_fee or 'Not listed' }}</dd></div>
                           <div><dt>Slot timing</dt><dd>{{ slot.slot_time }} - {{ slot.slot_end_time }} UTC</dd></div>
                           <div><dt>Booking status</dt><dd>{{ slot.booked_count }}/{{ slot.capacity }}</dd></div>

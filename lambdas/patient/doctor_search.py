@@ -121,6 +121,9 @@ def search_doctors(connection, filters, page, limit):
                     SEPARATOR ', '
                 ) AS specialization,
                 h.city,
+                d.qualification AS qualifications,
+                d.languages,
+                d.experience_years,
                 d.is_verified AS verification_status
             FROM doctors d
             LEFT JOIN hospitals h ON h.hospital_id = d.hospital_id
@@ -135,6 +138,9 @@ def search_doctors(connection, filters, page, limit):
                 d.last_name,
                 h.hospital_name,
                 h.city,
+                d.qualification,
+                d.languages,
+                d.experience_years,
                 d.is_verified
             ORDER BY d.doctor_id
             LIMIT %s OFFSET %s

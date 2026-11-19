@@ -697,7 +697,7 @@ def patient_dashboard():
                 },
             }
 
-    if active_view == "public-doctor-profile" and doctor_id:
+    if active_view in {"public-doctor-profile", "slot-availability"} and doctor_id:
         try:
             result = api_request(
                 "GET",

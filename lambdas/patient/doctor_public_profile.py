@@ -42,6 +42,7 @@ def get_public_profile(cursor, doctor_id):
             ) AS specialization,
             d.qualification AS qualifications,
             d.languages,
+            d.experience_years,
             h.hospital_name AS hospital,
             h.city,
             d.is_verified AS verification_status
@@ -57,6 +58,7 @@ def get_public_profile(cursor, doctor_id):
             d.last_name,
             d.qualification,
             d.languages,
+            d.experience_years,
             h.hospital_name,
             h.city,
             d.is_verified
