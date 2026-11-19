@@ -721,6 +721,27 @@ def patient_dashboard():
     doctor_availability = None
     availability_groups = []
     availability_error = None
+    consultation_types = []
+    selected_consultation_type = request.args.get("consultation_type", "").strip()
+    if active_view == "slot-availability":
+        try:
+            result = api_request("GET", "/doctors/availability/types")
+            if not isinstance(result, dict) or not isinstance(
+                result.get("consultation_types"), list
+            ):
+                raise ApiError(
+                    "Availability API returned invalid consultation types."
+                )
+            consultation_types = result["consultation_types"]
+            if any(not isinstance(value, str) for value in consultation_types):
+                raise ApiError(
+                    "Availability API returned invalid consultation types."
+                )
+        except ApiError as error:
+            if error.status_code in {401, 403}:
+                return patient_api_error(error)
+            availability_error = str(error)
+
     start_date = request.args.get("start_date") or datetime.now(
         timezone.utc
     ).date().isoformat()
@@ -734,16 +755,56 @@ def patient_dashboard():
             end_date = start_date
     if active_view == "slot-availability" and request.args.get("search") == "1":
         try:
+            if request.args.get("doctor_id") and (
+                doctor_id is None or doctor_id <= 0
+            ):
+                raise ApiError("doctor_id must be a positive integer.", 400)
+            availability_path = (
+                f"/doctors/{doctor_id}/availability"
+                if doctor_id is not None
+                else "/doctors/availability/search"
+            )
             result = api_request(
                 "GET",
-                "/doctors/availability/search",
-                params={"start_date": start_date, "end_date": end_date},
+                availability_path,
+                params={
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    **(
+                        {"consultation_type": selected_consultation_type}
+                        if selected_consultation_type
+                        else {}
+                    ),
+                },
             )
             if not isinstance(result, dict):
                 raise ApiError("Availability API returned an invalid response.")
             doctor_availability = result.get("slots")
             if not isinstance(doctor_availability, list):
                 raise ApiError("Availability API returned an invalid response.")
+            if selected_consultation_type and result.get(
+                "consultation_type"
+            ) != selected_consultation_type:
+                raise ApiError(
+                    "Availability API returned slots for the wrong consultation type."
+                )
+            if selected_consultation_type and any(
+                not isinstance(slot, dict)
+                or slot.get("consultation_type") != selected_consultation_type
+                for slot in doctor_availability
+            ):
+                raise ApiError(
+                    "Availability API returned a slot for the wrong consultation type."
+                )
+            if doctor_id is not None:
+                if result.get("doctor_id") != doctor_id:
+                    raise ApiError(
+                        "Availability API returned slots for the wrong doctor."
+                    )
+                for slot in doctor_availability:
+                    if not isinstance(slot, dict):
+                        raise ApiError("Availability API returned an invalid slot.")
+                    slot["doctor_id"] = doctor_id
             grouped_slots = {}
             for slot in doctor_availability:
                 if not isinstance(slot, dict) or not isinstance(
@@ -801,6 +862,8 @@ def patient_dashboard():
         doctor_availability=doctor_availability,
         availability_groups=availability_groups,
         availability_error=availability_error,
+        consultation_types=consultation_types,
+        selected_consultation_type=selected_consultation_type,
         start_date=start_date,
         end_date=end_date,
     )

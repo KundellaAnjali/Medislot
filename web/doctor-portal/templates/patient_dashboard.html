@@ -214,11 +214,20 @@
         <form method="get" action="{{ url_for('patient_dashboard') }}" class="availability-form">
           <input type="hidden" name="view" value="slot-availability">
           <input type="hidden" name="search" value="1">
+          {% if doctor_id is not none %}<input type="hidden" name="doctor_id" value="{{ doctor_id }}">{% endif %}
           <label for="availability-start-date">Start Date
             <input id="availability-start-date" name="start_date" type="date" value="{{ start_date }}" required>
           </label>
           <label for="availability-end-date">End Date
             <input id="availability-end-date" name="end_date" type="date" value="{{ end_date }}" required>
+          </label>
+          <label for="availability-consultation-type">Consultation Type
+            <select id="availability-consultation-type" name="consultation_type">
+              <option value="">All consultation types</option>
+              {% for consultation_type in consultation_types %}
+                <option value="{{ consultation_type }}" {{ 'selected' if consultation_type == selected_consultation_type else '' }}>{{ consultation_type }}</option>
+              {% endfor %}
+            </select>
           </label>
           <button class="button primary" type="submit">Search</button>
         </form>

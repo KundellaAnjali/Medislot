@@ -537,5 +537,5 @@ jobs:
           aws apigateway create-deployment \
             --rest-api-id "$API_ID" \
             --stage-name "$ENVIRONMENT" \
-            --description "Publish MediSlot patient-profile routes" \
+            --description "Publish MediSlot patient profile and availability routes" \
             --region ${{ secrets.AWS_REGION }}

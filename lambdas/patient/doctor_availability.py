@@ -72,7 +72,7 @@ def get_doctor_id(event):
     return doctor_id
 
 
-def get_slots(doctor_id, start_date, end_date):
+def get_slots(doctor_id, start_date, end_date, consultation_type=None):
     start_time = datetime.combine(
         start_date, time.min, tzinfo=timezone.utc
     ).isoformat(timespec="seconds").replace("+00:00", "Z")
@@ -97,6 +97,11 @@ def get_slots(doctor_id, start_date, end_date):
             if slot_start <= now:
                 continue
             if int(slot.get("status", 1)) != 1:
+                continue
+            if (
+                consultation_type is not None
+                and slot.get("consultation_name") != consultation_type
+            ):
                 continue
             if (
                 slot.get("expires_at") is not None
@@ -173,18 +178,40 @@ def get_consultation_fees(cursor):
     return fees
 
 
-def get_verified_doctor_slots(start_date, end_date):
+def get_available_consultation_types(cursor):
+    cursor.execute(
+        """
+        SELECT DISTINCT ct.consultation_name
+        FROM consultation_types ct
+        ORDER BY ct.consultation_name
+        """
+    )
+    return [row["consultation_name"] for row in cursor.fetchall()]
+
+
+def get_verified_doctor_slots(start_date, end_date, consultation_type=None):
     connection = get_connection()
     try:
         with connection.cursor() as cursor:
             doctors = get_verified_doctors(cursor)
             fees_by_doctor = get_consultation_fees(cursor)
+            consultation_types = get_available_consultation_types(cursor)
+
+        if (
+            consultation_type is not None
+            and consultation_type not in consultation_types
+        ):
+            raise AvailabilityValidationError(
+                "consultation_type must be an available consultation type."
+            )
 
         slots = []
         for doctor in doctors:
             doctor_id = int(doctor["doctor_id"])
             doctor_fees = fees_by_doctor.get(doctor["doctor_id"], {})
-            for slot in get_slots(doctor_id, start_date, end_date):
+            for slot in get_slots(
+                doctor_id, start_date, end_date, consultation_type
+            ):
                 slot.update(
                     {
                         "doctor_id": doctor_id,
@@ -231,20 +258,35 @@ def lambda_handler(event, context):
 
     resource = event.get("resource", "")
     path = event.get("path", "").rstrip("/")
+    is_types_route = (
+        resource == "/doctors/availability/types"
+        or path.endswith("/doctors/availability/types")
+    )
     is_search_route = (
         resource == "/doctors/availability/search"
         or path.endswith("/doctors/availability/search")
     )
 
     try:
-        doctor_id = None if is_search_route else get_doctor_id(event)
+        doctor_id = None if is_search_route or is_types_route else get_doctor_id(event)
         query_parameters = event.get("queryStringParameters") or {}
-        start_date = parse_date(query_parameters.get("start_date"), "start_date")
-        end_date = parse_date(query_parameters.get("end_date"), "end_date")
-        if end_date < start_date:
+        consultation_type = query_parameters.get("consultation_type") or None
+        if consultation_type is not None and (
+            not isinstance(consultation_type, str)
+            or not consultation_type.strip()
+            or len(consultation_type) > 255
+            or consultation_type != consultation_type.strip()
+        ):
             raise AvailabilityValidationError(
-                "end_date must be on or after start_date."
+                "consultation_type must be a valid consultation type."
             )
+        if not is_types_route:
+            start_date = parse_date(query_parameters.get("start_date"), "start_date")
+            end_date = parse_date(query_parameters.get("end_date"), "end_date")
+            if end_date < start_date:
+                raise AvailabilityValidationError(
+                    "end_date must be on or after start_date."
+                )
     except AvailabilityValidationError as error:
         logger.warning(
             "Doctor availability request rejected: reason=%s request_id=%s",
@@ -255,11 +297,33 @@ def lambda_handler(event, context):
         return response(400, {"message": str(error)})
 
     try:
-        slots = (
-            get_verified_doctor_slots(start_date, end_date)
-            if is_search_route
-            else get_slots(doctor_id, start_date, end_date)
-        )
+        if is_types_route:
+            connection = get_connection()
+            try:
+                with connection.cursor() as cursor:
+                    consultation_types = get_available_consultation_types(cursor)
+            finally:
+                connection.close()
+            return response(200, {"consultation_types": consultation_types})
+        if is_search_route:
+            slots = get_verified_doctor_slots(
+                start_date, end_date, consultation_type
+            )
+        else:
+            if consultation_type is not None:
+                connection = get_connection()
+                try:
+                    with connection.cursor() as cursor:
+                        consultation_types = get_available_consultation_types(cursor)
+                finally:
+                    connection.close()
+                if consultation_type not in consultation_types:
+                    raise AvailabilityValidationError(
+                        "consultation_type must be an available consultation type."
+                    )
+            slots = get_slots(
+                doctor_id, start_date, end_date, consultation_type
+            )
         publish_metric("DoctorAvailabilitySuccesses", 1)
         publish_metric("DoctorAvailabilitySlotsReturned", len(slots))
         if is_search_route:
@@ -282,8 +346,21 @@ def lambda_handler(event, context):
                 "end_date": end_date.isoformat(),
                 "slots": slots,
                 **({"doctor_id": doctor_id} if doctor_id is not None else {}),
+                **(
+                    {"consultation_type": consultation_type}
+                    if consultation_type is not None
+                    else {}
+                ),
             },
         )
+    except AvailabilityValidationError as error:
+        publish_metric("DoctorAvailabilityErrors", 1)
+        logger.warning(
+            "Doctor availability request rejected: reason=%s request_id=%s",
+            str(error),
+            request_id,
+        )
+        return response(400, {"message": str(error)})
     except Exception:
         publish_metric("DoctorAvailabilityErrors", 1)
         if is_search_route:
