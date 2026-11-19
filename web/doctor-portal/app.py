@@ -209,20 +209,31 @@ def refresh_access_token():
                 "Access token refresh rejected: status=%s",
                 result.status_code,
             )
+            if result.status_code not in {401, 403}:
+                raise ApiError(
+                    "Token refresh service is temporarily unavailable.",
+                    503,
+                )
             return False
 
         try:
             payload = result.json()
         except ValueError:
             app.logger.error("Access token refresh failed: invalid JSON response")
-            return False
+            raise ApiError(
+                "Token refresh service returned an invalid response.",
+                502,
+            )
 
         access_token = payload.get("access_token") if isinstance(payload, dict) else None
         if not access_token:
             app.logger.error(
                 "Access token refresh failed: response did not contain an access token"
             )
-            return False
+            raise ApiError(
+                "Token refresh service returned an invalid response.",
+                502,
+            )
 
         session["access_token"] = access_token
         session.modified = True
@@ -233,11 +244,14 @@ def refresh_access_token():
 
         return True
 
-    except requests.RequestException:
+    except requests.RequestException as error:
         app.logger.exception(
             "Failed to refresh access token"
         )
-        return False
+        raise ApiError(
+            "Token refresh service is temporarily unavailable.",
+            503,
+        ) from error
 
 
 def is_access_token_denial(result):
@@ -273,16 +287,15 @@ def api_request(
     authenticated=True
 ):
     headers = {}
-    refresh_attempted = False
+    token_refreshed = False
 
     if authenticated:
         access_token = session.get("access_token")
         if session.get("refresh_token") and access_token_needs_refresh(access_token):
-            refresh_attempted = True
             app.logger.info(
                 "Access token is missing, expired, or near expiry; refreshing before API request."
             )
-            refresh_access_token()
+            token_refreshed = refresh_access_token()
             access_token = session.get("access_token")
         if not access_token:
             raise ApiError(
@@ -317,7 +330,7 @@ def api_request(
 
     if (
         authenticated
-        and not refresh_attempted
+        and not token_refreshed
         and is_access_token_denial(result)
         and session.get("refresh_token")
     ):
