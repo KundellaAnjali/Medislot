@@ -1041,17 +1041,6 @@ def update_patient_profile():
     return redirect(url_for("patient_dashboard"))
 
 
-@app.post("/patient/profile/delete")
-@patient_required
-def delete_patient_profile():
-    try:
-        api_request("DELETE", "/patients/me")
-    except ApiError as error:
-        return patient_api_error(error)
-    flash("Patient profile cleared.", "success")
-    return redirect(url_for("patient_dashboard"))
-
-
 @app.post("/doctor/profile")
 @doctor_required
 @with_api_errors

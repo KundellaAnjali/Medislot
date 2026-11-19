@@ -206,7 +206,7 @@ def lambda_handler(event, context):
 
     method = event.get("httpMethod", "").upper()
     path = event.get("path", "").rstrip("/")
-    if path == "/patients/me" and method in {"GET", "PUT", "DELETE"}:
+    if path == "/patients/me" and method in {"GET", "PUT"}:
         operation = method.lower()
     elif path != "/patients/me":
         logger.warning(
@@ -232,7 +232,7 @@ def lambda_handler(event, context):
         request_id,
     )
     try:
-        body = parse_body(event) if method in {"POST", "PUT", "DELETE"} else {}
+        body = parse_body(event) if method == "PUT" else {}
         connection = get_connection()
         try:
             with connection.cursor() as cursor:
@@ -327,28 +327,6 @@ def lambda_handler(event, context):
                     )
                     return response(200, {"profile": saved_profile})
 
-                cursor.execute(
-                    """
-                    UPDATE patients
-                    SET first_name = NULL,
-                        last_name = NULL,
-                        phone_number = NULL,
-                        date_of_birth = NULL,
-                        gender = NULL,
-                        emergency_contact = NULL,
-                        emergency_contact_name = NULL,
-                        profile_filled = FALSE
-                    WHERE user_id = %s
-                    """,
-                    (user_id,),
-                )
-                connection.commit()
-                logger.info(
-                    "Patient profile cleared: user_id=%s request_id=%s",
-                    user_id,
-                    request_id,
-                )
-                return response(200, {"message": "Patient profile cleared."})
         finally:
             connection.close()
     except ValidationError as error:
@@ -360,16 +338,6 @@ def lambda_handler(event, context):
         )
         return response(400, {"message": str(error)})
     except pymysql.err.IntegrityError as error:
-        if getattr(error, "args", [None])[0] == 1451:
-            logger.warning(
-                "Patient profile change blocked by existing appointments: user_id=%s request_id=%s",
-                user_id,
-                request_id,
-            )
-            return response(
-                409,
-                {"message": "Profile cannot be deleted while appointments exist."},
-            )
         if getattr(error, "args", [None])[0] == 1062:
             logger.warning(
                 "Patient profile change rejected: duplicate email user_id=%s request_id=%s",

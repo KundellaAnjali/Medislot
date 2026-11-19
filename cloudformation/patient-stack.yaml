@@ -218,20 +218,6 @@ Resources:
         IntegrationHttpMethod: POST
         Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${PatientProfileFunction.Arn}/invocations"
 
-  PatientMeDeleteMethod:
-    Type: AWS::ApiGateway::Method
-    Properties:
-      RestApiId:
-        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
-      ResourceId: !Ref PatientMeResource
-      HttpMethod: DELETE
-      AuthorizationType: CUSTOM
-      AuthorizerId: !Ref PatientApiAuthorizer
-      Integration:
-        Type: AWS_PROXY
-        IntegrationHttpMethod: POST
-        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${PatientProfileFunction.Arn}/invocations"
-
   DoctorSearchMethod:
     Type: AWS::ApiGateway::Method
     Properties:

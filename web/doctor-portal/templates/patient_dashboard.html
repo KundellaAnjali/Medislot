@@ -81,13 +81,11 @@
         </div>
       </form>
       {% if profile %}
-        <form method="post" action="{{ url_for('delete_patient_profile') }}" class="patient-delete-form" onsubmit="return confirm('Clear your patient profile details?')">
+        <div class="patient-delete-form">
           {% if profile.get('profile_filled') %}
             <button class="button secondary" id="edit-patient-profile" type="button">Edit profile</button>
           {% endif %}
-          <button class="button secondary danger-text" type="submit">Clear profile</button>
-          <span>This clears your profile details but keeps your account active.</span>
-        </form>
+        </div>
       {% endif %}
     </section>
 
