@@ -77,7 +77,7 @@ Resources:
         Fn::ImportValue: !Sub "${EnvironmentName}-PatientLambdaRoleArn"
       Environment:
         Variables:
-          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots"
+          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots-v2"
           ENVIRONMENT_NAME: !Ref EnvironmentName
       VpcConfig:
         SecurityGroupIds:

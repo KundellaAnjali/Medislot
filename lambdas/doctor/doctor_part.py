@@ -273,7 +273,6 @@ def parse_utc_datetime(value):
 
 def consultation_type_has_slots(doctor_id, consultation_id):
     query_args = {
-        "IndexName": "DoctorStartIndex",
         "KeyConditionExpression": Key("doctor_id").eq(doctor_id),
         "FilterExpression": Attr("consultation_type_id").eq(consultation_id),
         "ProjectionExpression": "consultation_type_id",
@@ -307,7 +306,6 @@ def delete_unused_consultation_type(cursor, consultation_id):
         )
 def delete_slots_for_blackout(doctor_id, start_utc, end_utc):
     query_args = {
-        "IndexName": "DoctorStartIndex",
         "KeyConditionExpression": Key("doctor_id").eq(doctor_id),
     }
 
@@ -316,14 +314,17 @@ def delete_slots_for_blackout(doctor_id, start_utc, end_utc):
 
         for slot in result.get("Items", []):
 
-            slot_start = parse_utc_datetime(slot["start_time"])
-            slot_end = parse_utc_datetime(slot["end_time"])
+            slot_start = parse_utc_datetime(slot["slot_start_time"])
+            slot_end = parse_utc_datetime(slot["slot_end_time"])
 
             if slot_start < end_utc and slot_end > start_utc:
 
                 if int(slot.get("booked_count", 0)) > 0:
                     slots_table.update_item(
-                        Key={"slot_id": slot["slot_id"]},
+                        Key={
+                            "doctor_id": doctor_id,
+                            "slot_start_time": slot["slot_start_time"],
+                        },
                         UpdateExpression="SET #status = :status",
                         ExpressionAttributeNames={"#status": "status"},
                         ExpressionAttributeValues={":status": 0},
@@ -331,7 +332,10 @@ def delete_slots_for_blackout(doctor_id, start_utc, end_utc):
                     continue
 
                 slots_table.delete_item(
-                    Key={"slot_id": slot["slot_id"]}
+                    Key={
+                        "doctor_id": doctor_id,
+                        "slot_start_time": slot["slot_start_time"],
+                    }
                 )
 
         if "LastEvaluatedKey" not in result:
@@ -342,17 +346,14 @@ def delete_slots_for_blackout(doctor_id, start_utc, end_utc):
 
 def slots_for_availability_patterns(doctor_id, patterns):
     query_args = {
-        "IndexName": "DoctorStartIndex",
         "KeyConditionExpression": Key("doctor_id").eq(doctor_id),
     }
     matching_slots = []
     while True:
         result = slots_table.query(**query_args)
         for slot in result.get("Items", []):
-            slot_start = parse_utc_datetime(slot["start_time"])
-            slot_day = date.fromisoformat(
-                slot.get("local_date", slot_start.date().isoformat())
-            )
+            slot_start = parse_utc_datetime(slot["slot_start_time"])
+            slot_day = slot_start.date()
             slot_time = slot_start.time().replace(tzinfo=None)
             for consultation_id, day_name, start, end in patterns:
                 if (
@@ -398,7 +399,10 @@ def ensure_availability_slots_unbooked(cursor, doctor_id, slots):
     try:
         for slot in slots:
             slots_table.delete_item(
-                Key={"slot_id": slot["slot_id"]},
+                Key={
+                    "doctor_id": doctor_id,
+                    "slot_start_time": slot["slot_start_time"],
+                },
                 ConditionExpression="booked_count = :zero",
                 ExpressionAttributeValues={":zero": 0},
             )
@@ -425,7 +429,7 @@ def restore_availability_slots(slots):
         try:
             slots_table.put_item(
                 Item=slot,
-                ConditionExpression="attribute_not_exists(slot_id)",
+                ConditionExpression="attribute_not_exists(doctor_id)",
             )
         except ClientError as error:
             if error.response.get("Error", {}).get("Code") != (
@@ -998,17 +1002,14 @@ def normalize_availability_pattern(cursor, doctor_id, body, exclude_id=None):
 
 def slots_for_availability_rows(doctor_id, patterns):
     query_args = {
-        "IndexName": "DoctorStartIndex",
         "KeyConditionExpression": Key("doctor_id").eq(doctor_id),
     }
     matching_slots = []
     while True:
         result = slots_table.query(**query_args)
         for slot in result.get("Items", []):
-            slot_start = parse_utc_datetime(slot["start_time"])
-            slot_day = date.fromisoformat(
-                slot.get("local_date", slot_start.date().isoformat())
-            )
+            slot_start = parse_utc_datetime(slot["slot_start_time"])
+            slot_day = slot_start.date()
             slot_time = slot_start.time().replace(tzinfo=None)
             for pattern in patterns:
                 repeat_days = pattern.get("repeat_days") or pattern["day_of_week"]
@@ -1430,14 +1431,31 @@ def get_day_schedule(cursor, doctor_id, query):
     local_day = date.fromisoformat(query["date"])
     start_utc, end_utc = utc_day_bounds(local_day)
     result = slots_table.query(
-        IndexName="DoctorStartIndex",
         KeyConditionExpression=Key("doctor_id").eq(doctor_id)
-        & Key("start_time").between(
+        & Key("slot_start_time").between(
             utc_iso(start_utc), utc_iso(end_utc - timedelta(seconds=1))
         ),
     )
     slots = result.get("Items", [])
     slot_ids = [int(item["slot_id"]) for item in slots]
+    consultation_names = {}
+    consultation_ids = {
+        int(item["consultation_type_id"]) for item in slots
+    }
+    if consultation_ids:
+        placeholders = ",".join(["%s"] * len(consultation_ids))
+        cursor.execute(
+            f"""
+            SELECT consultation_type_id, consultation_name
+            FROM consultation_types
+            WHERE consultation_type_id IN ({placeholders})
+            """,
+            tuple(consultation_ids),
+        )
+        consultation_names = {
+            int(row["consultation_type_id"]): row["consultation_name"]
+            for row in cursor.fetchall()
+        }
     appointments_by_slot = {}
     if slot_ids:
         placeholders = ",".join(["%s"] * len(slot_ids))
@@ -1459,8 +1477,12 @@ def get_day_schedule(cursor, doctor_id, query):
             )
     for item in slots:
         item["appointments"] = appointments_by_slot.get(int(item["slot_id"]), [])
-        item["consultation_name"] = item.get("consultation_name", "")
-    slots.sort(key=lambda item: item["start_time"])
+        item["consultation_name"] = consultation_names.get(
+            int(item["consultation_type_id"]), ""
+        )
+        item["start_time"] = item["slot_start_time"]
+        item["end_time"] = item["slot_end_time"]
+    slots.sort(key=lambda item: item["slot_start_time"])
     return response(200, {"date": local_day.isoformat(), "slots": slots})
 
 

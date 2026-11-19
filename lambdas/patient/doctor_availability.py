@@ -80,19 +80,17 @@ def get_slots(doctor_id, start_date, end_date, consultation_type=None):
         end_date, time.max.replace(microsecond=0), tzinfo=timezone.utc
     ).isoformat(timespec="seconds").replace("+00:00", "Z")
     now = datetime.now(timezone.utc)
-    now_timestamp = int(now.timestamp())
     slots = []
     query = {
-        "IndexName": "DoctorStartIndex",
         "KeyConditionExpression": Key("doctor_id").eq(doctor_id)
-        & Key("start_time").between(start_time, end_time),
+        & Key("slot_start_time").between(start_time, end_time),
     }
 
     while True:
         result = slots_table.query(**query)
         for slot in result.get("Items", []):
             slot_start = datetime.fromisoformat(
-                slot["start_time"].replace("Z", "+00:00")
+                slot["slot_start_time"].replace("Z", "+00:00")
             )
             if slot_start <= now:
                 continue
@@ -100,13 +98,10 @@ def get_slots(doctor_id, start_date, end_date, consultation_type=None):
                 continue
             if (
                 consultation_type is not None
-                and slot.get("consultation_name") != consultation_type
+                and int(slot["consultation_type_id"]) != consultation_type
             ):
                 continue
-            if (
-                slot.get("expires_at") is not None
-                and int(slot["expires_at"]) <= now_timestamp
-            ):
+            if expiry_is_past(slot.get("expires_at"), now):
                 continue
 
             capacity = int(slot["capacity"])
@@ -116,9 +111,8 @@ def get_slots(doctor_id, start_date, end_date, consultation_type=None):
                     "slot_id": int(slot["slot_id"]),
                     "doctor_id": int(slot["doctor_id"]),
                     "consultation_type_id": int(slot["consultation_type_id"]),
-                    "start_time": slot["start_time"],
-                    "end_time": slot["end_time"],
-                    "consultation_type": slot.get("consultation_name", ""),
+                    "start_time": slot["slot_start_time"],
+                    "end_time": slot["slot_end_time"],
                     "capacity": capacity,
                     "booked_count": booked_count,
                     "available_seats": capacity - booked_count,
@@ -132,6 +126,19 @@ def get_slots(doctor_id, start_date, end_date, consultation_type=None):
 
     slots.sort(key=lambda slot: slot["start_time"])
     return slots
+
+
+def expiry_is_past(value, now):
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return value <= now.timestamp()
+    if isinstance(value, str) and value.isdigit():
+        return int(value) <= now.timestamp()
+    expires_at = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    return expires_at <= now
 
 
 def get_verified_doctors(cursor):
@@ -209,12 +216,15 @@ def get_doctor_details(cursor, doctor_id):
 def get_available_consultation_types(cursor):
     cursor.execute(
         """
-        SELECT DISTINCT ct.consultation_name
+        SELECT DISTINCT ct.consultation_type_id, ct.consultation_name
         FROM consultation_types ct
         ORDER BY ct.consultation_name
         """
     )
-    return [row["consultation_name"] for row in cursor.fetchall()]
+    return {
+        row["consultation_name"]: int(row["consultation_type_id"])
+        for row in cursor.fetchall()
+    }
 
 
 def get_verified_doctor_slots(start_date, end_date, consultation_type=None):
@@ -225,24 +235,31 @@ def get_verified_doctor_slots(start_date, end_date, consultation_type=None):
             fees_by_doctor = get_consultation_fees(cursor)
             consultation_types = get_available_consultation_types(cursor)
 
-        if (
-            consultation_type is not None
-            and consultation_type not in consultation_types
-        ):
+        if consultation_type is not None and consultation_type not in consultation_types:
             raise AvailabilityValidationError(
                 "consultation_type must be an available consultation type."
             )
 
+        consultation_type_id = (
+            consultation_types.get(consultation_type)
+            if consultation_type is not None
+            else None
+        )
+        consultation_names = {
+            consultation_id: name
+            for name, consultation_id in consultation_types.items()
+        }
         slots = []
         for doctor in doctors:
             doctor_id = int(doctor["doctor_id"])
             slots.extend(
                 enrich_doctor_slots(
                     get_slots(
-                        doctor_id, start_date, end_date, consultation_type
+                        doctor_id, start_date, end_date, consultation_type_id
                     ),
                     doctor,
                     fees_by_doctor,
+                    consultation_names,
                 )
             )
         slots.sort(key=lambda slot: (slot["start_time"], slot["doctor_id"]))
@@ -251,7 +268,7 @@ def get_verified_doctor_slots(start_date, end_date, consultation_type=None):
         connection.close()
 
 
-def enrich_doctor_slots(slots, doctor, fees):
+def enrich_doctor_slots(slots, doctor, fees, consultation_names=None):
     doctor_id = int(doctor["doctor_id"])
     doctor_fees = fees.get(doctor_id, {})
     for slot in slots:
@@ -264,6 +281,9 @@ def enrich_doctor_slots(slots, doctor, fees):
                 "specialization": doctor["specialization"],
                 "city": doctor["city"],
                 "consultation_fee": str(fee) if fee is not None else None,
+                "consultation_type": (
+                    (consultation_names or {}).get(slot["consultation_type_id"], "")
+                ),
             }
         )
     return slots
@@ -338,7 +358,9 @@ def lambda_handler(event, context):
             connection = get_connection()
             try:
                 with connection.cursor() as cursor:
-                    consultation_types = get_available_consultation_types(cursor)
+                    consultation_types = list(
+                        get_available_consultation_types(cursor)
+                    )
             finally:
                 connection.close()
             return response(200, {"consultation_types": consultation_types})
@@ -347,6 +369,8 @@ def lambda_handler(event, context):
                 start_date, end_date, consultation_type
             )
         else:
+            consultation_names = {}
+            consultation_type_id = None
             if consultation_type is not None:
                 connection = get_connection()
                 try:
@@ -358,8 +382,12 @@ def lambda_handler(event, context):
                     raise AvailabilityValidationError(
                         "consultation_type must be an available consultation type."
                     )
+                consultation_type_id = consultation_types[consultation_type]
+                consultation_names = {
+                    value: key for key, value in consultation_types.items()
+                }
             slots = get_slots(
-                doctor_id, start_date, end_date, consultation_type
+                doctor_id, start_date, end_date, consultation_type_id
             )
             connection = get_connection()
             try:
@@ -370,7 +398,19 @@ def lambda_handler(event, context):
                 connection.close()
             if not doctor:
                 raise AvailabilityValidationError("Doctor not found.")
-            slots = enrich_doctor_slots(slots, doctor, fees)
+            if not consultation_names:
+                connection = get_connection()
+                try:
+                    with connection.cursor() as cursor:
+                        consultation_types = get_available_consultation_types(cursor)
+                finally:
+                    connection.close()
+                consultation_names = {
+                    value: key for key, value in consultation_types.items()
+                }
+            slots = enrich_doctor_slots(
+                slots, doctor, fees, consultation_names
+            )
         publish_metric("DoctorAvailabilitySuccesses", 1)
         publish_metric("DoctorAvailabilitySlotsReturned", len(slots))
         if is_search_route:
