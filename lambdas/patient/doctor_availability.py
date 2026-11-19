@@ -114,6 +114,8 @@ def get_slots(doctor_id, start_date, end_date, consultation_type=None):
             slots.append(
                 {
                     "slot_id": int(slot["slot_id"]),
+                    "doctor_id": int(slot["doctor_id"]),
+                    "consultation_type_id": int(slot["consultation_type_id"]),
                     "start_time": slot["start_time"],
                     "end_time": slot["end_time"],
                     "consultation_type": slot.get("consultation_name", ""),
@@ -138,6 +140,7 @@ def get_verified_doctors(cursor):
         SELECT
             d.doctor_id,
             TRIM(CONCAT_WS(' ', d.first_name, d.last_name)) AS doctor_name,
+            h.hospital_name,
             GROUP_CONCAT(
                 DISTINCT s.specialization_name
                 ORDER BY s.specialization_name
@@ -150,7 +153,8 @@ def get_verified_doctors(cursor):
         LEFT JOIN specializations s
           ON s.specialization_id = ds.specialization_id
         WHERE d.is_verified = TRUE
-        GROUP BY d.doctor_id, d.first_name, d.last_name, h.city
+        GROUP BY d.doctor_id, d.first_name, d.last_name,
+                 h.hospital_name, h.city
         ORDER BY d.doctor_id
         """
     )
@@ -162,20 +166,44 @@ def get_consultation_fees(cursor):
         """
         SELECT
             dct.doctor_id,
-            ct.consultation_name,
+            dct.consultation_type_id,
             dct.fee
         FROM doctor_consulting_types dct
-        JOIN consultation_types ct
-          ON ct.consultation_type_id = dct.consultation_type_id
-        WHERE dct.is_active = TRUE
         """
     )
     fees = {}
     for row in cursor.fetchall():
-        fees.setdefault(row["doctor_id"], {})[
-            row["consultation_name"]
+        fees.setdefault(int(row["doctor_id"]), {})[
+            int(row["consultation_type_id"])
         ] = row["fee"]
     return fees
+
+
+def get_doctor_details(cursor, doctor_id):
+    cursor.execute(
+        """
+        SELECT
+            d.doctor_id,
+            TRIM(CONCAT_WS(' ', d.first_name, d.last_name)) AS doctor_name,
+            h.hospital_name,
+            h.city,
+            GROUP_CONCAT(
+                DISTINCT s.specialization_name
+                ORDER BY s.specialization_name
+                SEPARATOR ', '
+            ) AS specialization
+        FROM doctors d
+        LEFT JOIN hospitals h ON h.hospital_id = d.hospital_id
+        LEFT JOIN doctor_specializations ds ON ds.doctor_id = d.doctor_id
+        LEFT JOIN specializations s
+          ON s.specialization_id = ds.specialization_id
+        WHERE d.doctor_id = %s
+        GROUP BY d.doctor_id, d.first_name, d.last_name,
+                 h.hospital_name, h.city
+        """,
+        (doctor_id,),
+    )
+    return cursor.fetchone()
 
 
 def get_available_consultation_types(cursor):
@@ -208,28 +236,37 @@ def get_verified_doctor_slots(start_date, end_date, consultation_type=None):
         slots = []
         for doctor in doctors:
             doctor_id = int(doctor["doctor_id"])
-            doctor_fees = fees_by_doctor.get(doctor["doctor_id"], {})
-            for slot in get_slots(
-                doctor_id, start_date, end_date, consultation_type
-            ):
-                slot.update(
-                    {
-                        "doctor_id": doctor_id,
-                        "doctor_name": doctor["doctor_name"],
-                        "specialization": doctor["specialization"],
-                        "city": doctor["city"],
-                        "consultation_fee": (
-                            str(doctor_fees[slot["consultation_type"]])
-                            if slot["consultation_type"] in doctor_fees
-                            else None
-                        ),
-                    }
+            slots.extend(
+                enrich_doctor_slots(
+                    get_slots(
+                        doctor_id, start_date, end_date, consultation_type
+                    ),
+                    doctor,
+                    fees_by_doctor,
                 )
-                slots.append(slot)
+            )
         slots.sort(key=lambda slot: (slot["start_time"], slot["doctor_id"]))
         return slots
     finally:
         connection.close()
+
+
+def enrich_doctor_slots(slots, doctor, fees):
+    doctor_id = int(doctor["doctor_id"])
+    doctor_fees = fees.get(doctor_id, {})
+    for slot in slots:
+        fee = doctor_fees.get(slot["consultation_type_id"])
+        slot.update(
+            {
+                "doctor_id": doctor_id,
+                "doctor_name": doctor["doctor_name"],
+                "hospital_name": doctor["hospital_name"],
+                "specialization": doctor["specialization"],
+                "city": doctor["city"],
+                "consultation_fee": str(fee) if fee is not None else None,
+            }
+        )
+    return slots
 
 
 def lambda_handler(event, context):
@@ -324,6 +361,16 @@ def lambda_handler(event, context):
             slots = get_slots(
                 doctor_id, start_date, end_date, consultation_type
             )
+            connection = get_connection()
+            try:
+                with connection.cursor() as cursor:
+                    doctor = get_doctor_details(cursor, doctor_id)
+                    fees = get_consultation_fees(cursor)
+            finally:
+                connection.close()
+            if not doctor:
+                raise AvailabilityValidationError("Doctor not found.")
+            slots = enrich_doctor_slots(slots, doctor, fees)
         publish_metric("DoctorAvailabilitySuccesses", 1)
         publish_metric("DoctorAvailabilitySlotsReturned", len(slots))
         if is_search_route:

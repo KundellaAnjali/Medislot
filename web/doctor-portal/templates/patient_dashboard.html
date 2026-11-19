@@ -250,6 +250,7 @@
                           <span class="consultation-badge">{{ slot.consultation_type or 'Consultation' }}</span>
                         </div>
                         <dl class="availability-slot-details">
+                          <div><dt>Hospital</dt><dd>{{ slot.hospital_name or 'Not listed' }}</dd></div>
                           <div><dt>Specialization</dt><dd>{{ slot.specialization or 'Not listed' }}</dd></div>
                           <div><dt>City</dt><dd>{{ slot.city or 'Not listed' }}</dd></div>
                           <div><dt>Consultation fee</dt><dd>{{ slot.consultation_fee or 'Not listed' }}</dd></div>
