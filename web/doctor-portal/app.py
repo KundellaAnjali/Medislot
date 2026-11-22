@@ -653,15 +653,16 @@ def old_doctor_dashboard():
 def patient_dashboard():
     profile_response = g.authorized_profile_response
     profile = profile_response.get("profile") if profile_response else None
-    active_view = request.args.get("view", "patient-crud")
+    active_view = request.args.get("view", "patient-home")
     dashboard_views = {
+        "patient-home",
         "patient-crud",
         "doctor-search",
         "public-doctor-profile",
         "slot-availability",
     }
     if active_view not in dashboard_views:
-        active_view = "patient-crud"
+        active_view = "patient-home"
 
     doctor_id = request.args.get("doctor_id", type=int)
     public_profile = None
