@@ -11,12 +11,12 @@
     <a class="sidebar-brand" href="{{ url_for('doctor_dashboard') }}">MediSlot<span>.</span></a>
     <p class="sidebar-caption">DOCTOR WORKSPACE</p>
     <nav class="sidebar-nav" aria-label="Doctor navigation">
-      <button class="sidebar-link is-active" type="button" data-view-target="dashboard-view" aria-current="page"><span class="nav-icon">&#9638;</span>Dashboard</button>
-      <button class="sidebar-link" type="button" data-view-target="availability-view"><span class="nav-icon">&#9711;</span>Availability</button>
-      <button class="sidebar-link" type="button" data-view-target="blackout-view"><span class="nav-icon">&#9632;</span>Blackout</button>
-      <button class="sidebar-link" type="button" data-view-target="schedule-view"><span class="nav-icon">&#9776;</span>Schedule</button>
-      <button class="sidebar-link" type="button" data-view-target="consulting-view"><span class="nav-icon">&#10010;</span>Consulting Type</button>
-      <button class="sidebar-link" type="button" data-view-target="profile-view-tab"><span class="nav-icon">&#9679;</span>Profile Details</button>
+      <button class="sidebar-link is-active" type="button" data-view-target="dashboard-view" aria-controls="dashboard-view" aria-current="page"><span class="nav-icon" aria-hidden="true">&#9638;</span>Dashboard</button>
+      <button class="sidebar-link" type="button" data-view-target="availability-view" aria-controls="availability-view"><span class="nav-icon" aria-hidden="true">&#9711;</span>Availability</button>
+      <button class="sidebar-link" type="button" data-view-target="blackout-view" aria-controls="blackout-view"><span class="nav-icon" aria-hidden="true">&#9632;</span>Blackout</button>
+      <button class="sidebar-link" type="button" data-view-target="schedule-view" aria-controls="schedule-view"><span class="nav-icon" aria-hidden="true">&#9776;</span>Schedule</button>
+      <button class="sidebar-link" type="button" data-view-target="consulting-view" aria-controls="consulting-view"><span class="nav-icon" aria-hidden="true">&#10010;</span>Consultation types</button>
+      <button class="sidebar-link" type="button" data-view-target="profile-view-tab" aria-controls="profile-view-tab"><span class="nav-icon" aria-hidden="true">&#9679;</span>Profile details</button>
     </nav>
     <div class="sidebar-bottom">
       <div class="sidebar-user"><span class="sidebar-avatar">{{ (profile.first_name or 'D')[:1] }}{{ (profile.last_name or '')[:1] }}</span><span><strong>Dr. {{ profile.first_name or 'Doctor' }}</strong><small>{{ 'Verified' if profile.is_verified else 'Profile pending' }}</small></span></div>
@@ -28,7 +28,7 @@
 
   <main class="doctor-main">
     <header class="main-header">
-      <div><p class="eyebrow">MediSlot / Doctor workspace</p><p class="header-date">{{ schedule.date }} <span>UTC</span></p></div>
+      <div><p class="eyebrow">MediSlot / Doctor workspace</p><p class="header-date"><time datetime="{{ schedule.date }}">{{ schedule.date }}</time> <span>UTC</span></p></div>
       <div class="header-actions">
         <span class="status-pill {{ 'verified' if profile.is_verified else 'pending' }}"><span></span>{{ 'Verified' if profile.is_verified else 'Profile incomplete' }}</span>
         <span class="header-avatar">{{ (profile.first_name or 'D')[:1] }}{{ (profile.last_name or '')[:1] }}</span>
@@ -41,12 +41,38 @@
       {% if not profile.is_verified %}<p class="notice verification-notice">Complete your contact, licence, experience, qualification, specialization, hospital details and profile photo to unlock availability and consultation settings.</p>{% endif %}
 
       <section class="dashboard-view" id="dashboard-view" data-view>
-        <div class="view-heading"><div><h1>Good day, {{ profile.first_name or 'Doctor' }}</h1></div><button class="button secondary" type="button" data-go-view="schedule-view">View schedule <span aria-hidden="true">&#8594;</span></button></div>
+        <div class="dashboard-welcome">
+          <div class="dashboard-welcome-copy">
+            <p class="eyebrow">Your clinic workspace</p>
+            <h1>Good day, {{ profile.first_name or 'Doctor' }}</h1>
+            <p>Manage your appointments, availability and practice details.</p>
+          </div>
+          <div class="dashboard-quick-actions" aria-label="Quick actions">
+            <button class="button secondary" type="button" data-go-view="schedule-view"><span aria-hidden="true">&#9776;</span> View schedule</button>
+            {% if profile.is_verified %}
+              <button class="button primary" type="button" data-go-view="availability-view"><span aria-hidden="true">+</span> Manage availability</button>
+            {% else %}
+              <button class="button primary" type="button" data-go-view="profile-view-tab"><span aria-hidden="true">+</span> Complete profile</button>
+            {% endif %}
+          </div>
+        </div>
         <div class="metric-grid">
-          <article class="metric-panel"><span class="metric-label">Consultation types</span><strong>{{ consultations|selectattr('is_active')|list|length }}</strong><small>Active services</small></article>
-          <article class="metric-panel"><span class="metric-label">Weekly availability</span><strong>{{ patterns|length }}</strong><small>Configured patterns</small></article>
-          <article class="metric-panel"><span class="metric-label">{{ 'Slots today' if schedule.date == current_utc_date else 'Slots on ' ~ schedule.date }}</span><strong>{{ upcoming_slots|length }}</strong><small>Upcoming slots (UTC)</small></article>
-          <article class="metric-panel"><span class="metric-label">Practice location</span><strong class="metric-location">{{ profile.hospital_name or 'Not set' }}</strong><small>{{ profile.city or 'Add a city' }}</small></article>
+          <button class="metric-panel metric-action" type="button" data-go-view="consulting-view">
+            <span class="metric-icon" aria-hidden="true">&#10010;</span><span class="metric-label">Consultation types</span>
+            <strong>{{ consultations|selectattr('is_active')|list|length }}</strong><small>Active services <span aria-hidden="true">&#8594;</span></small>
+          </button>
+          <button class="metric-panel metric-action" type="button" data-go-view="availability-view">
+            <span class="metric-icon" aria-hidden="true">&#9711;</span><span class="metric-label">Weekly availability</span>
+            <strong>{{ patterns|length }}</strong><small>Configured patterns <span aria-hidden="true">&#8594;</span></small>
+          </button>
+          <button class="metric-panel metric-action" type="button" data-go-view="schedule-view">
+            <span class="metric-icon" aria-hidden="true">&#9776;</span><span class="metric-label">{{ 'Slots today' if schedule.date == current_utc_date else 'Slots on ' ~ schedule.date }}</span>
+            <strong>{{ upcoming_slots|length }}</strong><small>Upcoming slots (UTC) <span aria-hidden="true">&#8594;</span></small>
+          </button>
+          <button class="metric-panel metric-action" type="button" data-go-view="profile-view-tab">
+            <span class="metric-icon" aria-hidden="true">&#9673;</span><span class="metric-label">Practice location</span>
+            <strong class="metric-location">{{ profile.hospital_name or 'Not set' }}</strong><small>{{ profile.city or 'Add a city' }} <span aria-hidden="true">&#8594;</span></small>
+          </button>
         </div>
         <section class="dashboard-panel">
           <div class="panel-heading"><div><p class="eyebrow">{{ 'Today' if schedule.date == current_utc_date else schedule.date }}</p><h2>Next on your schedule</h2></div><button class="text-button" type="button" data-go-view="schedule-view">Open schedule</button></div>
@@ -132,7 +158,15 @@
       <section class="dashboard-view" id="schedule-view" data-view hidden>
         <div class="view-heading"><div><p class="eyebrow">Appointments</p><h1>Schedule</h1><p class="view-subtitle">Booked patient appointments and open slots, shown in UTC.</p></div><form class="date-picker" method="get" action="{{ url_for('doctor_dashboard') }}"><input type="hidden" name="view" value="schedule-view"><label for="schedule-date">Date</label><input id="schedule-date" type="date" name="date" value="{{ schedule.date }}"><button class="button secondary" type="submit">View day</button></form></div>
         <section class="dashboard-panel">
-          {% if schedule.slots %}<div class="schedule-list">{% for slot in schedule.slots %}<article class="schedule-row"><time class="slot-time">{{ slot.start_time[11:16] }}</time><div class="slot-main"><strong>{{ slot.consultation_name or 'Consultation' }}</strong><span>{{ slot.appointments|length }} of {{ slot.capacity }} seats booked</span></div><div class="slot-patients">{% for appointment in slot.appointments %}<span>{{ appointment.first_name }} {{ appointment.last_name }}</span>{% else %}<span class="muted">No patients booked</span>{% endfor %}</div><span class="slot-state">{{ 'Blocked' if slot.status == 0 else ('Booked' if slot.appointments else 'Open') }}</span></article>{% endfor %}</div>{% else %}<div class="empty-state"><span class="empty-symbol">&#9711;</span><p>No slots on this date</p></div>{% endif %}
+          {% if schedule.slots %}
+            <div class="schedule-tools">
+              <label class="schedule-search"><span class="sr-only">Search schedule</span><span aria-hidden="true">&#9906;</span><input id="schedule-search" type="search" placeholder="Search patients or consultation types" autocomplete="off"></label>
+              <label class="schedule-status-filter"><span class="sr-only">Filter by appointment status</span><select id="schedule-status"><option value="all">All appointments</option><option value="booked">Booked</option><option value="open">Open</option><option value="blocked">Blocked</option></select></label>
+              <span class="schedule-result-count" id="schedule-result-count" aria-live="polite">{{ schedule.slots|length }} slots</span>
+            </div>
+            <div class="schedule-list" id="schedule-list">{% for slot in schedule.slots %}<article class="schedule-row" data-slot-state="{{ 'blocked' if slot.status == 0 else ('booked' if slot.appointments else 'open') }}"><time class="slot-time">{{ slot.start_time[11:16] }}</time><div class="slot-main"><strong>{{ slot.consultation_name or 'Consultation' }}</strong><span>{{ slot.appointments|length }} of {{ slot.capacity }} seats booked</span></div><div class="slot-patients">{% for appointment in slot.appointments %}<span>{{ appointment.first_name }} {{ appointment.last_name }}</span>{% else %}<span class="muted">No patients booked</span>{% endfor %}</div><span class="slot-state">{{ 'Blocked' if slot.status == 0 else ('Booked' if slot.appointments else 'Open') }}</span></article>{% endfor %}</div>
+            <div class="empty-state filtered-empty" id="schedule-filter-empty" hidden><span class="empty-symbol">&#9906;</span><p>No slots match these filters</p></div>
+          {% else %}<div class="empty-state"><span class="empty-symbol">&#9711;</span><p>No slots on this date</p></div>{% endif %}
         </section>
       </section>
 
@@ -204,14 +238,42 @@
       });
       if (updateUrl) {
         const url = new URL(window.location.href);
-        url.searchParams.set('view', id);
-        window.history.replaceState(null, '', url);
+        if (url.searchParams.get('view') !== id) {
+          url.searchParams.set('view', id);
+          window.history.pushState({view: id}, '', url);
+        }
       }
     };
     navLinks.forEach(link => link.addEventListener('click', () => activateView(link.dataset.viewTarget, true)));
     document.querySelectorAll('[data-go-view]').forEach(button => button.addEventListener('click', () => activateView(button.dataset.goView, true)));
     const requestedView = new URLSearchParams(window.location.search).get('view');
     activateView(views.some(view => view.id === requestedView) ? requestedView : 'dashboard-view');
+    window.addEventListener('popstate', () => {
+      const view = new URLSearchParams(window.location.search).get('view');
+      activateView(views.some(item => item.id === view) ? view : 'dashboard-view');
+    });
+
+    const scheduleRows = [...document.querySelectorAll('#schedule-list .schedule-row')];
+    const scheduleSearch = document.getElementById('schedule-search');
+    const scheduleStatus = document.getElementById('schedule-status');
+    const scheduleCount = document.getElementById('schedule-result-count');
+    const scheduleFilterEmpty = document.getElementById('schedule-filter-empty');
+    const filterSchedule = () => {
+      const query = scheduleSearch?.value.trim().toLocaleLowerCase() || '';
+      const status = scheduleStatus?.value || 'all';
+      let visibleCount = 0;
+      scheduleRows.forEach(row => {
+        const matchesText = row.textContent.toLocaleLowerCase().includes(query);
+        const matchesStatus = status === 'all' || row.dataset.slotState === status;
+        const visible = matchesText && matchesStatus;
+        row.hidden = !visible;
+        if (visible) visibleCount += 1;
+      });
+      if (scheduleCount) scheduleCount.textContent = `${visibleCount} of ${scheduleRows.length} slots`;
+      if (scheduleFilterEmpty) scheduleFilterEmpty.hidden = visibleCount > 0;
+    };
+    scheduleSearch?.addEventListener('input', filterSchedule);
+    scheduleStatus?.addEventListener('change', filterSchedule);
 
     const profileView = document.getElementById('profile-view');
     const profileForm = document.getElementById('profile-form');
