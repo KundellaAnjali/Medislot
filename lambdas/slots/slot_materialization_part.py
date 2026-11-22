@@ -190,15 +190,15 @@ def materialize_for_doctor_day(
                             "consultation_name": pattern[
                                 "consultation_name"
                             ],
-                            "start_time": start_iso,
-                            "end_time": end_iso,
+                            "slot_start_time": start_iso,
+                            "slot_end_time": end_iso,
                             "local_date": local_day.isoformat(),
                             "capacity": int(pattern["capacity"]),
                             "booked_count": 0,
                             "version": 0,
                             "status": 1
                         },
-                        ConditionExpression="attribute_not_exists(slot_id)"
+                        ConditionExpression="attribute_not_exists(slot_start_time)"
                     )
 
                     created += 1

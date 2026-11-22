@@ -429,7 +429,10 @@ def restore_availability_slots(slots):
         try:
             slots_table.put_item(
                 Item=slot,
-                ConditionExpression="attribute_not_exists(doctor_id)",
+                ConditionExpression=(
+                    "attribute_not_exists(doctor_id) "
+                    "AND attribute_not_exists(slot_start_time)"
+                ),
             )
         except ClientError as error:
             if error.response.get("Error", {}).get("Code") != (
