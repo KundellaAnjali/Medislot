@@ -17,10 +17,6 @@
   <div class="patient-dashboard-layout">
     <aside class="patient-sidebar">
       <p class="patient-sidebar-caption">PATIENT WORKSPACE</p>
-      <nav class="patient-sidebar-nav" aria-label="Patient dashboard">
-        <button class="patient-sidebar-link" type="button" data-patient-view="patient-home">Overview</button>
-        <button class="patient-sidebar-link" type="button" data-patient-view="doctor-search">Doctor Search</button>
-      </nav>
       <div class="patient-sidebar-bottom">
         <button class="patient-sidebar-link" type="button" data-patient-view="patient-crud">Patient Profile</button>
         <form method="post" action="{{ url_for('logout') }}">
@@ -38,7 +34,6 @@
           <p class="eyebrow">MediSlot patient care</p>
           <h1>Find the right care, at the right time.</h1>
           <p>Search verified doctors, review their consultation details and choose an available slot.</p>
-          <button class="button primary" type="button" data-patient-view="doctor-search">Search doctors</button>
         </div>
         <div class="patient-home-summary" aria-label="Account summary">
           <span class="patient-home-summary-icon" aria-hidden="true">&#10010;</span>
@@ -254,7 +249,7 @@
         </section>
       {% else %}
         <section class="public-doctor-section">
-          <p class="public-doctor-empty">{{ profile_error or 'Choose a doctor from Doctor Search to view their public profile.' }}</p>
+          <p class="public-doctor-empty">{{ profile_error or 'Choose a doctor to view their public profile.' }}</p>
         </section>
       {% endif %}
     </section>

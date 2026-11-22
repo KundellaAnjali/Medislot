@@ -50,6 +50,7 @@
           <div class="dashboard-quick-actions" aria-label="Quick actions">
             <button class="button secondary" type="button" data-go-view="schedule-view"><span aria-hidden="true">&#9776;</span> View schedule</button>
             {% if profile.is_verified %}
+              <button class="button primary" type="button" data-go-view="availability-view"><span aria-hidden="true">&#9711;</span> Availability</button>
               <button class="button primary" type="button" data-go-view="consulting-view"><span aria-hidden="true">&#10010;</span> Consultation types</button>
             {% else %}
               <button class="button primary" type="button" data-go-view="profile-view-tab"><span aria-hidden="true">+</span> Complete profile</button>
@@ -60,6 +61,10 @@
           <button class="metric-panel metric-action" type="button" data-go-view="consulting-view">
             <span class="metric-icon" aria-hidden="true">&#10010;</span><span class="metric-label">Consultation types</span>
             <strong>{{ consultations|selectattr('is_active')|list|length }}</strong><small>Active services <span aria-hidden="true">&#8594;</span></small>
+          </button>
+          <button class="metric-panel metric-action" type="button" data-go-view="availability-view">
+            <span class="metric-icon" aria-hidden="true">&#9711;</span><span class="metric-label">Weekly availability</span>
+            <strong>{{ patterns|length }}</strong><small>Configured patterns <span aria-hidden="true">&#8594;</span></small>
           </button>
           <button class="metric-panel metric-action" type="button" data-go-view="schedule-view">
             <span class="metric-icon" aria-hidden="true">&#9776;</span><span class="metric-label">{{ 'Slots today' if schedule.date == current_utc_date else 'Slots on ' ~ schedule.date }}</span>
