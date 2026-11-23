@@ -206,6 +206,28 @@ def materialize_for_doctor_day(
                         "ConditionalCheckFailedException"
                     ):
                         raise
+                    try:
+                        slots_table.update_item(
+                            Key={
+                                "doctor_id": doctor["doctor_id"],
+                                "slot_start_time": start_iso,
+                            },
+                            UpdateExpression="SET #status = :active",
+                            ConditionExpression=(
+                                "attribute_exists(slot_start_time) "
+                                "AND #status = :blocked"
+                            ),
+                            ExpressionAttributeNames={"#status": "status"},
+                            ExpressionAttributeValues={
+                                ":active": 1,
+                                ":blocked": 0,
+                            },
+                        )
+                    except ClientError as update_error:
+                        if update_error.response["Error"]["Code"] != (
+                            "ConditionalCheckFailedException"
+                        ):
+                            raise
 
             # Always move forward using the original duration
             slot_local = slot_end

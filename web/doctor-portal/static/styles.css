@@ -76,7 +76,11 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
 .empty-symbol { color: var(--gold); font-size: 20px; }
 .content-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .85fr); gap: 24px; align-items: start; }
 .pattern-list { display: grid; gap: 8px; }
-.pattern-row { display: grid; grid-template-columns: 1.4fr 1fr .75fr .75fr 32px; gap: 7px; align-items: center; }
+.pattern-row { display: grid; grid-template-columns: 1.4fr 1fr .75fr .75fr auto; gap: 7px; align-items: center; }
+.pattern-row select:disabled, .pattern-row input:disabled { color: var(--ink); background: #f5f8f6; opacity: 1; }
+.pattern-row-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.pattern-row-actions .button { min-height: 34px; padding: 0 10px; }
+.pattern-row-actions .danger-text:hover { border-color: #e7c9c1; color: #a74d3e; background: #fbefec; }
 .remove-row { width: 30px; height: 30px; border: 0; border-radius: 3px; background: transparent; color: #89979a; font-size: 20px; cursor: pointer; }
 .remove-row:hover { background: #fbefec; color: var(--coral); }
 .form-actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 12px; }
@@ -171,7 +175,7 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
   .slot-state { grid-column: 3; grid-row: 1; }
   .pattern-row { grid-template-columns: 1fr 1fr; padding: 8px 0; border-bottom: 1px solid var(--line); }
   .pattern-row select:first-child { grid-column: 1 / 3; }
-  .pattern-row .remove-row { grid-column: 2; justify-self: end; }
+  .pattern-row-actions { grid-column: 1 / 3; }
   .consultation-form { grid-template-columns: 1fr 85px; }
   .consultation-form select { grid-column: 1 / 3; }
   .consultation-edit { grid-template-columns: 1fr 1fr; }
@@ -879,4 +883,194 @@ input:focus, select:focus {
   .patient-dashboard-page #doctor-search,
   .patient-dashboard-page #patient-profile { scroll-margin-top: 108px; }
   .availability-form select { min-width: 0; width: 100%; }
+}
+
+.doctor-app :focus-visible { outline: 3px solid #5ab4a5; outline-offset: 2px; }
+.doctor-app .schedule-view-heading { align-items: flex-end; }
+.doctor-app .schedule-controls { flex-wrap: wrap; justify-content: flex-end; }
+.doctor-app .schedule-controls input { width: 150px; }
+.doctor-app .schedule-controls select { width: 145px; }
+.doctor-app .schedule-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-bottom: 12px; }
+.doctor-app .schedule-search-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
+.doctor-app #patient-search { width: min(100%, 290px); margin-right: auto; }
+.doctor-app .schedule-filter-count { min-height: 16px; margin: 0 0 10px; color: var(--muted); font-size: 11px; }
+.doctor-app .schedule-list { display: grid; gap: 9px; border-top: 0; }
+.doctor-app .schedule-row.schedule-card { min-width: 0; min-height: 0; display: grid; grid-template-columns: 22px minmax(100px, .7fr) minmax(135px, .9fr) minmax(190px, 1.45fr) minmax(115px, .75fr) minmax(155px, auto); align-items: start; gap: 14px; padding: 16px 13px; border: 1px solid #e1e9e5; border-radius: 8px; background: #fff; transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+.doctor-app .schedule-row.schedule-card:hover { border-color: #b7d6cd; box-shadow: 0 6px 18px #204a3b0d; transform: translateY(-1px); }
+.doctor-app .schedule-row.schedule-card[hidden] { display: none; }
+.slot-select-label, .slot-select-spacer { width: 22px; min-height: 22px; display: grid; place-items: center; }
+.slot-select { width: 16px; height: 16px; min-height: 16px; margin: 0; accent-color: var(--teal); cursor: pointer; }
+.schedule-card-time, .schedule-card-type, .schedule-card-patients, .schedule-card-capacity, .schedule-card-actions { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.schedule-field-label { color: #78878b; font-size: 9px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.schedule-card-time time { color: #145d57; font: 700 14px 'Manrope', sans-serif; white-space: nowrap; }
+.schedule-card-time time small { color: var(--muted); font: 600 10px 'DM Sans', sans-serif; }
+.schedule-date { color: var(--muted); font-size: 10px; }
+.schedule-card-type strong, .schedule-card-capacity strong { color: #283a40; font-size: 12px; }
+.schedule-card-capacity > span:last-child { color: var(--muted); font-size: 10px; }
+.schedule-patient { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 3px 8px; padding: 0 0 7px; border-bottom: 1px solid #edf1ef; }
+.schedule-patient:last-child { padding-bottom: 0; border-bottom: 0; }
+.patient-name-link { max-width: 100%; padding: 0; overflow: hidden; border: 0; background: transparent; color: #204e58; cursor: pointer; font-size: 12px; font-weight: 700; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.patient-name-link:hover { color: var(--teal); text-decoration: underline; }
+.schedule-id { grid-column: 1 / -1; color: #7d8b8e; font-size: 9px; overflow-wrap: anywhere; }
+.status-badge { width: max-content; max-width: 100%; display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 999px; font-size: 9px; font-weight: 700; line-height: 1.25; }
+.status-booked { color: #286d49; background: #e9f5ec; }
+.status-available { color: #235d8c; background: #eaf3fb; }
+.status-pending { color: #885d12; background: #fff4dc; }
+.status-cancelled { color: #a33e39; background: #fcebea; }
+.status-completed, .status-blocked { color: #56636b; background: #edf0f2; }
+.schedule-card-actions { gap: 7px; }
+.schedule-card-actions .button { min-height: 32px; width: 100%; padding: 0 8px; font-size: 10px; }
+.danger-button { color: #a23e38; background: #fff; border: 1px solid #e6c6c2; }
+.danger-button:hover { color: #fff; border-color: #a94740; background: #a94740; }
+.slot-cancel-form { width: 100%; margin: 0; }
+.schedule-pagination { display: flex; align-items: center; justify-content: center; gap: 16px; padding-top: 18px; }
+.schedule-pagination > span { min-width: 90px; color: var(--muted); font-size: 11px; text-align: center; }
+.schedule-pagination button:disabled { opacity: .48; cursor: not-allowed; }
+.schedule-empty-state { min-height: 245px; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px 20px; text-align: center; }
+.schedule-empty-state[hidden] { display: none; }
+.schedule-empty-icon { width: 48px; height: 48px; display: grid; place-items: center; margin-bottom: 14px; border-radius: 50%; background: #eaf5f1; color: var(--teal); font-size: 22px; }
+.schedule-empty-state h2 { margin: 0 0 7px; font-size: 17px; }
+.schedule-empty-state p { margin: 0 0 16px; color: var(--muted); font-size: 12px; }
+.schedule-dialog { width: min(100% - 32px, 500px); max-height: min(85vh, 700px); padding: 23px; border: 1px solid #dce7e2; border-radius: 12px; color: var(--ink); background: #fff; box-shadow: 0 24px 80px #17372c40; }
+.appointment-details-drawer { width: min(440px, 100%); height: 100dvh; max-height: 100dvh; position: fixed; inset: 0 0 0 auto; margin: 0; overflow-y: auto; border-radius: 14px 0 0 14px; }
+.appointment-details-drawer[open] { animation: schedule-drawer-in .2s ease both; }
+.schedule-dialog::backdrop { background: #12292380; backdrop-filter: blur(2px); }
+.schedule-dialog[open] { animation: reveal .16s ease both; }
+.schedule-dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 19px; }
+.schedule-dialog-header h2 { font-size: 19px; }
+.appointment-detail-list { display: grid; gap: 0; margin: 0 0 20px; }
+.appointment-detail-list > div { display: grid; grid-template-columns: minmax(120px, .8fr) minmax(0, 1.2fr); gap: 14px; padding: 11px 0; border-bottom: 1px solid #edf1ef; }
+.appointment-detail-list dt { color: var(--muted); font-size: 11px; }
+.appointment-detail-list dd { margin: 0; font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+.cancel-warning { padding: 13px; border: 1px solid #f0d7b4; border-radius: 7px; color: #704d1a; background: #fff8eb; font-size: 12px; line-height: 1.55; }
+.cancel-slot-summary { display: grid; gap: 5px; padding: 12px 0 16px; color: #46575c; font-size: 11px; }
+.cancel-slot-summary strong { font-size: 12px; }
+.schedule-dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 9px; margin-top: 18px; }
+.notice.warning { color: #704d1a; border-color: #f0d7b4; background: #fff8eb; }
+@keyframes schedule-drawer-in { from { opacity: .7; transform: translateX(24px); } to { opacity: 1; transform: translateX(0); } }
+
+@media (max-width: 1120px) {
+  .doctor-app .schedule-row.schedule-card { grid-template-columns: 22px minmax(95px, .65fr) minmax(130px, .85fr) minmax(170px, 1.4fr) minmax(110px, .7fr); }
+  .doctor-app .schedule-card-actions { grid-column: 2 / -1; display: flex; flex-direction: row; align-items: center; flex-wrap: wrap; }
+  .doctor-app .schedule-card-actions > .schedule-field-label { width: 100%; }
+  .doctor-app .schedule-card-actions .button, .doctor-app .slot-cancel-form { width: auto; min-width: 135px; }
+}
+
+@media (max-width: 760px) {
+  .doctor-app .schedule-view-heading { align-items: stretch; flex-direction: column; }
+  .doctor-app .schedule-controls { justify-content: flex-start; }
+  .doctor-app .schedule-toolbar { align-items: stretch; }
+  .doctor-app #patient-search { width: 100%; margin: 0; }
+  .doctor-app .schedule-toolbar .button { flex: 1 1 145px; }
+  .doctor-app .schedule-row.schedule-card { grid-template-columns: 22px minmax(0, 1fr) minmax(0, 1fr); gap: 13px 10px; padding: 14px 12px; }
+  .doctor-app .schedule-card-time { grid-column: 2; }
+  .doctor-app .schedule-card-type { grid-column: 3; }
+  .doctor-app .schedule-card-patients { grid-column: 2 / -1; }
+  .doctor-app .schedule-card-capacity { grid-column: 2; }
+  .doctor-app .schedule-card-actions { grid-column: 3; flex-direction: column; align-items: stretch; }
+  .doctor-app .schedule-card-actions > .schedule-field-label { width: auto; }
+  .doctor-app .schedule-card-actions .button, .doctor-app .slot-cancel-form { width: 100%; min-width: 0; }
+  .doctor-app .schedule-dialog { padding: 18px; }
+  .doctor-app .appointment-details-drawer { width: min(100%, 440px); border-radius: 12px 0 0 12px; }
+  .doctor-app .schedule-dialog-actions .button { flex: 1 1 140px; }
+}
+
+@media (max-width: 420px) {
+  .doctor-app .schedule-controls label { width: 100%; }
+  .doctor-app .schedule-controls input, .doctor-app .schedule-controls select { width: 100%; }
+  .doctor-app .schedule-row.schedule-card { grid-template-columns: 20px minmax(0, 1fr); }
+  .doctor-app .schedule-card-time, .doctor-app .schedule-card-type, .doctor-app .schedule-card-patients, .doctor-app .schedule-card-capacity, .doctor-app .schedule-card-actions { grid-column: 2; }
+  .doctor-app .schedule-card-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .doctor-app .schedule-card-actions > .schedule-field-label { grid-column: 1 / -1; }
+  .doctor-app .slot-cancel-form { width: 100%; min-width: 0; }
+}
+
+.patient-dashboard-page .patient-main { width: 100%; max-width: none; min-width: 0; padding: 0; margin: 0; }
+.patient-main-header { position: sticky; z-index: 7; top: 0; min-height: 76px; }
+.patient-main-content { width: min(1320px, 100%); padding: 32px clamp(20px, 4vw, 48px) 60px; margin: 0 auto; }
+.patient-dashboard-view[hidden] { display: none; }
+.patient-dashboard-page .patient-welcome { min-height: 220px; margin-bottom: 18px; }
+.patient-dashboard-page .patient-welcome h1 { font-size: clamp(27px, 3.5vw, 38px); }
+.patient-metric-grid .metric-panel { min-width: 0; }
+.patient-metric-grid .metric-panel > strong { overflow-wrap: anywhere; }
+.patient-overview-panel { padding: clamp(20px, 3vw, 28px); }
+.patient-quick-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.patient-quick-action { display: grid; grid-template-columns: 38px minmax(0, 1fr) 18px; align-items: center; gap: 12px; min-width: 0; padding: 15px; border: 1px solid #e3ebe7; border-radius: 10px; background: linear-gradient(145deg, #fff, #fbfdfc); color: var(--ink); cursor: pointer; text-align: left; transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+.patient-quick-action:hover { transform: translateY(-2px); border-color: #b6d6cc; box-shadow: 0 8px 20px rgb(22 55 46 / 7%); }
+.patient-quick-action > span:nth-child(2) { min-width: 0; display: grid; gap: 5px; }
+.patient-quick-action strong { font-size: 11px; }
+.patient-quick-action small { color: var(--muted); font-size: 10px; line-height: 1.45; }
+.patient-quick-icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px; color: var(--teal); background: #eaf5f1; font-size: 18px; }
+.patient-action-arrow { color: var(--teal); font-size: 16px; }
+.patient-view-heading { align-items: flex-end; }
+.patient-view-heading h1 { margin-bottom: 6px; }
+.patient-appointments.dashboard-panel { margin: 0 0 18px; scroll-margin-top: 94px; }
+.patient-appointment-toolbar { display: grid; grid-template-columns: auto minmax(150px, 1fr) auto minmax(135px, .55fr); align-items: center; gap: 10px; margin: 0 0 12px; }
+.patient-appointment-toolbar label { color: #64757a; font-size: 11px; font-weight: 700; }
+.patient-appointment-toolbar input, .patient-appointment-toolbar select { min-width: 0; }
+.patient-appointment-card[hidden] { display: none; }
+.patient-appointment-card .appointment-card-heading { justify-content: space-between; margin-bottom: 10px; }
+.patient-appointment-card .appointment-card-heading h3 { margin-top: 4px; color: #25383e; font: 700 15px 'Manrope', sans-serif; }
+.patient-appointment-card .patient-appointment-details > p { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 10px; }
+.patient-appointment-card .patient-appointment-details > p > strong { min-width: 105px; }
+.patient-appointment-time { color: #34494e; font-weight: 600; }
+.patient-utc-label { color: var(--muted); font-size: 10px; }
+.patient-cancel-form { margin: 0; }
+.patient-cancel-form .button { min-width: 150px; }
+.patient-filter-empty[hidden] { display: none; }
+.doctor-search-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 14px; }
+.doctor-search-actions .doctor-profile-link { flex: 1 1 140px; margin: 0; }
+.patient-dashboard-page .doctor-search { margin: 0 0 18px; }
+.patient-dashboard-page .doctor-search-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.patient-dashboard-page .doctor-search-results { margin-top: 8px; }
+.patient-dashboard-page .doctor-search-card { display: flex; flex-direction: column; min-width: 0; min-height: 240px; padding: 20px; }
+.patient-dashboard-page .doctor-search-card-heading { align-items: flex-start; }
+.patient-dashboard-page .doctor-search-card-heading h3 { overflow-wrap: anywhere; font-size: 15px; }
+.patient-dashboard-page .doctor-search-pagination { padding-top: 14px; border-top: 1px solid #edf1ef; }
+.patient-dashboard-page .patient-empty-state { padding: 38px 20px; }
+.patient-dashboard-page .patient-profile { margin: 0 0 18px; scroll-margin-top: 94px; }
+.patient-dashboard-page #patient-dashboard-view, .patient-dashboard-page #patient-appointments-view, .patient-dashboard-page #doctor-search-view, .patient-dashboard-page #patient-profile-view { scroll-margin-top: 94px; }
+.patient-dashboard-page :focus-visible { outline: 3px solid #5ab4a5; outline-offset: 2px; }
+
+@media (max-width: 1050px) {
+  .patient-quick-actions { grid-template-columns: 1fr; }
+  .patient-quick-action { padding: 13px 15px; }
+}
+
+@media (max-width: 820px) {
+  .patient-dashboard-page { grid-template-columns: 210px minmax(0, 1fr); }
+  .patient-dashboard-page .patient-content { width: 100%; }
+  .patient-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .patient-appointment-toolbar { grid-template-columns: auto minmax(0, 1fr); }
+  .patient-dashboard-page .patient-appointment-card { align-items: flex-start; }
+}
+
+@media (max-width: 680px) {
+  .patient-dashboard-page { display: block; }
+  .patient-dashboard-page .patient-sidebar { position: sticky; }
+  .patient-main-header { position: relative; min-height: 64px; padding: 10px 15px; }
+  .patient-main-header .status-pill { max-width: 160px; padding: 7px 9px; font-size: 10px; }
+  .patient-main-content { width: 100%; padding: 21px 14px 42px; }
+  .patient-dashboard-page .patient-welcome { min-height: 0; }
+  .patient-dashboard-page .patient-welcome-actions { gap: 8px; }
+  .patient-view-heading { align-items: stretch; flex-direction: column; }
+  .patient-view-heading > .button { width: 100%; }
+  .patient-appointment-toolbar { grid-template-columns: 1fr; gap: 7px; }
+  .patient-appointment-toolbar label:not(:first-child) { margin-top: 5px; }
+  .patient-dashboard-page .patient-appointment-card { flex-direction: column; }
+  .patient-cancel-form, .patient-cancel-form .button { width: 100%; }
+  .patient-dashboard-page .doctor-search-form { grid-template-columns: 1fr; }
+  .patient-dashboard-page .doctor-search-form > .button { width: 100%; }
+  .patient-dashboard-page .doctor-search-actions { flex-direction: column; }
+  .patient-dashboard-page .doctor-search-actions .doctor-profile-link { width: 100%; }
+  .patient-dashboard-page .patient-profile { padding: 19px 15px; }
+  .patient-dashboard-page .patient-profile-heading { align-items: flex-start; }
+  .patient-dashboard-page .patient-profile-form { grid-template-columns: 1fr; }
+  .patient-dashboard-page .patient-profile-form .patient-email-note { grid-column: auto; }
+  .patient-dashboard-page #patient-dashboard-view, .patient-dashboard-page #patient-appointments-view, .patient-dashboard-page #doctor-search-view, .patient-dashboard-page #patient-profile-view { scroll-margin-top: 110px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .patient-quick-action { transition: none; }
+  .patient-quick-action:hover { transform: none; }
 }

@@ -142,12 +142,7 @@ def lambda_handler(event, context):
                 }
             )
         )
-
-        return generate_policy(
-            "anonymous",
-            "Deny",
-            event["methodArn"]
-        )
+        raise Exception("Unauthorized")
 
     except InvalidTokenError:
 

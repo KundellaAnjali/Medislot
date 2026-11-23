@@ -3,7 +3,7 @@ import logging
 import os
 import uuid
 from time import perf_counter
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from urllib.parse import urljoin
 
@@ -36,6 +36,19 @@ app.config.update(
 Session(app)
 
 API_BASE_URL = os.environ["MEDISLOT_API_BASE_URL"].rstrip("/") + "/"
+
+
+def format_display_date(value):
+    if isinstance(value, datetime):
+        parsed_date = value.date()
+    elif isinstance(value, date):
+        parsed_date = value
+    else:
+        parsed_date = date.fromisoformat(str(value)[:10])
+    return parsed_date.strftime("%d %b %Y")
+
+
+app.jinja_env.filters["display_date"] = format_display_date
 
 
 @app.before_request
@@ -81,13 +94,19 @@ def role_required(role, profile_path, missing_profile_message):
                     profile_path,
                 )
             except ApiError as error:
-                if error.status_code in {401, 403}:
+                if error.status_code == 401:
                     session.clear()
                     flash(
                         "Your session is invalid or has expired. Please sign in again.",
                         "error",
                     )
                     return redirect(url_for("auth", mode="login", role=role))
+                if error.status_code == 403:
+                    app.logger.warning(
+                        "Portal session was denied after refresh: role=%s",
+                        role,
+                    )
+                    return "You are not authorized to access this page.", 403
                 if (
                     error.status_code == 404
                     and str(error) == missing_profile_message
@@ -136,7 +155,8 @@ def refresh_access_token():
     refresh_token = session.get("refresh_token")
 
     if not refresh_token:
-        return False
+        app.logger.warning("Access token refresh requested without a refresh token")
+        raise ApiError("Your session has expired. Please sign in again.", 401)
 
     try:
         result = requests.post(
@@ -146,26 +166,41 @@ def refresh_access_token():
             },
             timeout=15,
         )
-
-        if not result.ok:
-            return False
-
-        payload = result.json()
-
-        session["access_token"] = payload["access_token"]
-        session.modified = True
-
-        app.logger.info(
-            "Access token refreshed successfully"
-        )
-
-        return True
-
     except requests.RequestException:
         app.logger.exception(
             "Failed to refresh access token"
         )
-        return False
+        raise ApiError("Session refresh is temporarily unavailable. Please try again.", 503)
+
+    if result.status_code in {401, 403}:
+        app.logger.warning(
+            "Refresh token was rejected: status=%s",
+            result.status_code,
+        )
+        session.clear()
+        raise ApiError("Your session has expired. Please sign in again.", 401)
+    if not result.ok:
+        app.logger.error(
+            "Refresh endpoint failed: status=%s",
+            result.status_code,
+        )
+        raise ApiError("Session refresh is temporarily unavailable. Please try again.", 503)
+
+    try:
+        payload = result.json()
+    except ValueError as error:
+        app.logger.error("Refresh endpoint returned invalid JSON")
+        raise ApiError("Session refresh returned an invalid response.", 503) from error
+
+    access_token = payload.get("access_token") if isinstance(payload, dict) else None
+    if not isinstance(access_token, str) or not access_token.strip():
+        app.logger.error("Refresh endpoint response did not contain an access token")
+        raise ApiError("Session refresh returned an invalid response.", 503)
+
+    session["access_token"] = access_token
+    session.modified = True
+    app.logger.info("Access token refreshed successfully")
+    return True
 
 def api_request(
     method,
@@ -208,17 +243,15 @@ def api_request(
     #
     # Access token expired
     #
-    if (
-        authenticated
-        and result.status_code == 401
-        and session.get("refresh_token")
-    ):
+    if authenticated and result.status_code in {401, 403}:
 
         app.logger.info(
-            "Received 401. Attempting token refresh."
+            "Received authentication failure: status=%s. Attempting token refresh.",
+            result.status_code,
         )
 
-        if refresh_access_token():
+        if session.get("refresh_token"):
+            refresh_access_token()
 
             headers["Authorization"] = (
                 f"Bearer {session['access_token']}"
@@ -314,6 +347,7 @@ def with_api_errors(handler):
             )
 
             if error.status_code == 401:
+                role = session.get("role")
                 session.clear()
                 flash(
                     "Your session expired. Please sign in again.",
@@ -322,7 +356,8 @@ def with_api_errors(handler):
                 return redirect(
                     url_for(
                         "auth",
-                        mode="login"
+                        mode="login",
+                        role=role if role in {"DOCTOR", "PATIENT"} else None,
                     )
                 )
 
@@ -483,6 +518,7 @@ def doctor_dashboard():
         patterns=availability,
         blackouts=blackouts,
         schedule=schedule,
+        schedule_display_date=format_display_date(schedule["date"]),
         schedule_filter=schedule_filter,
     )
 
@@ -516,6 +552,7 @@ def patient_dashboard():
         appointments_offset=appointments_offset,
         appointments_has_more=has_more,
         appointments_next_offset=next_offset,
+        today_display_date=format_display_date(datetime.now(timezone.utc).date()),
     )
 
 
@@ -560,6 +597,7 @@ def patient_api_error(error):
             appointments_offset=0,
             appointments_has_more=False,
             appointments_next_offset=None,
+            today_display_date=format_display_date(datetime.now(timezone.utc).date()),
         ), 403
     else:
         flash(str(error), "error")
@@ -607,6 +645,7 @@ def patient_doctor_search():
         appointments_next_offset=next_offset,
         doctor_search=results,
         doctor_search_filters=filters,
+        today_display_date=format_display_date(datetime.now(timezone.utc).date()),
     )
 
 
@@ -811,7 +850,10 @@ def cancel_patient_appointment(appointment_id):
     except ApiError as error:
         return patient_api_error(error)
     flash(f"Appointment {appointment_id} cancelled.", "success")
-    return redirect(url_for("patient_dashboard") + "#my-appointments")
+    return redirect(
+        url_for("patient_dashboard", view="patient-appointments-view")
+        + "#my-appointments"
+    )
 
 
 @app.post("/doctor/appointments/<int:appointment_id>/cancel")
@@ -823,6 +865,10 @@ def cancel_doctor_appointment(appointment_id):
         "The slot and all appointments booked for it have been cancelled.",
         "success",
     )
+    return redirect_to_doctor_schedule()
+
+
+def redirect_to_doctor_schedule():
     schedule_date = request.form.get("schedule_date", "").strip()
     status_filter = request.form.get("status_filter", "all")
     if status_filter not in {"all", "booked", "blocked", "open"}:
@@ -836,6 +882,47 @@ def cancel_doctor_appointment(appointment_id):
         )
         + "#schedule-view"
     )
+
+
+@app.post("/doctor/appointments/bulk-cancel")
+@doctor_required
+@with_api_errors
+def bulk_cancel_doctor_appointments():
+    raw_ids = request.form.getlist("appointment_id")
+    try:
+        appointment_ids = list(dict.fromkeys(int(value) for value in raw_ids))
+    except (TypeError, ValueError):
+        flash("The selected appointments could not be identified.", "error")
+        return redirect_to_doctor_schedule()
+    if not appointment_ids or len(appointment_ids) > 50 or any(
+        appointment_id <= 0 for appointment_id in appointment_ids
+    ):
+        flash("Select between 1 and 50 valid booked slots.", "error")
+        return redirect_to_doctor_schedule()
+
+    cancelled = 0
+    failures = []
+    for appointment_id in appointment_ids:
+        try:
+            api_request("POST", f"/appointments/{appointment_id}/cancel")
+        except ApiError as error:
+            failures.append(appointment_id)
+            app.logger.warning(
+                "Bulk slot cancellation failed: appointment_id=%s status=%s",
+                appointment_id,
+                error.status_code,
+            )
+        else:
+            cancelled += 1
+
+    if failures:
+        flash(
+            f"{cancelled} slot(s) cancelled; {len(failures)} could not be cancelled.",
+            "error" if not cancelled else "warning",
+        )
+    else:
+        flash(f"{cancelled} slot(s) and their bookings cancelled.", "success")
+    return redirect_to_doctor_schedule()
 
 
 @app.get("/doctors/<int:doctor_id>")

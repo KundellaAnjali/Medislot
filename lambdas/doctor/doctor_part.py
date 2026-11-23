@@ -61,6 +61,26 @@ def get_parameter(name):
     return parameter_cache[name]
 
 
+def queue_slot_materialization(start_date, end_date):
+    result = lambda_client.invoke(
+        FunctionName=f"{ENVIRONMENT}-slot-materializer",
+        InvocationType="Event",
+        Payload=json.dumps(
+            {
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
+            }
+        ),
+    )
+    if result.get("StatusCode") != 202:
+        raise RuntimeError("Slot materialization invocation was not accepted")
+    logger.info(
+        "Slot materialization queued: start_date=%s end_date=%s",
+        start_date,
+        end_date,
+    )
+
+
 def get_connection():
     return pymysql.connect(
         host=get_parameter(f"/medislot/{ENVIRONMENT}/rds-host"),
@@ -270,21 +290,91 @@ def parse_utc_datetime(value):
     return parsed.astimezone(timezone.utc)
 
 
-def consultation_type_ids_with_slots(doctor_id):
+def slots_for_availability_pattern(
+    doctor_id, consultation_id, day_name, start_time, end_time
+):
     query_args = {
         "KeyConditionExpression": Key("doctor_id").eq(doctor_id),
-        "ProjectionExpression": "consultation_type_id",
     }
-    consultation_ids = set()
+    matching_slots = []
     while True:
         result = slots_table.query(**query_args)
         for slot in result.get("Items", []):
-            consultation_ids.add(int(slot["consultation_type_id"]))
+            if int(slot.get("consultation_type_id", -1)) != consultation_id:
+                continue
+            slot_start = parse_utc_datetime(slot["slot_start_time"])
+            local_day = slot.get("local_date")
+            if isinstance(local_day, str):
+                local_day = date.fromisoformat(local_day)
+            elif isinstance(local_day, datetime):
+                local_day = local_day.date()
+            else:
+                local_day = slot_start.date()
+            if local_day.strftime("%A").upper() != day_name:
+                continue
+            slot_time = slot_start.timetz().replace(tzinfo=None)
+            if start_time <= slot_time < end_time:
+                matching_slots.append(slot)
         last_key = result.get("LastEvaluatedKey")
         if not last_key:
             break
         query_args["ExclusiveStartKey"] = last_key
-    return consultation_ids
+    return matching_slots
+
+
+def retire_availability_slots(doctor_id, slots):
+    retired_slots = []
+    try:
+        for slot in slots:
+            original_status = int(slot.get("status", 1))
+            if original_status not in {0, 1}:
+                continue
+            key = {
+                "doctor_id": doctor_id,
+                "slot_start_time": slot["slot_start_time"],
+            }
+            try:
+                slots_table.update_item(
+                    Key=key,
+                    UpdateExpression="SET #status = :retiring",
+                    ConditionExpression="#status = :original AND booked_count = :zero",
+                    ExpressionAttributeNames={"#status": "status"},
+                    ExpressionAttributeValues={
+                        ":retiring": -1,
+                        ":original": original_status,
+                        ":zero": 0,
+                    },
+                )
+            except ClientError as error:
+                if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                    raise
+                current = slots_table.get_item(Key=key, ConsistentRead=True).get("Item")
+                if current and int(current.get("booked_count", 0)) > 0:
+                    raise ConflictError(
+                        "Availability cannot be removed or changed while appointments "
+                        "are booked during that time."
+                    ) from error
+                continue
+            retired_slots.append((key, original_status))
+    except Exception:
+        restore_open_availability_slots(retired_slots)
+        raise
+    return retired_slots
+
+
+def restore_open_availability_slots(retired_slots):
+    for key, original_status in retired_slots:
+        slots_table.update_item(
+            Key=key,
+            UpdateExpression="SET #status = :original",
+            ConditionExpression="#status = :retiring AND booked_count = :zero",
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={
+                ":original": original_status,
+                ":retiring": -1,
+                ":zero": 0,
+            },
+        )
 
 
 def consultation_type_has_slots(doctor_id, consultation_id):
@@ -799,7 +889,6 @@ def availability_route(connection, cursor, doctor_id, method, body):
         normalized.append((consultation_id, day_name, start, end))
 
     requested_patterns = set(normalized)
-    slot_consultation_ids = consultation_type_ids_with_slots(doctor_id)
     cursor.execute(
         """
         SELECT pattern_id, consultation_type_id, day_of_week, start_time, end_time
@@ -810,6 +899,7 @@ def availability_route(connection, cursor, doctor_id, method, body):
     )
     existing_patterns = cursor.fetchall()
     existing_values = set()
+    removed_patterns = []
     for pattern in existing_patterns:
         value = (
             int(pattern["consultation_type_id"]),
@@ -818,32 +908,91 @@ def availability_route(connection, cursor, doctor_id, method, body):
             parse_sql_time(pattern["end_time"]),
         )
         existing_values.add(value)
-        if (
-            value[0] in slot_consultation_ids
-            and value not in requested_patterns
-        ):
-            raise ConflictError(
-                "Availability can't be removed or changed after its slots are generated."
-            )
-        if value not in requested_patterns and value[0] not in slot_consultation_ids:
-            cursor.execute(
-                "DELETE FROM availability_patterns WHERE pattern_id = %s",
-                (pattern["pattern_id"],),
-            )
+        if value not in requested_patterns:
+            removed_patterns.append(value)
 
-    for consultation_id, day_name, start, end in normalized:
-        value = (consultation_id, day_name, start, end)
-        if value in existing_values:
-            continue
-        cursor.execute(
-            """
-            INSERT INTO availability_patterns
-                (doctor_id, consultation_type_id, day_of_week, start_time, end_time)
-            VALUES (%s, %s, %s, %s, %s)
-            """,
-            (doctor_id, consultation_id, day_name, start, end),
+    slots_to_remove = []
+    for consultation_id, day_name, start, end in removed_patterns:
+        matched_slots = slots_for_availability_pattern(
+            doctor_id,
+            consultation_id,
+            day_name,
+            start,
+            end,
         )
-    connection.commit()
+        if any(int(slot.get("booked_count", 0)) > 0 for slot in matched_slots):
+            raise ConflictError(
+                "Availability cannot be removed or changed while appointments "
+                "are booked during that time."
+            )
+        slots_to_remove.extend(matched_slots)
+    slots_to_remove = list(
+        {
+            (doctor_id, slot["slot_start_time"]): slot
+            for slot in slots_to_remove
+        }.values()
+    )
+
+    retired_slots = retire_availability_slots(doctor_id, slots_to_remove)
+    try:
+        for pattern in existing_patterns:
+            value = (
+                int(pattern["consultation_type_id"]),
+                str(pattern["day_of_week"]).upper(),
+                parse_sql_time(pattern["start_time"]),
+                parse_sql_time(pattern["end_time"]),
+            )
+            if value not in requested_patterns:
+                cursor.execute(
+                    "DELETE FROM availability_patterns WHERE pattern_id = %s",
+                    (pattern["pattern_id"],),
+                )
+
+        for consultation_id, day_name, start, end in normalized:
+            value = (consultation_id, day_name, start, end)
+            if value in existing_values:
+                continue
+            cursor.execute(
+                """
+                INSERT INTO availability_patterns
+                    (doctor_id, consultation_type_id, day_of_week, start_time, end_time)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (doctor_id, consultation_id, day_name, start, end),
+            )
+        connection.commit()
+    except Exception:
+        restore_open_availability_slots(retired_slots)
+        raise
+    for slot in slots_to_remove:
+        key = {
+            "doctor_id": doctor_id,
+            "slot_start_time": slot["slot_start_time"],
+        }
+        try:
+            slots_table.delete_item(
+                Key=key,
+                ConditionExpression="booked_count = :zero",
+                ExpressionAttributeValues={":zero": 0},
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] != "ConditionalCheckFailedException":
+                raise
+            if slots_table.get_item(Key=key, ConsistentRead=True).get("Item"):
+                raise ConflictError(
+                    "Availability could not be removed because a slot changed "
+                    "while the update was being saved. Please reload and try again."
+                ) from error
+    window_days = int(
+        get_parameter(f"/medislot/{ENVIRONMENT}/booking-window-days")
+    )
+    if not 1 <= window_days <= 90:
+        raise ValueError("booking-window-days must be between 1 and 90")
+    start_day = datetime.now(timezone.utc).date()
+    queue_slot_materialization(
+        start_day,
+        start_day + timedelta(days=window_days - 1),
+    )
     logger.info("Availability saved for doctor %s: %s patterns", doctor_id, len(normalized))
     return response(200, {"patterns_saved": len(normalized)})
 
@@ -860,10 +1009,10 @@ def blackouts_route(connection, cursor, doctor_id, method, tail, body):
         blackouts = cursor.fetchall()
         for blackout in blackouts:
             blackout["start_display"] = blackout["start_datetime"].strftime(
-                "%Y-%m-%d %H:%M UTC"
+                "%d %b %Y %H:%M UTC"
             )
             blackout["end_display"] = blackout["end_datetime"].strftime(
-                "%Y-%m-%d %H:%M UTC"
+                "%d %b %Y %H:%M UTC"
             )
         return response(200, {"blackouts": blackouts})
     if not tail and method == "POST":
@@ -902,9 +1051,13 @@ def blackouts_route(connection, cursor, doctor_id, method, tail, body):
             start_utc,
             end_utc,
         )
+        queue_slot_materialization(
+            start_utc.date(),
+            (end_utc - timedelta(microseconds=1)).date(),
+        )
 
         logger.info(
-            "Blackout %s added for doctor %s",
+            "Blackout %s added for doctor %s; slot regeneration queued",
             blackout_id,
             doctor_id,
         )
@@ -938,28 +1091,7 @@ def blackouts_route(connection, cursor, doctor_id, method, tail, body):
         )
 
         connection.commit()
-
-        try:
-            invoke_result = lambda_client.invoke(
-                FunctionName=f"{ENVIRONMENT}-slot-materializer",
-                InvocationType="Event",
-                Payload=json.dumps(
-                    {
-                        "start_date": affected_day.isoformat(),
-                        "end_date": last_affected_day.isoformat(),
-                    }
-                ),
-            )
-
-            if invoke_result.get("StatusCode") != 202:
-                logger.warning(
-                    "Slot regeneration was not accepted"
-                )
-
-        except Exception:
-            logger.exception(
-                "Failed to invoke slot-materializer"
-            )
+        queue_slot_materialization(affected_day, last_affected_day)
 
         logger.info(
             "Blackout %s removed for doctor %s; slot regeneration queued for %s through %s",
@@ -1021,7 +1153,8 @@ def get_day_schedule(cursor, doctor_id, query):
         placeholders = ",".join(["%s"] * len(slot_ids))
         cursor.execute(
             f"""
-            SELECT a.slot_id, a.appointment_id, p.first_name, p.last_name,
+            SELECT a.slot_id, a.appointment_id, a.patient_id,
+                   a.created_at, p.first_name, p.last_name,
                    p.phone_number, a.appointment_status
             FROM appointments a
             JOIN patients p ON p.patient_id = a.patient_id
