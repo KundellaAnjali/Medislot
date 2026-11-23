@@ -126,7 +126,7 @@ class AppointmentService:
                     "request_hash": request_hash,
                     "event_published": False,
                     "created_at": now.isoformat(),
-                    "ttl": int(
+                    "expires_at": int(
                         (now + timedelta(days=IDEMPOTENCY_TTL_DAYS)).timestamp()
                     ),
                 },

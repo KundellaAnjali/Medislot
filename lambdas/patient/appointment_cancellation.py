@@ -212,7 +212,7 @@ def release_cancelled_seat(cancellation):
                             "idempotency_key": {"S": marker_key},
                             "appointment_id": {"N": appointment_id},
                             "created_at": {"S": now.isoformat()},
-                            "ttl": {
+                            "expires_at": {
                                 "N": str(
                                     int(
                                         (
