@@ -48,7 +48,15 @@ def format_display_date(value):
     return parsed_date.strftime("%d %b %Y")
 
 
+def format_display_datetime(value):
+    parsed_datetime = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if parsed_datetime.tzinfo is None:
+        parsed_datetime = parsed_datetime.replace(tzinfo=timezone.utc)
+    return parsed_datetime.astimezone(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
+
+
 app.jinja_env.filters["display_date"] = format_display_date
+app.jinja_env.filters["display_datetime"] = format_display_datetime
 
 
 @app.before_request
@@ -630,6 +638,43 @@ def patient_doctor_search():
 
     profile_response = g.authorized_profile_response
     profile = profile_response.get("profile") if profile_response else None
+    today = datetime.now(timezone.utc).date()
+    availability_start = today.isoformat()
+    availability_end = (today + timedelta(days=6)).isoformat()
+    for doctor in results.get("doctors", []):
+        doctor["availability_slots"] = []
+        doctor["availability_error"] = False
+        try:
+            availability_payload = api_request(
+                "GET",
+                f"/doctors/{doctor['doctor_id']}/availability",
+                params={
+                    "start_date": availability_start,
+                    "end_date": availability_end,
+                },
+            )
+        except ApiError as error:
+            if error.status_code == 401:
+                return patient_api_error(error)
+            app.logger.warning(
+                "Could not load doctor search availability: doctor_id=%s status=%s",
+                doctor["doctor_id"],
+                error.status_code,
+            )
+            doctor["availability_error"] = True
+            continue
+        slots = availability_payload.get("slots") if isinstance(
+            availability_payload, dict
+        ) else None
+        if not isinstance(slots, list):
+            app.logger.error(
+                "Doctor availability preview returned an invalid response: doctor_id=%s",
+                doctor["doctor_id"],
+            )
+            doctor["availability_error"] = True
+            continue
+        doctor["availability_slots"] = slots
+
     appointments, appointments_error, has_more, next_offset = get_patient_appointments()
     if appointments_error and appointments_error.status_code in {401, 403}:
         return patient_api_error(appointments_error)

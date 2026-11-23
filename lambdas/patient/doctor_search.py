@@ -54,7 +54,7 @@ def contains_pattern(value):
 
 
 def build_filters(filters):
-    clauses = []
+    clauses = ["d.is_verified = TRUE"]
     values = []
 
     if filters["name"]:

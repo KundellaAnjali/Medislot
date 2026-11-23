@@ -183,6 +183,27 @@
                     <p><strong>Hospital:</strong> {{ doctor.hospital or 'Not listed' }}</p>
                     <p><strong>Specialization:</strong> {{ doctor.specialization or 'Not listed' }}</p>
                     <p><strong>City:</strong> {{ doctor.city or 'Not listed' }}</p>
+                    <div class="doctor-slot-preview">
+                      <div class="doctor-slot-preview-heading">
+                        <strong>Upcoming availability</strong>
+                        {% if doctor.availability_slots %}<span class="status-badge status-available">{{ doctor.availability_slots|length }} open</span>{% endif %}
+                      </div>
+                      {% if doctor.availability_error %}
+                        <p class="doctor-slot-preview-empty">Availability could not be loaded right now.</p>
+                      {% elif doctor.availability_slots %}
+                        <ul>
+                          {% for slot in doctor.availability_slots[:3] %}
+                            <li>
+                              <span>{{ slot.start_time|display_datetime }}</span>
+                              <small>{{ slot.consultation_type or 'Consultation' }} · {{ slot.available_seats }} seat{{ '' if slot.available_seats == 1 else 's' }}</small>
+                            </li>
+                          {% endfor %}
+                        </ul>
+                        {% if doctor.availability_slots|length > 3 %}<p class="doctor-slot-preview-more">More times available</p>{% endif %}
+                      {% else %}
+                        <p class="doctor-slot-preview-empty">No upcoming openings in the next 7 days.</p>
+                      {% endif %}
+                    </div>
                     <div class="doctor-search-actions">
                       <a class="button secondary doctor-profile-link" href="{{ url_for('public_doctor_profile', doctor_id=doctor.doctor_id) }}">View profile</a>
                       <a class="button primary doctor-profile-link" href="{{ url_for('patient_doctor_availability', doctor_id=doctor.doctor_id) }}">Check availability</a>

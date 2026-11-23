@@ -81,7 +81,7 @@
       </section>
 
       <section class="dashboard-view" id="availability-view" data-view hidden>
-        <div class="view-heading"><div><p class="eyebrow">Recurring weekly</p><h1>Availability</h1><p class="view-subtitle">Set the consultation hours that generate bookable slots.</p></div></div>
+        <div class="view-heading"><div><p class="eyebrow">Recurring weekly</p><h1>Availability</h1><p class="view-subtitle">Set the consultation hours that generate bookable slots.</p></div>{% if profile.is_verified %}<button class="button primary" type="button" id="add-pattern">+ Add availability</button>{% endif %}</div>
         <section class="dashboard-panel">
           <form method="post" action="{{ url_for('save_availability') }}" id="availability-form">
             <fieldset class="configuration-controls" {{ 'disabled' if not profile.is_verified else '' }}>
@@ -99,7 +99,6 @@
                   </div>
                 {% endfor %}
               </div>
-              <div class="form-actions"><button class="button secondary" type="button" id="add-pattern">+ Add availability</button><button class="button primary" type="submit">Save availability</button></div>
             </fieldset>
           </form>
         </section>
@@ -130,7 +129,6 @@
             <div class="schedule-toolbar">
               <label class="schedule-search-label" for="patient-search">Search patient</label>
               <input id="patient-search" type="search" placeholder="Search patient name or ID" autocomplete="off">
-              <button class="button secondary" type="button" id="export-appointments">Export CSV</button>
               <button class="button secondary" type="button" id="select-visible-slots">Select visible</button>
               <button class="button secondary danger-text" type="button" id="bulk-cancel-slots" disabled>Cancel selected slots</button>
             </div>
@@ -206,14 +204,12 @@
               <span class="schedule-empty-icon" aria-hidden="true">&#9829;</span>
               <h2>No appointments found</h2>
               <p>Try changing your search or schedule filters.</p>
-              <button class="button primary" type="button" data-go-view="availability-view">Create Availability</button>
             </div>
           {% else %}
             <div class="schedule-empty-state">
               <span class="schedule-empty-icon" aria-hidden="true">&#9829;</span>
               <h2>No appointments found</h2>
               <p>There are no appointments or available slots for {{ schedule_display_date }}.</p>
-              <button class="button primary" type="button" data-go-view="availability-view">Create Availability</button>
             </div>
           {% endif %}
         </section>
@@ -397,44 +393,6 @@
       filterSchedule();
     });
 
-    const csvValue = value => {
-      const safeValue = /^[\s]*[=+\-@]/.test(value) ? `'${value}` : value;
-      return `"${safeValue.replace(/"/g, '""')}"`;
-    };
-    document.getElementById('export-appointments')?.addEventListener('click', () => {
-      const selected = scheduleFilter?.value || 'all';
-      const search = (patientSearch?.value || '').trim().toLocaleLowerCase();
-      const rows = [['Date', 'Slot time (UTC)', 'Consultation type', 'Patient name', 'Patient ID', 'Booking reference', 'Status', 'Booked at (UTC)', 'Capacity booked', 'Capacity available']];
-      scheduleRows.filter(row => {
-        const statusMatches = selected === 'all' || row.dataset.slotStatus === selected;
-        const searchMatches = !search || row.querySelector('.schedule-card-patients')?.textContent.toLocaleLowerCase().includes(search);
-        return statusMatches && searchMatches;
-      }).forEach(row => {
-        const appointments = [...row.querySelectorAll('.schedule-patient')];
-        const appointmentRows = appointments.length ? appointments : [null];
-        appointmentRows.forEach(patient => {
-          rows.push([
-            row.querySelector('.schedule-date')?.textContent.trim() || '',
-            row.dataset.slotTime.slice(11, 16),
-            row.dataset.consultation,
-            patient?.querySelector('.patient-name-link')?.textContent.trim() || '',
-            patient?.querySelector('.schedule-id')?.textContent.split('|')[0].replace('Patient ID', '').trim() || '',
-            patient?.querySelector('.schedule-id')?.textContent.match(/Booking #(.+)/)?.[1].trim() || '',
-            patient?.querySelector('.status-badge')?.textContent.trim() || (row.dataset.slotStatus === 'blocked' ? 'Blocked' : 'Available'),
-            displayDateTime(patient?.querySelector('.patient-name-link')?.dataset.bookedAt || ''),
-            row.dataset.capacity.split(' of ')[0],
-            row.dataset.capacity.split('; ')[1] || '',
-          ]);
-        });
-      });
-      const blob = new Blob([rows.map(row => row.map(value => csvValue(String(value || ''))).join(',')).join('\r\n')], {type: 'text/csv;charset=utf-8'});
-      const downloadUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = downloadUrl;
-      link.download = `medislot-schedule-{{ schedule.date }}.csv`;
-      link.click();
-      URL.revokeObjectURL(downloadUrl);
-    });
     filterSchedule();
 
     const detailsDialog = document.getElementById('appointment-details-dialog');
