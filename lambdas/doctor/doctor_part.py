@@ -1132,19 +1132,23 @@ def get_day_schedule(cursor, doctor_id, query):
     consultation_ids = {
         int(item["consultation_type_id"]) for item in slots
     }
-    consultation_names = {}
+    consultation_details = {}
     if consultation_ids:
         placeholders = ",".join(["%s"] * len(consultation_ids))
         cursor.execute(
             f"""
-            SELECT consultation_type_id, consultation_name
-            FROM consultation_types
-            WHERE consultation_type_id IN ({placeholders})
+            SELECT ct.consultation_type_id, ct.consultation_name,
+                   ct.duration_minutes, dct.fee
+            FROM consultation_types ct
+            LEFT JOIN doctor_consulting_types dct
+              ON dct.consultation_type_id = ct.consultation_type_id
+             AND dct.doctor_id = %s
+            WHERE ct.consultation_type_id IN ({placeholders})
             """,
-            tuple(consultation_ids),
+            (doctor_id, *tuple(consultation_ids)),
         )
-        consultation_names = {
-            int(row["consultation_type_id"]): row["consultation_name"]
+        consultation_details = {
+            int(row["consultation_type_id"]): row
             for row in cursor.fetchall()
         }
     slot_ids = [int(item["slot_id"]) for item in slots]
@@ -1170,9 +1174,12 @@ def get_day_schedule(cursor, doctor_id, query):
             )
     for item in slots:
         item["appointments"] = appointments_by_slot.get(int(item["slot_id"]), [])
-        item["consultation_name"] = consultation_names.get(
-            int(item["consultation_type_id"]), ""
+        consultation = consultation_details.get(
+            int(item["consultation_type_id"]), {}
         )
+        item["consultation_name"] = consultation.get("consultation_name", "")
+        item["duration_minutes"] = consultation.get("duration_minutes")
+        item["consultation_fee"] = consultation.get("fee")
         item["start_time"] = item["slot_start_time"]
         item["end_time"] = item["slot_end_time"]
     slots.sort(key=lambda item: item["slot_start_time"])

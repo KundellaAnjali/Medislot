@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Doctor dashboard | MediSlot</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script src="{{ url_for('static', filename='notifications.js') }}" defer></script>
 </head>
 <body class="doctor-app">
   <aside class="doctor-sidebar">
@@ -36,7 +37,7 @@
     </header>
     <div class="main-content">
       {% with messages = get_flashed_messages(with_categories=true) %}
-        {% for category, message in messages %}<p class="notice {{ category }}">{{ message }}</p>{% endfor %}
+        {% for category, message in messages %}<p class="notice {{ category }}" data-auto-dismiss>{{ message }}</p>{% endfor %}
       {% endwith %}
       {% if not profile.is_verified %}<p class="notice verification-notice">Complete your contact, licence, experience, qualification, specialization, hospital details and profile photo to unlock availability and consultation settings.</p>{% endif %}
 
@@ -138,14 +139,14 @@
                 {% set slot_filter = 'blocked' if slot.status == 0 else ('booked' if slot.appointments else 'open') %}
                 {% set booked_count = slot.booked_count|int %}
                 {% set available_count = [slot.capacity|int - booked_count, 0]|max %}
-                <article class="schedule-row schedule-card" data-slot-status="{{ slot_filter }}" data-slot-time="{{ slot.start_time }}" data-consultation="{{ slot.consultation_name or 'Consultation' }}" data-capacity="{{ booked_count }} of {{ slot.capacity }} booked; {{ available_count }} available">
+                <article class="schedule-row schedule-card" data-slot-status="{{ slot_filter }}" data-slot-time="{{ slot.start_time }}" data-consultation="{{ slot.consultation_name or 'Consultation' }}" data-consultation-fee="{{ slot.consultation_fee if slot.consultation_fee is not none else '' }}" data-consultation-duration="{{ slot.duration_minutes if slot.duration_minutes is not none else '' }}" data-capacity="{{ booked_count }} of {{ slot.capacity }} booked; {{ available_count }} available">
                   {% if slot_filter == 'booked' %}
                     <label class="slot-select-label"><input class="slot-select" type="checkbox" value="{{ slot.appointments[0].appointment_id }}" aria-label="Select slot at {{ slot.start_time[11:16] }} UTC"></label>
                   {% else %}
                     <span class="slot-select-spacer" aria-hidden="true"></span>
                   {% endif %}
                   <div class="schedule-card-time"><span class="schedule-field-label">Slot time</span><time datetime="{{ slot.start_time }}">{{ slot.start_time[11:16] }} <small>UTC</small></time><span class="schedule-date">{{ schedule_display_date }}</span></div>
-                  <div class="schedule-card-type"><span class="schedule-field-label">Consultation type</span><strong>{{ slot.consultation_name or 'Consultation' }}</strong></div>
+                  <div class="schedule-card-type"><span class="schedule-field-label">Consultation type</span><strong>{{ slot.consultation_name or 'Consultation' }}</strong><span class="schedule-type-meta">{% if slot.consultation_fee is not none %}Fee {{ '%.2f'|format(slot.consultation_fee|float) }}{% else %}Fee unavailable{% endif %} · {% if slot.duration_minutes is not none %}{{ slot.duration_minutes }} min{% else %}Duration unavailable{% endif %}</span></div>
                   <div class="schedule-card-patients"><span class="schedule-field-label">Patient name</span>
                     {% for appointment in slot.appointments %}
                       {% set appointment_status = appointment.appointment_status|default('CONFIRMED')|upper %}
@@ -159,6 +160,8 @@
                           data-booked-at="{{ appointment.created_at or '' }}"
                           data-slot-time="{{ slot.start_time }}"
                           data-consultation="{{ slot.consultation_name or 'Consultation' }}"
+                          data-consultation-fee="{{ slot.consultation_fee if slot.consultation_fee is not none else 'Not available' }}"
+                          data-consultation-duration="{{ slot.duration_minutes if slot.duration_minutes is not none else 'Not available' }}"
                           data-appointment-status="{{ 'Booked' if appointment_status == 'CONFIRMED' else appointment_status|replace('_', ' ')|title }}">{{ appointment.first_name|title }} {{ appointment.last_name|title }}</button>
                         <span class="schedule-id">Patient ID {{ appointment.patient_id }} | Booking #{{ appointment.appointment_id }}</span>
                         <span class="status-badge {{ badge_class }}">{{ 'Booked' if appointment_status == 'CONFIRMED' else appointment_status|replace('_', ' ')|title }}</span>
@@ -178,6 +181,8 @@
                         data-booked-at="{{ slot.appointments[0].created_at or '' }}"
                         data-slot-time="{{ slot.start_time }}"
                         data-consultation="{{ slot.consultation_name or 'Consultation' }}"
+                        data-consultation-fee="{{ slot.consultation_fee if slot.consultation_fee is not none else 'Not available' }}"
+                        data-consultation-duration="{{ slot.duration_minutes if slot.duration_minutes is not none else 'Not available' }}"
                         data-appointment-status="Booked">Manage Booking</button>
                       <form class="slot-cancel-form" method="post" action="{{ url_for('cancel_doctor_appointment', appointment_id=slot.appointments[0].appointment_id) }}" data-appointment-cancel>
                         <input type="hidden" name="schedule_date" value="{{ schedule.date }}">
@@ -222,6 +227,8 @@
             <div><dt>Booked on</dt><dd id="detail-booked-at"></dd></div>
             <div><dt>Slot time (UTC)</dt><dd id="detail-slot-time"></dd></div>
             <div><dt>Consultation type</dt><dd id="detail-consultation"></dd></div>
+            <div><dt>Fee</dt><dd id="detail-consultation-fee"></dd></div>
+            <div><dt>Duration</dt><dd id="detail-consultation-duration"></dd></div>
             <div><dt>Status</dt><dd id="detail-status"></dd></div>
           </dl>
           <button class="button secondary" type="button" data-close-dialog>Close</button>
@@ -415,6 +422,9 @@
       document.getElementById('detail-booked-at').textContent = displayDateTime(button.dataset.bookedAt);
       document.getElementById('detail-slot-time').textContent = displayDateTime(button.dataset.slotTime);
       document.getElementById('detail-consultation').textContent = button.dataset.consultation;
+      document.getElementById('detail-consultation-fee').textContent = button.dataset.consultationFee || 'Not available';
+      const duration = button.dataset.consultationDuration;
+      document.getElementById('detail-consultation-duration').textContent = duration ? `${duration} minutes` : 'Not available';
       document.getElementById('detail-status').textContent = button.dataset.appointmentStatus;
       detailsDialog.showModal();
     }));

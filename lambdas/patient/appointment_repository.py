@@ -506,11 +506,19 @@ class AppointmentRepository:
                 cursor.execute(
                     f"""
                     SELECT a.appointment_id, a.patient_id, a.doctor_id, a.slot_id,
+                           a.consultation_type_id,
                            COALESCE(a.slot_start_time, a.appointment_datetime)
                                AS slot_start_time,
                            COALESCE(a.status, 'BOOKED') AS status,
-                           a.appointment_status, a.created_at
+                           a.appointment_status, a.created_at,
+                           ct.consultation_name AS consultation_type,
+                           ct.duration_minutes, dct.fee
                     FROM appointments a
+                    LEFT JOIN consultation_types ct
+                      ON ct.consultation_type_id = a.consultation_type_id
+                    LEFT JOIN doctor_consulting_types dct
+                      ON dct.consultation_type_id = a.consultation_type_id
+                     AND dct.doctor_id = a.doctor_id
                     {scope}
                     ORDER BY a.created_at DESC, a.appointment_id DESC
                     LIMIT %s OFFSET %s
@@ -538,11 +546,19 @@ class AppointmentRepository:
                 cursor.execute(
                     f"""
                     SELECT a.appointment_id, a.patient_id, a.doctor_id, a.slot_id,
+                           a.consultation_type_id,
                            COALESCE(a.slot_start_time, a.appointment_datetime)
                                AS slot_start_time,
                            COALESCE(a.status, 'BOOKED') AS status,
-                           a.appointment_status, a.created_at
+                           a.appointment_status, a.created_at,
+                           ct.consultation_name AS consultation_type,
+                           ct.duration_minutes, dct.fee
                     FROM appointments a
+                    LEFT JOIN consultation_types ct
+                      ON ct.consultation_type_id = a.consultation_type_id
+                    LEFT JOIN doctor_consulting_types dct
+                      ON dct.consultation_type_id = a.consultation_type_id
+                     AND dct.doctor_id = a.doctor_id
                     {scope}
                       AND a.appointment_id = %s
                     LIMIT 1

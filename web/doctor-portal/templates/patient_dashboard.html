@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MediSlot | Patient dashboard</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script src="{{ url_for('static', filename='notifications.js') }}" defer></script>
 </head>
 <body class="patient-page patient-dashboard-page">
   <aside class="patient-sidebar">
@@ -32,7 +33,7 @@
     </header>
     <div class="patient-main-content">
       {% with messages = get_flashed_messages(with_categories=true) %}
-        {% for category, message in messages %}<p class="notice {{ category }}" role="{{ 'alert' if category == 'error' else 'status' }}">{{ message }}</p>{% endfor %}
+        {% for category, message in messages %}<p class="notice {{ category }}" role="{{ 'alert' if category == 'error' else 'status' }}" data-auto-dismiss>{{ message }}</p>{% endfor %}
       {% endwith %}
 
       <section class="patient-dashboard-view" id="patient-dashboard-view" data-patient-view>
@@ -85,7 +86,7 @@
         {% if appointments %}<span class="count-label">{{ appointments|length }} on this page</span>{% endif %}
       </div>
       {% if appointments_error %}
-        <p class="notice error" role="alert">Your appointments could not be loaded. Please try again later.</p>
+        <p class="notice error" role="alert" data-auto-dismiss>Your appointments could not be loaded. Please try again later.</p>
       {% elif appointments %}
         <div class="patient-appointment-toolbar">
           <label for="appointment-search">Search appointments</label>
@@ -113,6 +114,9 @@
                 </div>
                 <p><strong>Doctor</strong><a href="{{ url_for('public_doctor_profile', doctor_id=appointment.doctor_id) }}">View Doctor {{ appointment.doctor_id }} profile</a></p>
                 <p><strong>Date and time</strong><time class="patient-appointment-time" datetime="{{ appointment.slot_start_time }}" data-utc-time="{{ appointment.slot_start_time }}">{{ appointment.slot_start_time }}</time><span class="patient-utc-label">UTC</span></p>
+                <p><strong>Consultation type</strong><span>{{ appointment.consultation_type or 'Not available' }}</span></p>
+                <p><strong>Fee</strong><span>{% if appointment.fee is not none %}{{ '%.2f'|format(appointment.fee|float) }}{% else %}Not available{% endif %}</span></p>
+                <p><strong>Duration</strong><span>{% if appointment.duration_minutes is not none %}{{ appointment.duration_minutes }} minutes{% else %}Not available{% endif %}</span></p>
               </div>
               {% if active %}
                 <form method="post" action="{{ url_for('cancel_patient_appointment', appointment_id=appointment.appointment_id) }}" class="patient-cancel-form" data-patient-cancel-form data-appointment-id="{{ appointment.appointment_id }}" data-doctor-name="Doctor {{ appointment.doctor_id }}" data-appointment-time="{{ appointment.slot_start_time }}">

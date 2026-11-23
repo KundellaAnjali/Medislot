@@ -133,6 +133,7 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
 .blackout-list form { margin: 0; }
 .compact-empty { min-height: 60px; }
 .notice { margin: 0 0 16px; padding: 10px 12px; border-radius: 3px; font-size: 12px; }
+.notice.is-dismissing { opacity: 0; transform: translateY(-4px); transition: opacity 200ms ease, transform 200ms ease; }
 .notice.success { background: #e8f4eb; color: #2e7148; }
 .notice.error { background: #faece8; color: #a64b37; }
 .muted { color: var(--muted) !important; }
@@ -906,6 +907,7 @@ input:focus, select:focus {
 .schedule-card-time time small { color: var(--muted); font: 600 10px 'DM Sans', sans-serif; }
 .schedule-date { color: var(--muted); font-size: 10px; }
 .schedule-card-type strong, .schedule-card-capacity strong { color: #283a40; font-size: 12px; }
+.schedule-type-meta { color: var(--muted); font-size: 10px; }
 .schedule-card-capacity > span:last-child { color: var(--muted); font-size: 10px; }
 .schedule-patient { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 3px 8px; padding: 0 0 7px; border-bottom: 1px solid #edf1ef; }
 .schedule-patient:last-child { padding-bottom: 0; border-bottom: 0; }
@@ -1013,6 +1015,7 @@ input:focus, select:focus {
 .patient-appointment-card .appointment-card-heading h3 { margin-top: 4px; color: #25383e; font: 700 15px 'Manrope', sans-serif; }
 .patient-appointment-card .patient-appointment-details > p { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px 10px; }
 .patient-appointment-card .patient-appointment-details > p > strong { min-width: 105px; }
+.patient-appointment-card .patient-appointment-details > p > span { color: #34494e; font-weight: 600; }
 .patient-appointment-time { color: #34494e; font-weight: 600; }
 .patient-utc-label { color: var(--muted); font-size: 10px; }
 .patient-cancel-form { margin: 0; }

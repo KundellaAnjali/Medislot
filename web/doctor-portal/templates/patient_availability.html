@@ -21,7 +21,7 @@
       <p>Browse open appointments with Doctor {{ doctor_id }}. All appointment times are shown in UTC.</p>
     </section>
     {% with messages = get_flashed_messages(with_categories=true) %}
-      {% for category, message in messages %}<p class="notice {{ category }}" role="{{ 'alert' if category == 'error' else 'status' }}">{{ message }}</p>{% endfor %}
+      {% for category, message in messages %}<p class="notice {{ category }}" role="{{ 'alert' if category == 'error' else 'status' }}" data-auto-dismiss>{{ message }}</p>{% endfor %}
     {% endwith %}
 
     <section class="patient-availability">
@@ -44,7 +44,7 @@
       </form>
 
       {% if error_message %}
-        <p class="notice error" role="alert">{{ error_message }}</p>
+        <p class="notice error" role="alert" data-auto-dismiss>{{ error_message }}</p>
       {% elif availability is not none %}
         <p class="doctor-search-count">
           {{ availability|length }} slot{{ '' if availability|length == 1 else 's' }} available
