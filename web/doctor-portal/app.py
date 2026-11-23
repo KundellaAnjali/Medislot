@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import uuid
 from time import perf_counter
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -172,9 +173,10 @@ def api_request(
     *,
     json_body=None,
     params=None,
+    request_headers=None,
     authenticated=True
 ):
-    headers = {}
+    headers = dict(request_headers or {})
 
     if authenticated:
         headers["Authorization"] = (
@@ -578,6 +580,15 @@ def patient_doctor_availability(doctor_id):
         error_message = str(error)
         status_code = error.status_code if error.status_code >= 400 else 502
 
+    stored_keys = session.setdefault("appointment_idempotency_keys", {})
+    idempotency_keys = {}
+    for slot in availability or []:
+        key = f"{doctor_id}:{slot['start_time']}"
+        if key not in stored_keys:
+            stored_keys[key] = uuid.uuid4().hex
+        idempotency_keys[slot["start_time"]] = stored_keys[key]
+    session["appointment_idempotency_keys"] = stored_keys
+
     return render_template(
         "patient_availability.html",
         profile=profile,
@@ -585,8 +596,80 @@ def patient_doctor_availability(doctor_id):
         start_date=start_date,
         end_date=end_date,
         availability=availability,
+        idempotency_keys=idempotency_keys,
         error_message=error_message,
     ), status_code
+
+
+@app.post("/patient/appointments/book")
+@patient_required
+def book_appointment():
+    doctor_id = request.form.get("doctor_id", type=int)
+    slot_start_time = request.form.get("slot_start_time", "").strip()
+    start_date = request.form.get("start_date", "").strip()
+    end_date = request.form.get("end_date", "").strip()
+    idempotency_key = request.form.get("idempotency_key", "").strip()
+    if not doctor_id or doctor_id <= 0 or not slot_start_time:
+        flash("Choose a valid appointment slot before booking.", "error")
+        return redirect(url_for("patient_dashboard"))
+    if not idempotency_key:
+        flash("Booking request is missing its idempotency key. Please retry.", "error")
+        return redirect(
+            url_for(
+                "patient_doctor_availability",
+                doctor_id=doctor_id,
+                **({"start_date": start_date} if start_date else {}),
+                **({"end_date": end_date} if end_date else {}),
+            )
+        )
+
+    try:
+        result = api_request(
+            "POST",
+            "/appointments/book",
+            json_body={
+                "doctor_id": doctor_id,
+                "slot_start_time": slot_start_time,
+            },
+            request_headers={"Idempotency-Key": idempotency_key},
+        )
+    except ApiError as error:
+        if error.status_code in {401, 403}:
+            return patient_api_error(error)
+        flash(str(error), "error")
+    else:
+        if not isinstance(result, dict) or not result.get("appointment_id"):
+            app.logger.error("Appointment booking API returned an invalid response.")
+            flash(
+                "Appointment booking response was invalid. "
+                "Please check availability again.",
+                "error",
+            )
+            return redirect(
+                url_for(
+                    "patient_doctor_availability",
+                    doctor_id=doctor_id,
+                    **({"start_date": start_date} if start_date else {}),
+                    **({"end_date": end_date} if end_date else {}),
+                )
+            )
+        appointment_id = result["appointment_id"]
+        session_keys = session.get("appointment_idempotency_keys", {})
+        session_keys.pop(f"{doctor_id}:{slot_start_time}", None)
+        session["appointment_idempotency_keys"] = session_keys
+        flash(
+            f"Appointment booked successfully. Reference: {appointment_id}.",
+            "success",
+        )
+
+    return redirect(
+        url_for(
+            "patient_doctor_availability",
+            doctor_id=doctor_id,
+            **({"start_date": start_date} if start_date else {}),
+            **({"end_date": end_date} if end_date else {}),
+        )
+    )
 
 
 @app.get("/doctors/<int:doctor_id>")

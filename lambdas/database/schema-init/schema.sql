@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS users (
 
     role ENUM(
         'DOCTOR',
-        'PATIENT'
+        'PATIENT',
+        'ADMIN'
     ) NOT NULL,
 
     is_active BOOLEAN DEFAULT TRUE,
@@ -254,6 +255,10 @@ CREATE TABLE IF NOT EXISTS appointments (
     appointment_datetime DATETIME
         NOT NULL,
 
+    slot_start_time DATETIME(6) NULL,
+
+    status VARCHAR(32) NOT NULL DEFAULT 'BOOKED',
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -307,8 +312,11 @@ CREATE TABLE IF NOT EXISTS refunds (
 
     refund_id INT AUTO_INCREMENT PRIMARY KEY,
 
-    payment_id INT
+    appointment_id INT
         NOT NULL UNIQUE,
+
+    patient_id INT
+        NOT NULL,
 
     refund_percentage DECIMAL(5,2)
         NOT NULL,
@@ -319,6 +327,9 @@ CREATE TABLE IF NOT EXISTS refunds (
     refund_transaction_id VARCHAR(255)
         NULL,
 
+    refund_reason VARCHAR(100)
+        NOT NULL,
+
     status VARCHAR(50)
         NOT NULL,
 
@@ -326,9 +337,13 @@ CREATE TABLE IF NOT EXISTS refunds (
 
     refunded_at TIMESTAMP NULL,
 
-    CONSTRAINT fk_refund_payment
-        FOREIGN KEY (payment_id)
-        REFERENCES payments(
-            payment_id
-        )
+    CONSTRAINT fk_refund_appointment
+        FOREIGN KEY (appointment_id)
+        REFERENCES appointments(appointment_id),
+
+    CONSTRAINT fk_refund_patient
+        FOREIGN KEY (patient_id)
+        REFERENCES patients(patient_id),
+
+    INDEX idx_refunds_patient_created (patient_id, created_at, refund_id)
 );

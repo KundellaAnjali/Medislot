@@ -18,6 +18,9 @@
     <p class="eyebrow">Find care</p>
     <h1>Doctor availability</h1>
     <p>Choose a date range to see open appointment slots with Doctor {{ doctor_id }}.</p>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}<p class="notice {{ category }}" role="{{ 'alert' if category == 'error' else 'status' }}">{{ message }}</p>{% endfor %}
+    {% endwith %}
 
     <section class="patient-availability">
       <form method="get" class="availability-form">
@@ -39,12 +42,24 @@
         {% if availability %}
           <div class="availability-results">
             {% for slot in availability %}
-              <article class="availability-slot">
-                <h2>{{ slot.consultation_type or 'Consultation' }}</h2>
-                <p><strong>Slot:</strong> {{ slot.slot_id }}</p>
-                <p><strong>Starts:</strong> {{ slot.start_time }}</p>
-                <p><strong>Ends:</strong> {{ slot.end_time }}</p>
-                <p><strong>Seats:</strong> {{ slot.available_seats }} available of {{ slot.capacity }}</p>
+              <article class="availability-slot availability-slot-card">
+                <div class="availability-slot-heading">
+                  <h2>{{ slot.consultation_type or 'Consultation' }}</h2>
+                  <span class="consultation-badge">{{ slot.available_seats }} seat{{ '' if slot.available_seats == 1 else 's' }} available</span>
+                </div>
+                <dl class="availability-slot-details">
+                  <div><dt>Starts</dt><dd>{{ slot.start_time }}</dd></div>
+                  <div><dt>Ends</dt><dd>{{ slot.end_time }}</dd></div>
+                  <div><dt>Capacity</dt><dd>{{ slot.booked_count }} of {{ slot.capacity }} booked</dd></div>
+                </dl>
+                <form method="post" action="{{ url_for('book_appointment') }}" class="appointment-booking-form">
+                  <input type="hidden" name="doctor_id" value="{{ doctor_id }}">
+                  <input type="hidden" name="slot_start_time" value="{{ slot.start_time }}">
+                  <input type="hidden" name="start_date" value="{{ start_date }}">
+                  <input type="hidden" name="end_date" value="{{ end_date }}">
+                  <input type="hidden" name="idempotency_key" value="{{ idempotency_keys[slot.start_time] }}">
+                  <button class="button primary" type="submit">Book this appointment</button>
+                </form>
               </article>
             {% endfor %}
           </div>
@@ -54,5 +69,17 @@
       {% endif %}
     </section>
   </main>
+  <script>
+    document.querySelectorAll(".appointment-booking-form").forEach(form => {
+      form.addEventListener("submit", () => {
+        const button = form.querySelector('button[type="submit"]');
+        if (!button || !form.reportValidity()) return;
+        button.disabled = true;
+        button.classList.add("is-loading");
+        button.setAttribute("aria-label", "Booking appointment");
+      });
+    });
+  </script>
+  <script src="{{ url_for('static', filename='notifications.js') }}"></script>
 </body>
 </html>

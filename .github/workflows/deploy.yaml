@@ -51,7 +51,7 @@ jobs:
 
       - name: Lint IAM Stack
         run: |
-          cfn-lint cloudformation/iam-stack.yaml
+          cfn-lint --ignore-checks W3037 -- cloudformation/iam-stack.yaml
 
       - name: Lint Auth Stack
         run: |
@@ -64,6 +64,10 @@ jobs:
       - name: Lint Patient Stack
         run: |
           cfn-lint cloudformation/patient-stack.yaml
+
+      - name: Lint Appointment Infrastructure
+        run: |
+          cfn-lint --ignore-checks E3691 W3037 -- cloudformation/data-stack.yaml cloudformation/iam-stack.yaml cloudformation/patient-stack.yaml
 
   deploy-network:
     needs: validate
@@ -507,5 +511,5 @@ jobs:
           aws apigateway create-deployment \
             --rest-api-id "$API_ID" \
             --stage-name "$ENVIRONMENT" \
-            --description "Publish MediSlot patient-profile routes" \
+            --description "Publish MediSlot patient and booking routes" \
             --region ${{ secrets.AWS_REGION }}

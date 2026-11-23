@@ -77,7 +77,50 @@ Resources:
         Fn::ImportValue: !Sub "${EnvironmentName}-PatientLambdaRoleArn"
       Environment:
         Variables:
-          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots"
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots-v2"
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetAId"
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+  AppointmentBookingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-appointment-booking"
+      Handler: appointment_booking.lambda_handler
+      CodeUri: ../lambdas/patient/
+      Timeout: 30
+      MemorySize: 256
+      Role:
+        Fn::ImportValue: !Sub "${EnvironmentName}-AppointmentLambdaRoleArn"
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots-v2"
+          IDEMPOTENCY_TABLE_NAME: !Sub "${EnvironmentName}-idempotency-keys"
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetAId"
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+  AppointmentsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-appointments"
+      Handler: appointments.lambda_handler
+      CodeUri: ../lambdas/patient/
+      Role:
+        Fn::ImportValue: !Sub "${EnvironmentName}-AppointmentLambdaRoleArn"
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots-v2"
+          IDEMPOTENCY_TABLE_NAME: !Sub "${EnvironmentName}-idempotency-keys"
       VpcConfig:
         SecurityGroupIds:
           - Fn::ImportValue: !Sub "${EnvironmentName}-LambdaSecurityGroupId"
@@ -164,6 +207,47 @@ Resources:
       ParentId: !Ref PatientsResource
       PathPart: me
 
+  AppointmentsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ParentId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiRootResourceId"
+      PathPart: appointments
+
+  AppointmentBookResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ParentId: !Ref AppointmentsResource
+      PathPart: book
+
+  AppointmentIdResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ParentId: !Ref AppointmentsResource
+      PathPart: "{appointment_id}"
+
+  AppointmentCancelResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ParentId: !Ref AppointmentIdResource
+      PathPart: cancel
+
+  PatientRefundsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ParentId: !Ref PatientsResource
+      PathPart: refunds
+
   PatientMeGetMethod:
     Type: AWS::ApiGateway::Method
     Properties:
@@ -247,6 +331,76 @@ Resources:
         IntegrationHttpMethod: POST
         Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DoctorAvailabilityFunction.Arn}/invocations"
 
+  AppointmentBookMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ResourceId: !Ref AppointmentBookResource
+      HttpMethod: POST
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref PatientApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AppointmentBookingFunction.Arn}/invocations"
+
+  AppointmentsGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ResourceId: !Ref AppointmentsResource
+      HttpMethod: GET
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref PatientApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AppointmentsFunction.Arn}/invocations"
+
+  AppointmentGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ResourceId: !Ref AppointmentIdResource
+      HttpMethod: GET
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref PatientApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AppointmentsFunction.Arn}/invocations"
+
+  AppointmentCancelMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ResourceId: !Ref AppointmentCancelResource
+      HttpMethod: POST
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref PatientApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AppointmentsFunction.Arn}/invocations"
+
+  PatientRefundsGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ResourceId: !Ref PatientRefundsResource
+      HttpMethod: GET
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref PatientApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AppointmentsFunction.Arn}/invocations"
+
   PatientProfileInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
@@ -295,6 +449,54 @@ Resources:
           - ApiId:
               Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
 
+  AppointmentBookingInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AppointmentBookingFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub:
+          - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*/POST/appointments/book"
+          - ApiId:
+              Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+
+  AppointmentsInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AppointmentsFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub:
+          - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*/GET/appointments*"
+          - ApiId:
+              Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+
+  AppointmentCancelInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AppointmentsFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub:
+          - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*/POST/appointments/*/cancel"
+          - ApiId:
+              Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+
+  PatientRefundsInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AppointmentsFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub:
+          - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*/GET/patients/refunds"
+          - ApiId:
+              Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+
 Outputs:
   PatientProfileFunctionName:
     Value: !Ref PatientProfileFunction
@@ -304,3 +506,7 @@ Outputs:
     Value: !Ref PublicDoctorProfileFunction
   DoctorAvailabilityFunctionName:
     Value: !Ref DoctorAvailabilityFunction
+  AppointmentBookingFunctionName:
+    Value: !Ref AppointmentBookingFunction
+  AppointmentsFunctionName:
+    Value: !Ref AppointmentsFunction

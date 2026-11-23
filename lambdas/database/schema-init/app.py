@@ -106,6 +106,162 @@ def ensure_index(cursor, table_name, index_name, columns):
     return True
 
 
+def table_exists(cursor, table_name):
+    cursor.execute(
+        """
+        SELECT COUNT(*)
+        FROM information_schema.tables
+        WHERE table_schema = DATABASE() AND table_name = %s
+        """,
+        (table_name,),
+    )
+    return bool(cursor.fetchone()[0])
+
+
+def migrate_refunds(cursor):
+    cursor.execute("SHOW COLUMNS FROM refunds")
+    columns = {column[0] for column in cursor.fetchall()}
+    if "appointment_id" not in columns:
+        cursor.execute(
+            "ALTER TABLE refunds ADD COLUMN appointment_id INT NULL"
+        )
+    if "patient_id" not in columns:
+        cursor.execute("ALTER TABLE refunds ADD COLUMN patient_id INT NULL")
+    if "refund_reason" not in columns:
+        cursor.execute(
+            "ALTER TABLE refunds ADD COLUMN refund_reason VARCHAR(100) NULL"
+        )
+    if "refund_transaction_id" not in columns:
+        cursor.execute(
+            "ALTER TABLE refunds ADD COLUMN refund_transaction_id VARCHAR(255) NULL"
+        )
+    if "status" not in columns:
+        cursor.execute(
+            "ALTER TABLE refunds ADD COLUMN status VARCHAR(50) NOT NULL DEFAULT 'PENDING'"
+        )
+    if "created_at" not in columns:
+        cursor.execute(
+            "ALTER TABLE refunds ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+        )
+    if "refunded_at" not in columns:
+        cursor.execute(
+            "ALTER TABLE refunds ADD COLUMN refunded_at TIMESTAMP NULL"
+        )
+
+    if "payment_id" in columns:
+        cursor.execute(
+            """
+            SELECT CONSTRAINT_NAME
+            FROM information_schema.KEY_COLUMN_USAGE
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'refunds'
+              AND COLUMN_NAME = 'payment_id'
+              AND REFERENCED_TABLE_NAME IS NOT NULL
+            """
+        )
+        for constraint in cursor.fetchall():
+            constraint_name = constraint[0].replace("`", "``")
+            cursor.execute(
+                f"ALTER TABLE refunds DROP FOREIGN KEY `{constraint_name}`"
+            )
+        cursor.execute(
+            """
+            UPDATE refunds r
+            JOIN payments p ON p.payment_id = r.payment_id
+            JOIN appointments a ON a.appointment_id = p.appointment_id
+            SET r.appointment_id = p.appointment_id,
+                r.patient_id = a.patient_id,
+                r.refund_reason = COALESCE(r.refund_reason, 'REFUND')
+            """
+        )
+        cursor.execute("ALTER TABLE refunds DROP COLUMN payment_id")
+
+    if table_exists(cursor, "appointment_refund_ledger"):
+        cursor.execute(
+            """
+            INSERT IGNORE INTO refunds
+                (appointment_id, patient_id, refund_percentage, refund_amount,
+                 refund_transaction_id, refund_reason, status, created_at,
+                 refunded_at)
+            SELECT appointment_id, patient_id, refund_percentage, refund_amount,
+                   NULL, refund_reason,
+                   CASE WHEN refund_amount > 0 THEN 'PENDING' ELSE 'NOT_REQUIRED' END,
+                   created_at, NULL
+            FROM appointment_refund_ledger
+            """
+        )
+
+    cursor.execute(
+        """
+        SELECT COUNT(*)
+        FROM refunds
+        WHERE appointment_id IS NULL OR patient_id IS NULL OR refund_reason IS NULL
+        """
+    )
+    if cursor.fetchone()[0]:
+        raise RuntimeError(
+            "Existing refund rows could not be migrated to appointment and patient records."
+        )
+
+    cursor.execute(
+        "ALTER TABLE refunds MODIFY appointment_id INT NOT NULL"
+    )
+    cursor.execute("ALTER TABLE refunds MODIFY patient_id INT NOT NULL")
+    cursor.execute(
+        "ALTER TABLE refunds MODIFY refund_reason VARCHAR(100) NOT NULL"
+    )
+
+    cursor.execute(
+        """
+        SELECT INDEX_NAME
+        FROM information_schema.statistics
+        WHERE TABLE_SCHEMA = DATABASE()
+          AND TABLE_NAME = 'refunds'
+          AND COLUMN_NAME = 'appointment_id'
+          AND NON_UNIQUE = 0
+        LIMIT 1
+        """
+    )
+    if not cursor.fetchone():
+        cursor.execute(
+            "ALTER TABLE refunds ADD UNIQUE KEY uq_refunds_appointment (appointment_id)"
+        )
+
+    refund_constraints = (
+        ("fk_refund_appointment", "appointment_id", "appointments", "appointment_id"),
+        ("fk_refund_patient", "patient_id", "patients", "patient_id"),
+    )
+    for constraint_name, column, referenced_table, referenced_column in refund_constraints:
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM information_schema.TABLE_CONSTRAINTS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'refunds'
+              AND CONSTRAINT_NAME = %s
+            """,
+            (constraint_name,),
+        )
+        if not cursor.fetchone()[0]:
+            cursor.execute(
+                f"""
+                ALTER TABLE refunds
+                ADD CONSTRAINT `{constraint_name}`
+                FOREIGN KEY (`{column}`)
+                REFERENCES `{referenced_table}`(`{referenced_column}`)
+                """
+            )
+
+    for legacy_table in (
+        "appointment_cancellation_outbox",
+        "appointment_outbox",
+        "appointment_idempotency",
+        "appointment_refund_ledger",
+    ):
+        if table_exists(cursor, legacy_table):
+            cursor.execute(f"DROP TABLE `{legacy_table}`")
+
+
 def lambda_handler(event, context):
     started_at = perf_counter()
 
@@ -144,6 +300,8 @@ def lambda_handler(event, context):
 
                     executed_statements += 1
 
+            migrate_refunds(cursor)
+
             doctor_search_indexes = (
                 (
                     "hospitals",
@@ -162,6 +320,71 @@ def lambda_handler(event, context):
                 ),
             )
             for table_name, index_name, columns in doctor_search_indexes:
+                if ensure_index(cursor, table_name, index_name, columns):
+                    executed_statements += 1
+
+            cursor.execute("SHOW COLUMNS FROM users LIKE 'role'")
+            user_role_column = cursor.fetchone()
+            if user_role_column and "admin" not in user_role_column[1].lower():
+                cursor.execute(
+                    """
+                    ALTER TABLE users
+                    MODIFY role ENUM('DOCTOR', 'PATIENT', 'ADMIN') NOT NULL
+                    """
+                )
+
+            cursor.execute("SHOW COLUMNS FROM appointments")
+            appointment_columns = {
+                column[0] for column in cursor.fetchall()
+            }
+            if "slot_start_time" not in appointment_columns:
+                cursor.execute(
+                    "ALTER TABLE appointments ADD COLUMN slot_start_time DATETIME(6) NULL"
+                )
+                cursor.execute(
+                    """
+                    UPDATE appointments
+                    SET slot_start_time = appointment_datetime
+                    WHERE slot_start_time IS NULL
+                    """
+                )
+            if "status" not in appointment_columns:
+                cursor.execute(
+                    """
+                    ALTER TABLE appointments
+                    ADD COLUMN status VARCHAR(32) NULL
+                    """
+                )
+                cursor.execute(
+                    """
+                    UPDATE appointments
+                    SET status = CASE
+                        WHEN appointment_status = 'CONFIRMED' THEN 'BOOKED'
+                        ELSE appointment_status
+                    END
+                    WHERE status IS NULL
+                    """
+                )
+                cursor.execute(
+                    """
+                    ALTER TABLE appointments
+                    MODIFY status VARCHAR(32) NOT NULL DEFAULT 'BOOKED'
+                    """
+                )
+
+            appointment_indexes = (
+                (
+                    "appointments",
+                    "idx_appointments_patient_created",
+                    ("patient_id", "created_at", "appointment_id"),
+                ),
+                (
+                    "appointments",
+                    "idx_appointments_doctor_created",
+                    ("doctor_id", "created_at", "appointment_id"),
+                ),
+            )
+            for table_name, index_name, columns in appointment_indexes:
                 if ensure_index(cursor, table_name, index_name, columns):
                     executed_statements += 1
 

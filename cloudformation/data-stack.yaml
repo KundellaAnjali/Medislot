@@ -134,7 +134,7 @@ Resources:
           KeyType: HASH
 
       TimeToLiveSpecification:
-        AttributeName: expires_at
+        AttributeName: ttl
         Enabled: true
 
   WaitlistTable:
@@ -202,51 +202,21 @@ Resources:
   SlotsTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub "${EnvironmentName}-slots"
+      TableName: !Sub "${EnvironmentName}-slots-v2"
 
       BillingMode: PAY_PER_REQUEST
 
       AttributeDefinitions:
-        - AttributeName: slot_id
-          AttributeType: N
         - AttributeName: doctor_id
           AttributeType: N
-        - AttributeName: start_time
+        - AttributeName: slot_start_time
           AttributeType: S
-        - AttributeName: status
-          AttributeType: N
 
       KeySchema:
-        - AttributeName: slot_id
+        - AttributeName: doctor_id
           KeyType: HASH
-
-      GlobalSecondaryIndexes:
-        - IndexName: DoctorIdIndex
-          KeySchema:
-            - AttributeName: doctor_id
-              KeyType: HASH
-          Projection:
-            ProjectionType: ALL
-
-        - IndexName: DoctorStartIndex
-          KeySchema:
-            - AttributeName: doctor_id
-              KeyType: HASH
-            - AttributeName: start_time
-              KeyType: RANGE
-          Projection:
-            ProjectionType: ALL
-
-        - IndexName: StatusIndex
-          KeySchema:
-            - AttributeName: status
-              KeyType: HASH
-          Projection:
-            ProjectionType: ALL
-
-      TimeToLiveSpecification:
-        AttributeName: expires_at
-        Enabled: true
+        - AttributeName: slot_start_time
+          KeyType: RANGE
 
   NotificationsTable:
     Type: AWS::DynamoDB::Table
@@ -340,6 +310,27 @@ Resources:
       Type: String
       Value: "30"
       Description: Rolling slot materialization window in days
+
+  FullRefundHoursParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/FULL_REFUND_HOURS"
+      Type: String
+      Value: "24"
+
+  PartialRefundHoursParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/PARTIAL_REFUND_HOURS"
+      Type: String
+      Value: "12"
+
+  PartialRefundPercentParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/PARTIAL_REFUND_PERCENT"
+      Type: String
+      Value: "50"
 
 Outputs:
 
