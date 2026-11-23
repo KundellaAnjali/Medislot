@@ -6,19 +6,24 @@
   <title>MediSlot | Patient dashboard</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
-<body class="patient-page">
-  <header class="patient-topbar">
-    <a class="wordmark" href="/dashboard/patient">MediSlot<span>.</span></a>
-    <nav class="patient-nav" aria-label="Patient navigation">
-      <a href="#patient-profile">My profile</a>
-      <a href="#doctor-search">Find a doctor</a>
+<body class="patient-page patient-dashboard-page">
+  <aside class="patient-sidebar">
+    <a class="sidebar-brand" href="{{ url_for('patient_dashboard') }}">MediSlot<span>.</span></a>
+    <p class="sidebar-caption">PATIENT PORTAL</p>
+    <nav class="patient-sidebar-nav" aria-label="Patient navigation">
+      <a class="patient-sidebar-link is-active" href="#patient-dashboard" data-patient-nav aria-current="page"><span aria-hidden="true">&#9638;</span>Dashboard</a>
+      <a class="patient-sidebar-link" href="#doctor-search" data-patient-nav><span aria-hidden="true">&#9906;</span>Doctors search</a>
+      <a class="patient-sidebar-link" href="#my-appointments" data-patient-nav><span aria-hidden="true">&#9776;</span>Appointments</a>
     </nav>
-    <form method="post" action="{{ url_for('logout') }}">
-      <button class="button secondary" type="submit">Logout</button>
-    </form>
-  </header>
-  <main class="patient-content">
-    <section class="patient-hero">
+    <div class="patient-sidebar-bottom">
+      <a class="patient-sidebar-link" href="#patient-profile" data-patient-nav><span aria-hidden="true">&#9679;</span>Profile</a>
+      <form method="post" action="{{ url_for('logout') }}">
+        <button class="patient-sidebar-link logout-link" type="submit"><span aria-hidden="true">&#8618;</span>Logout</button>
+      </form>
+    </div>
+  </aside>
+  <main class="patient-content" data-default-section="{{ '#doctor-search' if doctor_search else '#patient-dashboard' }}">
+    <section class="patient-hero" id="patient-dashboard">
       <div>
         <p class="eyebrow">Your patient portal</p>
         <h1>Your care, in one place.</h1>
@@ -29,6 +34,51 @@
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% for category, message in messages %}<p class="notice {{ category }}">{{ message }}</p>{% endfor %}
     {% endwith %}
+    <section class="patient-appointments" id="my-appointments">
+      <div class="patient-profile-heading">
+        <div>
+          <p class="eyebrow">Your care</p>
+          <h2>My appointments</h2>
+        </div>
+        <a class="button secondary" href="#doctor-search">Book an appointment</a>
+      </div>
+      {% if appointments_error %}
+        <p class="notice error" role="alert">Your appointments could not be loaded. Please try again later.</p>
+      {% elif appointments %}
+        <div class="patient-appointment-list">
+          {% for appointment in appointments %}
+            {% set active = appointment.status == 'BOOKED' and appointment.appointment_status == 'CONFIRMED' %}
+            <article class="patient-appointment-card">
+              <div class="patient-appointment-details">
+                <div class="appointment-card-heading">
+                  <h3>Appointment #{{ appointment.appointment_id }}</h3>
+                  <span class="appointment-status {{ 'appointment-status-active' if active else 'appointment-status-inactive' }}">{{ 'Booked' if active else appointment.status|replace('_', ' ')|title }}</span>
+                </div>
+                <p><strong>Doctor:</strong> <a href="{{ url_for('public_doctor_profile', doctor_id=appointment.doctor_id) }}">View Doctor {{ appointment.doctor_id }} profile</a></p>
+                <p><strong>Date and time (UTC):</strong> {{ appointment.slot_start_time }}</p>
+              </div>
+              {% if active %}
+                <form method="post" action="{{ url_for('cancel_patient_appointment', appointment_id=appointment.appointment_id) }}" data-confirm="Cancel appointment #{{ appointment.appointment_id }}? Any eligible refund will be calculated using the cancellation policy.">
+                  <button class="button secondary danger-text" type="submit">Cancel appointment</button>
+                </form>
+              {% endif %}
+            </article>
+          {% endfor %}
+        </div>
+        {% if appointments_offset or appointments_has_more %}
+          <nav class="appointment-pagination" aria-label="Appointment pages">
+            {% if appointments_offset %}
+              <a class="button secondary" href="{{ url_for('patient_dashboard', appointments_offset=[appointments_offset - 50, 0]|max) }}#my-appointments">Previous appointments</a>
+            {% endif %}
+            {% if appointments_has_more and appointments_next_offset is not none %}
+              <a class="button secondary" href="{{ url_for('patient_dashboard', appointments_offset=appointments_next_offset) }}#my-appointments">More appointments</a>
+            {% endif %}
+          </nav>
+        {% endif %}
+      {% else %}
+        <div class="empty-state compact-empty"><p>You don't have any appointments yet.</p><a href="#doctor-search">Find a doctor to get started</a></div>
+      {% endif %}
+    </section>
     <section class="patient-profile" id="patient-profile">
       <div class="patient-profile-heading">
         <div>
@@ -41,9 +91,6 @@
           <span class="status-pill pending"><span></span>Needs details</span>
         {% endif %}
       </div>
-      {% if profile and profile.get('profile_filled') %}
-        <button class="button secondary" id="edit-patient-profile" type="button">Edit profile</button>
-      {% endif %}
       <form method="post" action="{{ url_for('update_patient_profile') }}" class="patient-profile-form" id="patient-profile-form">
         <label for="patient-first-name">First name
           <input data-editable id="patient-first-name" name="first_name" autocomplete="given-name" maxlength="100" required value="{{ profile.get('first_name') or '' if profile else '' }}" {% if profile and profile.get('profile_filled') %}readonly{% endif %}>
@@ -83,13 +130,12 @@
           <button class="button primary" type="submit">Save profile</button>
           <button class="button secondary" id="cancel-patient-profile" type="button" {% if not profile or not profile.get('profile_filled') %}hidden{% endif %}>Cancel</button>
         </div>
+        {% if profile and profile.get('profile_filled') %}
+          <div class="patient-profile-edit-action">
+            <button class="button secondary" id="edit-patient-profile" type="button">Edit profile</button>
+          </div>
+        {% endif %}
       </form>
-      {% if profile %}
-        <form method="post" action="{{ url_for('delete_patient_profile') }}" class="patient-delete-form" onsubmit="return confirm('Clear your patient profile details?')">
-          <button class="button secondary danger-text" type="submit">Clear profile</button>
-          <span>This clears your profile details but keeps your account active.</span>
-        </form>
-      {% endif %}
     </section>
 
     <section class="doctor-search" id="doctor-search">
@@ -98,6 +144,9 @@
           <p class="eyebrow">Find care</p>
           <h2>Search doctors</h2>
         </div>
+        {% if doctor_search %}
+          <button class="button secondary" type="button" data-history-back data-fallback="{{ url_for('patient_dashboard') }}">Previous page</button>
+        {% endif %}
       </div>
       <form method="get" action="{{ url_for('patient_doctor_search') }}" class="doctor-search-form">
         <label for="doctor-name">Doctor name
@@ -159,34 +208,63 @@
     </section>
   </main>
   <script>
+    document.querySelectorAll('[data-history-back]').forEach(button => button.addEventListener('click', () => {
+      try {
+        if (document.referrer && new URL(document.referrer).origin === window.location.origin) {
+          window.history.back();
+          return;
+        }
+      } catch (error) {
+        console.error('Could not navigate to the previous page.', error);
+      }
+      window.location.assign(button.dataset.fallback);
+    }));
+    document.querySelectorAll('[data-confirm]').forEach(form => form.addEventListener('submit', event => {
+      if (!window.confirm(form.dataset.confirm)) event.preventDefault();
+    }));
     const profileForm = document.getElementById('patient-profile-form');
     const editProfile = document.getElementById('edit-patient-profile');
     const profileActions = document.getElementById('patient-profile-actions');
     const cancelProfile = document.getElementById('cancel-patient-profile');
     const editableFields = profileForm.querySelectorAll('[data-editable]');
 
-    if (editProfile) {
-      editProfile.addEventListener('click', () => {
-        editableFields.forEach(field => {
-          if (field.tagName === 'SELECT') field.disabled = false;
-          else field.readOnly = false;
-        });
-        editProfile.hidden = true;
-        profileActions.hidden = false;
-        cancelProfile.hidden = false;
+    const setProfileEditing = editing => {
+      editableFields.forEach(field => {
+        if (field.tagName === 'SELECT') field.disabled = !editing;
+        else field.readOnly = !editing;
       });
+      if (editProfile) editProfile.hidden = editing;
+      profileActions.hidden = !editing;
+      if (cancelProfile) cancelProfile.hidden = !editing;
+    };
+
+    if (editProfile) {
+      editProfile.addEventListener('click', () => setProfileEditing(true));
 
       cancelProfile.addEventListener('click', () => {
         profileForm.reset();
-        editableFields.forEach(field => {
-          if (field.tagName === 'SELECT') field.disabled = true;
-          else field.readOnly = true;
-        });
-        profileActions.hidden = true;
-        cancelProfile.hidden = true;
-        editProfile.hidden = false;
+        setProfileEditing(false);
       });
     }
+
+    const patientNavLinks = [...document.querySelectorAll('[data-patient-nav]')];
+    const activatePatientNav = hash => {
+      const activeLink = patientNavLinks.find(link => link.getAttribute('href') === hash)
+        || patientNavLinks[0];
+      patientNavLinks.forEach(link => {
+        const active = link === activeLink;
+        link.classList.toggle('is-active', active);
+        if (active) link.setAttribute('aria-current', 'page');
+        else link.removeAttribute('aria-current');
+      });
+    };
+    patientNavLinks.forEach(link => {
+      link.addEventListener('click', () => {
+        activatePatientNav(link.getAttribute('href'));
+      });
+    });
+    activatePatientNav(window.location.hash || document.querySelector('.patient-content').dataset.defaultSection);
+    window.addEventListener('hashchange', () => activatePatientNav(window.location.hash));
   </script>
 </body>
 </html>

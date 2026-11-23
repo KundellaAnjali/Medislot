@@ -14,7 +14,7 @@
     </form>
   </header>
   <main class="patient-content">
-    <a class="availability-back-link" href="{{ url_for('patient_dashboard') }}">Back to dashboard</a>
+    <button class="button secondary availability-back-link" type="button" data-history-back data-fallback="{{ url_for('patient_dashboard') }}">Previous page</button>
     <section class="availability-hero">
       <p class="eyebrow">Find care</p>
       <h1>Choose a time that works for you.</h1>
@@ -31,6 +31,14 @@
         </label>
         <label for="availability-end-date">End date
           <input id="availability-end-date" name="end_date" type="date" value="{{ end_date }}" required>
+        </label>
+        <label for="availability-consultation-type">Consultation type
+          <select id="availability-consultation-type" name="consultation_type">
+            <option value="">All consultation types</option>
+            {% for consultation in consultation_types %}
+              <option value="{{ consultation.consultation_type }}" {{ 'selected' if selected_consultation_type == consultation.consultation_type else '' }}>{{ consultation.consultation_type }}</option>
+            {% endfor %}
+          </select>
         </label>
         <button class="button primary" type="submit">Show availability</button>
       </form>
@@ -59,6 +67,7 @@
                   <input type="hidden" name="slot_start_time" value="{{ slot.start_time }}">
                   <input type="hidden" name="start_date" value="{{ start_date }}">
                   <input type="hidden" name="end_date" value="{{ end_date }}">
+                  <input type="hidden" name="consultation_type" value="{{ selected_consultation_type }}">
                   <input type="hidden" name="idempotency_key" value="{{ idempotency_keys[slot.start_time] }}">
                   <button class="button primary" type="submit">Book this appointment</button>
                 </form>
@@ -83,5 +92,18 @@
     });
   </script>
   <script src="{{ url_for('static', filename='notifications.js') }}"></script>
+  <script>
+    document.querySelectorAll('[data-history-back]').forEach(button => button.addEventListener('click', () => {
+      try {
+        if (document.referrer && new URL(document.referrer).origin === window.location.origin) {
+          window.history.back();
+          return;
+        }
+      } catch (error) {
+        console.error('Could not navigate to the previous page.', error);
+      }
+      window.location.assign(button.dataset.fallback);
+    }));
+  </script>
 </body>
 </html>

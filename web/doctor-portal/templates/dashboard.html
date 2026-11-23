@@ -107,9 +107,37 @@
       </section>
 
       <section class="dashboard-view" id="schedule-view" data-view hidden>
-        <div class="view-heading"><div><p class="eyebrow">Appointments</p><h1>Schedule</h1><p class="view-subtitle">Booked patient appointments and open slots, shown in UTC.</p></div><form class="date-picker" method="get" action="{{ url_for('doctor_dashboard') }}"><label for="schedule-date">Date</label><input id="schedule-date" type="date" name="date" value="{{ schedule.date }}"><button class="button secondary" type="submit">View day</button></form></div>
+        <div class="view-heading"><div><p class="eyebrow">Appointments</p><h1>Schedule</h1><p class="view-subtitle">Booked patient appointments and open slots, shown in UTC.</p></div><form class="date-picker schedule-controls" method="get" action="{{ url_for('doctor_dashboard') }}"><input type="hidden" name="view" value="schedule-view"><label for="schedule-date">Date</label><input id="schedule-date" type="date" name="date" value="{{ schedule.date }}"><label for="schedule-status-filter">Status</label><select id="schedule-status-filter" name="status"><option value="all" {{ 'selected' if schedule_filter == 'all' else '' }}>All statuses</option><option value="booked" {{ 'selected' if schedule_filter == 'booked' else '' }}>Booked</option><option value="blocked" {{ 'selected' if schedule_filter == 'blocked' else '' }}>Blocked</option><option value="open" {{ 'selected' if schedule_filter == 'open' else '' }}>Not booked</option></select><button class="button secondary" type="submit">View day</button></form></div>
         <section class="dashboard-panel">
-          {% if schedule.slots %}<div class="schedule-list">{% for slot in schedule.slots %}<article class="schedule-row"><time class="slot-time">{{ slot.start_time[11:16] }}</time><div class="slot-main"><strong>{{ slot.consultation_name or 'Consultation' }}</strong><span>{{ slot.appointments|length }} of {{ slot.capacity }} seats booked</span></div><div class="slot-patients">{% for appointment in slot.appointments %}<span>{{ appointment.first_name }} {{ appointment.last_name }}</span>{% else %}<span class="muted">No patients booked</span>{% endfor %}</div><span class="slot-state">{{ 'Blocked' if slot.status == 0 else ('Booked' if slot.appointments else 'Open') }}</span></article>{% endfor %}</div>{% else %}<div class="empty-state"><span class="empty-symbol">&#9711;</span><p>No slots on this date</p></div>{% endif %}
+          {% if schedule.slots %}
+            <p class="schedule-filter-count" id="schedule-filter-count" aria-live="polite"></p>
+            <div class="schedule-list" id="schedule-list">
+              {% for slot in schedule.slots %}
+                {% set slot_filter = 'blocked' if slot.status == 0 else ('booked' if slot.appointments else 'open') %}
+                <article class="schedule-row" data-slot-status="{{ slot_filter }}">
+                  <time class="slot-time">{{ slot.start_time[11:16] }}</time>
+                  <div class="slot-main"><strong>{{ slot.consultation_name or 'Consultation' }}</strong><span>{{ slot.appointments|length }} of {{ slot.capacity }} seats booked</span></div>
+                  <div class="slot-patients">
+                    {% for appointment in slot.appointments %}
+                      <span>{{ appointment.first_name }} {{ appointment.last_name }}</span>
+                    {% else %}
+                      <span class="muted">No patients booked</span>
+                    {% endfor %}
+                    {% if slot_filter == 'booked' %}
+                      <form method="post" action="{{ url_for('cancel_doctor_appointment', appointment_id=slot.appointments[0].appointment_id) }}" data-confirm="Cancel this slot? All appointments booked for this time will be cancelled and eligible patients will receive a full refund.">
+                        <input type="hidden" name="schedule_date" value="{{ schedule.date }}">
+                        <input type="hidden" name="status_filter" value="{{ schedule_filter }}">
+                        <button class="text-button danger-text" type="submit">Cancel slot &amp; bookings</button>
+                      </form>
+                    {% endif %}
+                  </div>
+                  <span class="slot-state">{{ 'Blocked' if slot_filter == 'blocked' else ('Booked' if slot_filter == 'booked' else 'Not booked') }}</span>
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="empty-state"><span class="empty-symbol">&#9711;</span><p>No slots on this date</p></div>
+          {% endif %}
         </section>
       </section>
 
@@ -189,6 +217,29 @@
     document.querySelectorAll('[data-go-view]').forEach(button => button.addEventListener('click', () => activateView(button.dataset.goView, true)));
     const requestedView = new URLSearchParams(window.location.search).get('view');
     activateView(views.some(view => view.id === requestedView) ? requestedView : 'dashboard-view');
+
+    const scheduleFilter = document.getElementById('schedule-status-filter');
+    const scheduleRows = [...document.querySelectorAll('#schedule-list [data-slot-status]')];
+    const scheduleCount = document.getElementById('schedule-filter-count');
+    const filterSchedule = () => {
+      if (!scheduleFilter) return;
+      const selected = scheduleFilter.value;
+      let visible = 0;
+      scheduleRows.forEach(row => {
+        const matches = selected === 'all' || row.dataset.slotStatus === selected;
+        row.hidden = !matches;
+        if (matches) visible += 1;
+      });
+      document.querySelectorAll('.slot-patients [name="status_filter"]').forEach(input => {
+        input.value = selected;
+      });
+      if (scheduleCount) scheduleCount.textContent = `${visible} ${visible === 1 ? 'slot' : 'slots'} shown`;
+    };
+    scheduleFilter?.addEventListener('change', filterSchedule);
+    filterSchedule();
+    document.querySelectorAll('[data-confirm]').forEach(form => form.addEventListener('submit', event => {
+      if (!window.confirm(form.dataset.confirm)) event.preventDefault();
+    }));
 
     const profileView = document.getElementById('profile-view');
     const profileForm = document.getElementById('profile-form');

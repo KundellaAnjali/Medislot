@@ -740,3 +740,143 @@ input:focus, select:focus {
   .metric-panel, .dashboard-panel, .patient-profile, .doctor-search { transition: none; }
   .metric-panel:hover { transform: none; }
 }
+
+.patient-appointments {
+  padding: clamp(20px, 3vw, 30px);
+  margin-top: 22px;
+  scroll-margin-top: 92px;
+  border: 1px solid #e0e9e4;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: var(--surface-shadow);
+}
+.patient-appointments h2 { font-size: 20px; }
+.patient-appointment-list { display: grid; gap: 12px; }
+.patient-appointment-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px;
+  border: 1px solid #e5ede9;
+  border-radius: 10px;
+  background: linear-gradient(145deg, #fff, #fbfdfc);
+}
+.patient-appointment-details { min-width: 0; }
+.appointment-card-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.appointment-card-heading h3 { margin: 0; font-size: 14px; }
+.patient-appointment-card p { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
+.patient-appointment-card p strong { color: var(--ink); }
+.patient-appointment-card a:not(.button) { color: var(--teal-dark); font-weight: 600; }
+.appointment-status { padding: 5px 9px; border-radius: 999px; font-size: 10px; font-weight: 700; }
+.appointment-status-active { color: #25634d; background: #e8f5ed; }
+.appointment-status-inactive { color: #6f7776; background: #edf0ef; }
+.appointment-pagination { display: flex; justify-content: center; gap: 10px; margin-top: 18px; }
+.schedule-controls select { width: auto; min-width: 135px; }
+.schedule-filter-count { margin: 0 0 12px; color: var(--muted); font-size: 11px; }
+.schedule-row[hidden] { display: none; }
+.slot-patients form { margin-top: 6px; }
+.slot-patients .text-button { padding: 2px 0; text-align: left; }
+.availability-back-link { display: inline-flex; margin: 0 0 18px; color: var(--ink); }
+
+@media (max-width: 680px) {
+  .patient-appointment-card { align-items: flex-start; flex-direction: column; padding: 15px; }
+  .patient-appointment-card form, .patient-appointment-card .button { width: 100%; }
+  .schedule-controls { display: grid; grid-template-columns: auto minmax(0, 1fr); }
+  .schedule-controls input, .schedule-controls select { width: 100%; }
+  .schedule-controls .button { grid-column: 1 / -1; }
+  .patient-appointments .patient-profile-heading { align-items: flex-start; flex-direction: column; }
+}
+
+.patient-dashboard-page {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  min-height: 100vh;
+}
+.patient-sidebar {
+  position: sticky;
+  z-index: 8;
+  top: 0;
+  display: flex;
+  height: 100vh;
+  flex-direction: column;
+  padding: 27px 17px 18px;
+  border-right: 1px solid #e3ebe7;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 5px 0 24px rgb(24 52 43 / 3%);
+}
+.patient-sidebar .sidebar-brand { padding: 0 13px; font-size: 23px; }
+.patient-sidebar .sidebar-caption { margin: 32px 13px 12px; color: #8a999b; font-size: 9px; font-weight: 700; letter-spacing: .13em; }
+.patient-sidebar-nav, .patient-sidebar-bottom { display: grid; gap: 6px; }
+.patient-sidebar-nav { align-content: start; }
+.patient-sidebar-bottom { gap: 4px; padding-top: 15px; margin-top: auto; border-top: 1px solid #e9efec; }
+.patient-sidebar-bottom form { margin: 0; }
+.patient-sidebar-link {
+  display: flex;
+  min-height: 45px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 8px;
+  color: #627378;
+  background: transparent;
+  cursor: pointer;
+  font: 600 12px 'DM Sans', sans-serif;
+  text-align: left;
+  transition: color .16s ease, background .16s ease;
+}
+.patient-sidebar-link > span { width: 18px; color: #899a9c; font-size: 16px; text-align: center; }
+.patient-sidebar-link:hover, .patient-sidebar-link.is-active { color: var(--teal-dark); background: #eaf5f1; }
+.patient-sidebar-link.is-active { font-weight: 700; }
+.patient-sidebar-link.is-active > span, .patient-sidebar-link:hover > span { color: var(--teal); }
+.patient-sidebar-link.logout-link:hover { color: #a74d3e; background: #fbefec; }
+.patient-sidebar-link.logout-link:hover > span { color: #a74d3e; }
+.patient-dashboard-page .patient-content {
+  width: min(1120px, calc(100% - 56px));
+  padding: 38px 0 72px;
+  margin: 0 auto;
+}
+.patient-dashboard-page #patient-dashboard,
+.patient-dashboard-page #my-appointments,
+.patient-dashboard-page #doctor-search,
+.patient-dashboard-page #patient-profile { scroll-margin-top: 28px; }
+.patient-profile-edit-action { display: flex; grid-column: 1 / -1; justify-content: flex-start; }
+.patient-profile-edit-action[hidden] { display: none; }
+.patient-profile-actions[hidden] { display: none; }
+.availability-form select { min-width: 190px; }
+
+@media (max-width: 820px) {
+  .patient-dashboard-page { grid-template-columns: 210px minmax(0, 1fr); }
+  .patient-dashboard-page .patient-content { width: calc(100% - 36px); }
+}
+
+@media (max-width: 680px) {
+  .patient-dashboard-page { display: block; }
+  .patient-dashboard-page .patient-sidebar {
+    position: sticky;
+    height: auto;
+    min-height: 0;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px 8px;
+    border-right: 0;
+    border-bottom: 1px solid #e3ebe7;
+  }
+  .patient-sidebar .sidebar-brand { padding: 0 4px; font-size: 21px; }
+  .patient-sidebar .sidebar-caption { display: none; }
+  .patient-sidebar-nav { display: flex; order: 3; width: 100%; justify-content: space-between; gap: 3px; }
+  .patient-sidebar-nav .patient-sidebar-link { flex: 1; justify-content: center; gap: 4px; padding: 0 4px; font-size: 10px; white-space: nowrap; }
+  .patient-sidebar-bottom { display: flex; order: 2; gap: 2px; padding: 0; margin: 0 0 0 auto; border: 0; }
+  .patient-sidebar-link { min-height: 38px; gap: 6px; padding: 0 8px; font-size: 11px; }
+  .patient-sidebar-link > span { width: 15px; font-size: 14px; }
+  .patient-sidebar-bottom .patient-sidebar-link { min-height: 34px; padding: 0 6px; font-size: 10px; }
+  .patient-dashboard-page .patient-content { width: calc(100% - 28px); padding: 22px 0 44px; }
+  .patient-dashboard-page #patient-dashboard,
+  .patient-dashboard-page #my-appointments,
+  .patient-dashboard-page #doctor-search,
+  .patient-dashboard-page #patient-profile { scroll-margin-top: 108px; }
+  .availability-form select { min-width: 0; width: 100%; }
+}

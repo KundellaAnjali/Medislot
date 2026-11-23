@@ -9,7 +9,7 @@
 <body class="patient-page">
   <header class="patient-topbar">
     <a class="wordmark" href="{{ url_for('patient_dashboard') }}">MediSlot<span>.</span></a>
-    <a class="button secondary" href="{{ url_for('patient_dashboard') }}">Back to dashboard</a>
+    <button class="button secondary" type="button" data-history-back data-fallback="{{ url_for('patient_dashboard') }}">Previous page</button>
   </header>
   <main class="patient-content">
     {% if profile %}
@@ -55,5 +55,18 @@
       </section>
     {% endif %}
   </main>
+  <script>
+    document.querySelectorAll('[data-history-back]').forEach(button => button.addEventListener('click', () => {
+      try {
+        if (document.referrer && new URL(document.referrer).origin === window.location.origin) {
+          window.history.back();
+          return;
+        }
+      } catch (error) {
+        console.error('Could not navigate to the previous page.', error);
+      }
+      window.location.assign(button.dataset.fallback);
+    }));
+  </script>
 </body>
 </html>

@@ -470,6 +470,9 @@ def doctor_dashboard():
             schedule = {"slots": [], "date": schedule_date}
         else:
             raise
+    schedule_filter = request.args.get("status", "all")
+    if schedule_filter not in {"all", "booked", "blocked", "open"}:
+        schedule_filter = "all"
     return render_template(
         "dashboard.html",
         profile=profile,
@@ -480,6 +483,7 @@ def doctor_dashboard():
         patterns=availability,
         blackouts=blackouts,
         schedule=schedule,
+        schedule_filter=schedule_filter,
     )
 
 
@@ -493,7 +497,52 @@ def old_doctor_dashboard():
 def patient_dashboard():
     profile_response = g.authorized_profile_response
     profile = profile_response.get("profile") if profile_response else None
-    return render_template("patient_dashboard.html", profile=profile)
+    appointments_offset = max(
+        request.args.get("appointments_offset", 0, type=int) or 0,
+        0,
+    )
+    appointments, appointments_error, has_more, next_offset = get_patient_appointments(
+        appointments_offset
+    )
+    if appointments_error and appointments_error.status_code in {401, 403}:
+        return patient_api_error(appointments_error)
+    if appointments_error:
+        flash(f"Appointments could not be loaded: {appointments_error}", "error")
+    return render_template(
+        "patient_dashboard.html",
+        profile=profile,
+        appointments=appointments,
+        appointments_error=appointments_error,
+        appointments_offset=appointments_offset,
+        appointments_has_more=has_more,
+        appointments_next_offset=next_offset,
+    )
+
+
+def get_patient_appointments(offset=0):
+    try:
+        result = api_request(
+            "GET",
+            "/appointments",
+            params={"limit": 50, "offset": offset},
+        )
+    except ApiError as error:
+        return [], error, False, None
+    if not isinstance(result, dict) or not isinstance(
+        result.get("appointments"), list
+    ):
+        return (
+            [],
+            ApiError("Appointments API returned an invalid response."),
+            False,
+            None,
+        )
+    return (
+        result["appointments"],
+        None,
+        bool(result.get("has_more")),
+        result.get("next_offset"),
+    )
 
 
 def patient_api_error(error):
@@ -503,7 +552,15 @@ def patient_api_error(error):
         return redirect(url_for("auth", mode="login", role="PATIENT"))
     if error.status_code == 403:
         flash("You are not allowed to access this patient profile.", "error")
-        return render_template("patient_dashboard.html", profile=None), 403
+        return render_template(
+            "patient_dashboard.html",
+            profile=None,
+            appointments=[],
+            appointments_error=error,
+            appointments_offset=0,
+            appointments_has_more=False,
+            appointments_next_offset=None,
+        ), 403
     else:
         flash(str(error), "error")
     return redirect(url_for("patient_dashboard"))
@@ -535,9 +592,19 @@ def patient_doctor_search():
 
     profile_response = g.authorized_profile_response
     profile = profile_response.get("profile") if profile_response else None
+    appointments, appointments_error, has_more, next_offset = get_patient_appointments()
+    if appointments_error and appointments_error.status_code in {401, 403}:
+        return patient_api_error(appointments_error)
+    if appointments_error:
+        flash(f"Appointments could not be loaded: {appointments_error}", "error")
     return render_template(
         "patient_dashboard.html",
         profile=profile,
+        appointments=appointments,
+        appointments_error=appointments_error,
+        appointments_offset=0,
+        appointments_has_more=has_more,
+        appointments_next_offset=next_offset,
         doctor_search=results,
         doctor_search_filters=filters,
     )
@@ -562,6 +629,34 @@ def patient_doctor_availability(doctor_id):
     availability = None
     error_message = None
     status_code = 200
+    consultation_type = request.args.get("consultation_type", "").strip()
+    consultation_types = []
+
+    try:
+        public_profile_response = api_request(
+            "GET",
+            f"/doctors/{doctor_id}/profile",
+            authenticated=False,
+        )
+        if not isinstance(public_profile_response, dict) or not isinstance(
+            public_profile_response.get("profile"), dict
+        ):
+            raise ApiError("Doctor profile API returned an invalid response.")
+        public_profile = public_profile_response["profile"]
+        consultation_types = public_profile.get("consultation_details", [])
+        if not isinstance(consultation_types, list) or any(
+            not isinstance(item, dict)
+            or not isinstance(item.get("consultation_type"), str)
+            for item in consultation_types
+        ):
+            raise ApiError("Doctor consultation types API returned an invalid response.")
+    except ApiError as error:
+        app.logger.warning(
+            "Could not load consultation types for availability filter: "
+            "doctor_id=%s status=%s",
+            doctor_id,
+            error.status_code,
+        )
 
     try:
         payload = api_request(
@@ -574,6 +669,23 @@ def patient_doctor_availability(doctor_id):
         ):
             raise ApiError("Availability API returned an invalid response.")
         availability = payload["slots"]
+        if not consultation_types:
+            consultation_types = [
+                {"consultation_type": name}
+                for name in sorted(
+                    {
+                        slot.get("consultation_type", "")
+                        for slot in availability
+                        if slot.get("consultation_type")
+                    }
+                )
+            ]
+        if consultation_type:
+            availability = [
+                slot
+                for slot in availability
+                if slot.get("consultation_type") == consultation_type
+            ]
     except ApiError as error:
         if error.status_code in {401, 403}:
             return patient_api_error(error)
@@ -595,6 +707,8 @@ def patient_doctor_availability(doctor_id):
         doctor_id=doctor_id,
         start_date=start_date,
         end_date=end_date,
+        consultation_types=consultation_types,
+        selected_consultation_type=consultation_type,
         availability=availability,
         idempotency_keys=idempotency_keys,
         error_message=error_message,
@@ -608,6 +722,7 @@ def book_appointment():
     slot_start_time = request.form.get("slot_start_time", "").strip()
     start_date = request.form.get("start_date", "").strip()
     end_date = request.form.get("end_date", "").strip()
+    consultation_type = request.form.get("consultation_type", "").strip()
     idempotency_key = request.form.get("idempotency_key", "").strip()
     if not doctor_id or doctor_id <= 0 or not slot_start_time:
         flash("Choose a valid appointment slot before booking.", "error")
@@ -620,8 +735,14 @@ def book_appointment():
                 doctor_id=doctor_id,
                 **({"start_date": start_date} if start_date else {}),
                 **({"end_date": end_date} if end_date else {}),
+                **(
+                    {"consultation_type": consultation_type}
+                    if consultation_type
+                    else {}
+                ),
             )
         )
+
 
     try:
         result = api_request(
@@ -651,6 +772,11 @@ def book_appointment():
                     doctor_id=doctor_id,
                     **({"start_date": start_date} if start_date else {}),
                     **({"end_date": end_date} if end_date else {}),
+                    **(
+                        {"consultation_type": consultation_type}
+                        if consultation_type
+                        else {}
+                    ),
                 )
             )
         appointment_id = result["appointment_id"]
@@ -668,7 +794,47 @@ def book_appointment():
             doctor_id=doctor_id,
             **({"start_date": start_date} if start_date else {}),
             **({"end_date": end_date} if end_date else {}),
+            **(
+                {"consultation_type": consultation_type}
+                if consultation_type
+                else {}
+            ),
         )
+    )
+
+
+@app.post("/patient/appointments/<int:appointment_id>/cancel")
+@patient_required
+def cancel_patient_appointment(appointment_id):
+    try:
+        api_request("POST", f"/appointments/{appointment_id}/cancel")
+    except ApiError as error:
+        return patient_api_error(error)
+    flash(f"Appointment {appointment_id} cancelled.", "success")
+    return redirect(url_for("patient_dashboard") + "#my-appointments")
+
+
+@app.post("/doctor/appointments/<int:appointment_id>/cancel")
+@doctor_required
+@with_api_errors
+def cancel_doctor_appointment(appointment_id):
+    api_request("POST", f"/appointments/{appointment_id}/cancel")
+    flash(
+        "The slot and all appointments booked for it have been cancelled.",
+        "success",
+    )
+    schedule_date = request.form.get("schedule_date", "").strip()
+    status_filter = request.form.get("status_filter", "all")
+    if status_filter not in {"all", "booked", "blocked", "open"}:
+        status_filter = "all"
+    return redirect(
+        url_for(
+            "doctor_dashboard",
+            date=schedule_date,
+            status=status_filter,
+            view="schedule-view",
+        )
+        + "#schedule-view"
     )
 
 
