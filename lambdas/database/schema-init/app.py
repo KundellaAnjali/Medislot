@@ -108,12 +108,14 @@ def ensure_index(cursor, table_name, index_name, columns):
 
 def lambda_handler(event, context):
     started_at = perf_counter()
+    request_id = getattr(context, "aws_request_id", "unknown")
 
     log_event(
         "INFO",
         "SchemaInitializationStarted",
         {
-            "environment": ENVIRONMENT
+            "environment": ENVIRONMENT,
+            "requestId": request_id,
         }
     )
 
@@ -206,6 +208,27 @@ def lambda_handler(event, context):
             availability_columns = {
                 column[0] for column in cursor.fetchall()
             }
+            availability_column_definitions = {
+                "repeat_days": "VARCHAR(100) NULL",
+                "start_date": "DATE NULL",
+                "end_date": "DATE NULL",
+                "is_active": "BOOLEAN NOT NULL DEFAULT TRUE",
+            }
+            for column_name, definition in availability_column_definitions.items():
+                if column_name not in availability_columns:
+                    cursor.execute(
+                        f"ALTER TABLE availability_patterns ADD COLUMN "
+                        f"`{column_name}` {definition}"
+                    )
+
+            cursor.execute(
+                """
+                UPDATE availability_patterns
+                SET repeat_days = day_of_week
+                WHERE repeat_days IS NULL
+                """
+            )
+
             if "doctor_id" not in availability_columns:
                 cursor.execute(
                     "ALTER TABLE availability_patterns ADD COLUMN doctor_id INT NULL"
@@ -325,7 +348,9 @@ def lambda_handler(event, context):
             "ERROR",
             "SchemaInitializationFailed",
             {
-                "error": str(exception)
+                "error": str(exception),
+                "errorType": type(exception).__name__,
+                "requestId": request_id,
             }
         )
 

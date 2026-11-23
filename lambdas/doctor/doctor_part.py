@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import re
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from time import perf_counter
@@ -109,7 +110,7 @@ def get_actor(event):
         raise PermissionError("Doctor identity is missing")
     return int(user_id)
 
-
+#by using the below function we can get the doctor id for the user id
 def doctor_id_for_user(cursor, user_id):
     cursor.execute(
         "SELECT doctor_id FROM doctors WHERE user_id = %s",
@@ -120,7 +121,7 @@ def doctor_id_for_user(cursor, user_id):
         raise LookupError("Doctor profile not found")
     return doctor["doctor_id"]
 
-
+#by using the below function we can get the doctor profile for the doctor id
 def get_profile(cursor, doctor_id):
     cursor.execute(
         """
@@ -167,7 +168,7 @@ def get_profile(cursor, doctor_id):
     )
     return profile
 
-
+#by using the below function we can refresh the doctor verification status based on the profile completeness
 def refresh_doctor_verification(cursor, doctor_id):
     cursor.execute(
         """
@@ -211,7 +212,7 @@ def refresh_doctor_verification(cursor, doctor_id):
     )
     return complete
 
-
+#by using the below function we can require the doctor to be verified before performing certain actions
 def require_verified_doctor(cursor, doctor_id):
     cursor.execute(
         "SELECT is_verified FROM doctors WHERE doctor_id = %s",
@@ -221,7 +222,7 @@ def require_verified_doctor(cursor, doctor_id):
     if not doctor or not doctor["is_verified"]:
         raise PermissionError("Before profile completion, you are not allowed to do this.")
 
-
+#by using this function validates a consultation type request before inserting it into the database.
 def validate_consultation(body):
     name = body.get("consultation_name")
     if name not in CONSULTATION_RULES:
@@ -243,14 +244,14 @@ def validate_consultation(body):
         raise ValueError("Fee must be a non-negative amount with up to 2 decimals")
     return name, duration, capacity, fee
 
-
+#these utility functions are generally required if your application deals with appointment slots, availability schedules, UTC conversions, and SQL TIME fields, which MediSlot does.
 def parse_sql_time(value):
     if isinstance(value, time):
         return value.replace(tzinfo=None)
     seconds = int(value.total_seconds())
     return (datetime.min + timedelta(seconds=seconds)).time()
 
-
+#Converts datetime into a standard UTC ISO string.
 def utc_iso(value):
     return value.astimezone(timezone.utc).isoformat(timespec="seconds").replace(
         "+00:00", "Z"
@@ -262,7 +263,7 @@ def utc_day_bounds(day):
     end = datetime.combine(day + timedelta(days=1), time.min, tzinfo=timezone.utc)
     return start, end
 
-
+#Converts incoming datetime strings into proper UTC datetime objects.
 def parse_utc_datetime(value):
     parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     if parsed.tzinfo is None:
@@ -270,27 +271,8 @@ def parse_utc_datetime(value):
     return parsed.astimezone(timezone.utc)
 
 
-def consultation_type_ids_with_slots(doctor_id):
-    query_args = {
-        "IndexName": "DoctorStartIndex",
-        "KeyConditionExpression": Key("doctor_id").eq(doctor_id),
-        "ProjectionExpression": "consultation_type_id",
-    }
-    consultation_ids = set()
-    while True:
-        result = slots_table.query(**query_args)
-        for slot in result.get("Items", []):
-            consultation_ids.add(int(slot["consultation_type_id"]))
-        last_key = result.get("LastEvaluatedKey")
-        if not last_key:
-            break
-        query_args["ExclusiveStartKey"] = last_key
-    return consultation_ids
-
-
 def consultation_type_has_slots(doctor_id, consultation_id):
     query_args = {
-        "IndexName": "DoctorStartIndex",
         "KeyConditionExpression": Key("doctor_id").eq(doctor_id),
         "FilterExpression": Attr("consultation_type_id").eq(consultation_id),
         "ProjectionExpression": "consultation_type_id",
@@ -324,7 +306,6 @@ def delete_unused_consultation_type(cursor, consultation_id):
         )
 def delete_slots_for_blackout(doctor_id, start_utc, end_utc):
     query_args = {
-        "IndexName": "DoctorStartIndex",
         "KeyConditionExpression": Key("doctor_id").eq(doctor_id),
     }
 
@@ -333,14 +314,17 @@ def delete_slots_for_blackout(doctor_id, start_utc, end_utc):
 
         for slot in result.get("Items", []):
 
-            slot_start = parse_utc_datetime(slot["start_time"])
-            slot_end = parse_utc_datetime(slot["end_time"])
+            slot_start = parse_utc_datetime(slot["slot_start_time"])
+            slot_end = parse_utc_datetime(slot["slot_end_time"])
 
             if slot_start < end_utc and slot_end > start_utc:
 
                 if int(slot.get("booked_count", 0)) > 0:
                     slots_table.update_item(
-                        Key={"slot_id": slot["slot_id"]},
+                        Key={
+                            "doctor_id": doctor_id,
+                            "slot_start_time": slot["slot_start_time"],
+                        },
                         UpdateExpression="SET #status = :status",
                         ExpressionAttributeNames={"#status": "status"},
                         ExpressionAttributeValues={":status": 0},
@@ -348,13 +332,114 @@ def delete_slots_for_blackout(doctor_id, start_utc, end_utc):
                     continue
 
                 slots_table.delete_item(
-                    Key={"slot_id": slot["slot_id"]}
+                    Key={
+                        "doctor_id": doctor_id,
+                        "slot_start_time": slot["slot_start_time"],
+                    }
                 )
 
         if "LastEvaluatedKey" not in result:
             break
 
         query_args["ExclusiveStartKey"] = result["LastEvaluatedKey"]
+
+
+def slots_for_availability_patterns(doctor_id, patterns):
+    query_args = {
+        "KeyConditionExpression": Key("doctor_id").eq(doctor_id),
+    }
+    matching_slots = []
+    while True:
+        result = slots_table.query(**query_args)
+        for slot in result.get("Items", []):
+            slot_start = parse_utc_datetime(slot["slot_start_time"])
+            slot_day = slot_start.date()
+            slot_time = slot_start.time().replace(tzinfo=None)
+            for consultation_id, day_name, start, end in patterns:
+                if (
+                    int(slot["consultation_type_id"]) == consultation_id
+                    and slot_day.strftime("%A").upper() == day_name
+                    and start <= slot_time < end
+                ):
+                    matching_slots.append(slot)
+                    break
+        last_key = result.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        query_args["ExclusiveStartKey"] = last_key
+    return matching_slots
+
+
+def ensure_availability_slots_unbooked(cursor, doctor_id, slots):
+    if any(int(slot.get("booked_count", 0)) > 0 for slot in slots):
+        raise ConflictError(
+            "This availability cannot be modified because one or more generated "
+            "slots have already been booked."
+        )
+
+    slot_ids = list({int(slot["slot_id"]) for slot in slots})
+    for offset in range(0, len(slot_ids), 500):
+        batch = slot_ids[offset:offset + 500]
+        placeholders = ",".join(["%s"] * len(batch))
+        cursor.execute(
+            f"""
+            SELECT slot_id FROM appointments
+            WHERE doctor_id = %s AND slot_id IN ({placeholders})
+            LIMIT 1
+            """,
+            (doctor_id, *batch),
+        )
+        if cursor.fetchone():
+            raise ConflictError(
+                "This availability cannot be modified because one or more generated "
+                "slots have already been booked."
+            )
+
+    deleted_slots = []
+    try:
+        for slot in slots:
+            slots_table.delete_item(
+                Key={
+                    "doctor_id": doctor_id,
+                    "slot_start_time": slot["slot_start_time"],
+                },
+                ConditionExpression="booked_count = :zero",
+                ExpressionAttributeValues={":zero": 0},
+            )
+            deleted_slots.append(slot)
+    except Exception as error:
+        try:
+            restore_availability_slots(deleted_slots)
+        except Exception:
+            logger.exception("Could not restore availability slots after deletion failed")
+        if (
+            isinstance(error, ClientError)
+            and error.response.get("Error", {}).get("Code")
+            == "ConditionalCheckFailedException"
+        ):
+            raise ConflictError(
+                "This availability cannot be modified because one or more "
+                "generated slots have already been booked."
+            ) from error
+        raise
+
+
+def restore_availability_slots(slots):
+    for slot in slots:
+        try:
+            slots_table.put_item(
+                Item=slot,
+                ConditionExpression=(
+                    "attribute_not_exists(doctor_id) "
+                    "AND attribute_not_exists(slot_start_time)"
+                ),
+            )
+        except ClientError as error:
+            if error.response.get("Error", {}).get("Code") != (
+                "ConditionalCheckFailedException"
+            ):
+                raise
+
 
 def route_doctor_api(event):
     user_id = get_actor(event)
@@ -417,11 +502,11 @@ def route_doctor_api(event):
                     connection, cursor, doctor_id, method, parts[2:], body
                 )
 
-            if parts == ["me", "availability"]:
+            if parts[:2] == ["me", "availability"]:
                 if method != "GET":
                     require_verified_doctor(cursor, doctor_id)
                 return availability_route(
-                    connection, cursor, doctor_id, method, body
+                    connection, cursor, doctor_id, method, parts[2:], body
                 )
 
             if parts[:2] == ["me", "blackouts"]:
@@ -450,11 +535,81 @@ def update_doctor_profile(connection, cursor, doctor_id, body):
         "languages",
     }
     values = {key: body[key] for key in allowed if key in body}
+
+    def validate_text(field, value, minimum, maximum):
+        if not isinstance(value, str):
+            raise ValueError(f"{field} must be a string")
+        if value != value.strip():
+            raise ValueError(f"{field} must not have leading or trailing spaces")
+        if not minimum <= len(value) <= maximum:
+            raise ValueError(f"{field} must be between {minimum} and {maximum} characters")
+
+    for field in ("first_name", "last_name"):
+        if field in values:
+            validate_text(field, values[field], 2, 50)
+            if not all(character.isalpha() or character == " " for character in values[field]):
+                raise ValueError(f"{field} must contain only letters and spaces")
+
+    for field in ("phone_number", "hospital_phone"):
+        if field in body:
+            phone = body[field]
+            if not isinstance(phone, str):
+                raise ValueError(f"{field} must be a 10-digit string starting with 6, 7, 8, or 9")
+            if phone != phone.strip():
+                raise ValueError(f"{field} must not have leading or trailing spaces")
+            if not re.fullmatch(r"^[6-9][0-9]{9}$", phone):
+                raise ValueError(f"{field} must be exactly 10 digits and start with 6, 7, 8, or 9")
+
+    if "license_number" in values and (
+        not isinstance(values["license_number"], str)
+        or values["license_number"] != values["license_number"].strip()
+        or not re.fullmatch(r"^[A-Z]{2,5}[0-9]{4,10}$", values["license_number"])
+    ):
+        raise ValueError(
+            "License number must be in uppercase and follow the format TSMC123456 "
+            "(2-5 uppercase letters followed by 4-10 digits)."
+        )
+    if "license_number" in values:
+        cursor.execute(
+            """
+            SELECT doctor_id
+            FROM doctors
+            WHERE license_number = %s AND doctor_id <> %s
+            LIMIT 1
+            """,
+            (values["license_number"], doctor_id),
+        )
+        if cursor.fetchone():
+            raise ConflictError("License number already exists.")
+
     if "experience_years" in values:
-        values["experience_years"] = int(values["experience_years"])
-        if values["experience_years"] < 0:
-            raise ValueError("Experience years cannot be negative")
+        experience_years = values["experience_years"]
+        if isinstance(experience_years, bool) or not (
+            isinstance(experience_years, int)
+            or (
+                isinstance(experience_years, str)
+                and experience_years == experience_years.strip()
+                and re.fullmatch(r"^[+-]?[0-9]+$", experience_years)
+            )
+        ):
+            raise ValueError("experience_years must be an integer between 0 and 70")
+        values["experience_years"] = int(experience_years)
+        if not 0 <= values["experience_years"] <= 70:
+            raise ValueError("experience_years must be between 0 and 70")
+
+    if "qualification" in values:
+        validate_text("qualification", values["qualification"], 2, 100)
+
+    if "languages" in values:
+        validate_text("languages", values["languages"], 1, 200)
+
     hospital_fields = {"hospital_name", "city", "address", "hospital_phone"}
+    if "hospital_name" in body:
+        validate_text("hospital_name", body["hospital_name"], 3, 100)
+    if "city" in body:
+        validate_text("city", body["city"], 2, 50)
+        if not all(character.isalpha() or character == " " for character in body["city"]):
+            raise ValueError("city must contain only letters and spaces")
     if hospital_fields.intersection(body):
         name = str(body.get("hospital_name", "")).strip()
         if not name:
@@ -732,27 +887,328 @@ def consultation_types_route(connection, cursor, doctor_id, method, tail, body):
     raise LookupError("Consultation type endpoint not found")
 
 
-def availability_route(connection, cursor, doctor_id, method, body):
-    if method == "GET":
+AVAILABILITY_WEEKDAYS = (
+    "MONDAY",
+    "TUESDAY",
+    "WEDNESDAY",
+    "THURSDAY",
+    "FRIDAY",
+    "SATURDAY",
+    "SUNDAY",
+)
+
+
+def availability_date(value, field):
+    if value in (None, ""):
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must use YYYY-MM-DD format.")
+    try:
+        parsed = date.fromisoformat(value)
+    except ValueError as error:
+        raise ValueError(f"{field} must use YYYY-MM-DD format.") from error
+    if parsed.isoformat() != value:
+        raise ValueError(f"{field} must use YYYY-MM-DD format.")
+    return parsed
+
+
+def normalize_availability_pattern(cursor, doctor_id, body, exclude_id=None):
+    try:
+        consultation_id = int(body["consultation_type_id"])
+        start = time.fromisoformat(body["start_time"])
+        end = time.fromisoformat(body["end_time"])
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError(
+            "Choose a consultation type and enter valid start and end times."
+        ) from error
+    if start.tzinfo is not None or end.tzinfo is not None:
+        raise ValueError("Start time and end time must be local times without a timezone.")
+
+    repeat_days = body.get("repeat_days")
+    if not isinstance(repeat_days, list) or not repeat_days:
+        raise ValueError("Select at least one repeat day.")
+    normalized_days = []
+    for day_name in repeat_days:
+        if not isinstance(day_name, str):
+            raise ValueError("Repeat days must be weekday names.")
+        day_name = day_name.upper()
+        if day_name not in AVAILABILITY_WEEKDAYS:
+            raise ValueError("Repeat days must be valid weekdays.")
+        if day_name not in normalized_days:
+            normalized_days.append(day_name)
+
+    if start >= end:
+        raise ValueError("End time must be after start time.")
+
+    start_date = availability_date(body.get("start_date"), "Start date")
+    end_date = availability_date(body.get("end_date"), "End date")
+    if (start_date is None) != (end_date is None):
+        raise ValueError("Enter both dates or leave both dates empty.")
+    if start_date and end_date and end_date < start_date:
+        raise ValueError("End date must be on or after start date.")
+
+    is_active = body.get("is_active")
+    if not isinstance(is_active, bool):
+        raise ValueError("Status must be active or inactive.")
+
+    cursor.execute(
+        """
+        SELECT consultation_type_id FROM doctor_consulting_types
+        WHERE consultation_type_id = %s AND doctor_id = %s AND is_active = TRUE
+        """,
+        (consultation_id, doctor_id),
+    )
+    if not cursor.fetchone():
+        raise ValueError("Consultation type does not belong to this doctor.")
+
+    cursor.execute(
+        """
+        SELECT pattern_id, consultation_type_id, day_of_week, repeat_days,
+               start_date, end_date, start_time, end_time, is_active
+        FROM availability_patterns
+        WHERE doctor_id = %s
+        """,
+        (doctor_id,),
+    )
+    for existing in cursor.fetchall():
+        if exclude_id is not None and int(existing["pattern_id"]) == exclude_id:
+            continue
+        if not is_active or not bool(existing.get("is_active", True)):
+            continue
+        existing_days = existing.get("repeat_days") or existing["day_of_week"]
+        if isinstance(existing_days, str):
+            existing_days = existing_days.split(",")
+        existing_days = {str(day).upper() for day in existing_days}
+        if not existing_days.intersection(normalized_days):
+            continue
+
+        existing_start_date = existing.get("start_date")
+        existing_end_date = existing.get("end_date")
+        if isinstance(existing_start_date, str):
+            existing_start_date = date.fromisoformat(existing_start_date[:10])
+        if isinstance(existing_end_date, str):
+            existing_end_date = date.fromisoformat(existing_end_date[:10])
+        dates_overlap = (
+            (end_date is None or existing_start_date is None or end_date >= existing_start_date)
+            and (existing_end_date is None or start_date is None or start_date <= existing_end_date)
+        )
+        existing_start = parse_sql_time(existing["start_time"])
+        existing_end = parse_sql_time(existing["end_time"])
+        if (
+            dates_overlap
+            and start < existing_end
+            and end > existing_start
+        ):
+            raise ValueError(
+                "These hours overlap another availability pattern for the selected days."
+            )
+
+    return {
+        "consultation_type_id": consultation_id,
+        "repeat_days": normalized_days,
+        "day_of_week": normalized_days[0],
+        "start_date": start_date,
+        "end_date": end_date,
+        "start_time": start,
+        "end_time": end,
+        "is_active": is_active,
+    }
+
+
+def slots_for_availability_rows(doctor_id, patterns):
+    query_args = {
+        "KeyConditionExpression": Key("doctor_id").eq(doctor_id),
+    }
+    matching_slots = []
+    while True:
+        result = slots_table.query(**query_args)
+        for slot in result.get("Items", []):
+            slot_start = parse_utc_datetime(slot["slot_start_time"])
+            slot_day = slot_start.date()
+            slot_time = slot_start.time().replace(tzinfo=None)
+            for pattern in patterns:
+                repeat_days = pattern.get("repeat_days") or pattern["day_of_week"]
+                if isinstance(repeat_days, str):
+                    repeat_days = repeat_days.split(",")
+                start_date = pattern.get("start_date")
+                end_date = pattern.get("end_date")
+                if isinstance(start_date, str):
+                    start_date = date.fromisoformat(start_date[:10])
+                if isinstance(end_date, str):
+                    end_date = date.fromisoformat(end_date[:10])
+                if (
+                    int(slot["consultation_type_id"])
+                    == int(pattern["consultation_type_id"])
+                    and slot_day.strftime("%A").upper()
+                    in {str(day).upper() for day in repeat_days}
+                    and (start_date is None or slot_day >= start_date)
+                    and (end_date is None or slot_day <= end_date)
+                    and parse_sql_time(pattern["start_time"])
+                    <= slot_time
+                    < parse_sql_time(pattern["end_time"])
+                ):
+                    matching_slots.append(slot)
+                    break
+        last_key = result.get("LastEvaluatedKey")
+        if not last_key:
+            break
+        query_args["ExclusiveStartKey"] = last_key
+    return matching_slots
+
+
+def regenerate_availability_slots(doctor_id):
+    try:
+        invoke_result = lambda_client.invoke(
+            FunctionName=f"{ENVIRONMENT}-slot-materializer",
+            InvocationType="Event",
+            Payload=json.dumps({"doctor_id": doctor_id}),
+        )
+        if invoke_result.get("StatusCode") != 202:
+            logger.warning(
+                "Slot regeneration was not accepted for doctor %s",
+                doctor_id,
+            )
+    except Exception:
+        logger.exception(
+            "Failed to invoke slot-materializer after availability change for doctor %s",
+            doctor_id,
+        )
+
+
+def availability_route(connection, cursor, doctor_id, method, tail, body):
+    if not tail and method == "GET":
         cursor.execute(
             """
             SELECT ap.pattern_id, ap.consultation_type_id, ap.day_of_week,
-                   ap.start_time, ap.end_time
+                   ap.repeat_days, ap.start_date, ap.end_date, ap.start_time,
+                   ap.end_time, ap.is_active
             FROM availability_patterns ap
-                        JOIN doctor_consulting_types dct
-                            ON dct.consultation_type_id = ap.consultation_type_id
-                         AND dct.doctor_id = ap.doctor_id
-                        WHERE ap.doctor_id = %s
+            JOIN doctor_consulting_types dct
+              ON dct.consultation_type_id = ap.consultation_type_id
+             AND dct.doctor_id = ap.doctor_id
+            WHERE ap.doctor_id = %s
             ORDER BY ap.day_of_week, ap.start_time
             """,
             (doctor_id,),
         )
         patterns = cursor.fetchall()
         for pattern in patterns:
+            days = pattern.get("repeat_days") or pattern["day_of_week"]
+            pattern["repeat_days"] = (
+                [day for day in days.split(",") if day]
+                if isinstance(days, str)
+                else days
+            )
             pattern["start_time"] = parse_sql_time(pattern["start_time"]).strftime("%H:%M")
             pattern["end_time"] = parse_sql_time(pattern["end_time"]).strftime("%H:%M")
+            pattern["is_active"] = bool(pattern.get("is_active", True))
         return response(200, {"patterns": patterns})
-    if method != "PUT":
+
+    if not tail and method == "POST":
+        pattern = normalize_availability_pattern(
+            cursor, doctor_id, body
+        )
+        cursor.execute(
+            """
+            INSERT INTO availability_patterns
+                (doctor_id, consultation_type_id, day_of_week, repeat_days,
+                 start_date, end_date, start_time, end_time, is_active)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                doctor_id,
+                pattern["consultation_type_id"],
+                pattern["day_of_week"],
+                ",".join(pattern["repeat_days"]),
+                pattern["start_date"],
+                pattern["end_date"],
+                pattern["start_time"],
+                pattern["end_time"],
+                pattern["is_active"],
+            ),
+        )
+        connection.commit()
+        pattern_id = cursor.lastrowid
+        regenerate_availability_slots(doctor_id)
+        return response(201, {"pattern_id": pattern_id, "message": "Availability created."})
+
+    if len(tail) == 1 and method in {"PUT", "DELETE"}:
+        try:
+            pattern_id = int(tail[0])
+        except ValueError as error:
+            raise LookupError("Availability pattern not found.") from error
+        cursor.execute(
+            """
+            SELECT pattern_id, consultation_type_id, day_of_week, repeat_days,
+                   start_date, end_date, start_time, end_time, is_active
+            FROM availability_patterns
+            WHERE pattern_id = %s AND doctor_id = %s
+            """,
+            (pattern_id, doctor_id),
+        )
+        existing = cursor.fetchone()
+        if not existing:
+            raise LookupError("Availability pattern not found.")
+
+        new_pattern = None
+        if method == "PUT":
+            new_pattern = normalize_availability_pattern(
+                cursor,
+                doctor_id,
+                body,
+                exclude_id=pattern_id,
+            )
+
+        affected_slots = slots_for_availability_rows(doctor_id, [existing])
+        ensure_availability_slots_unbooked(cursor, doctor_id, affected_slots)
+        try:
+            if method == "DELETE":
+                cursor.execute(
+                    "DELETE FROM availability_patterns "
+                    "WHERE pattern_id = %s AND doctor_id = %s",
+                    (pattern_id, doctor_id),
+                )
+            else:
+                cursor.execute(
+                    """
+                    UPDATE availability_patterns
+                    SET consultation_type_id = %s, day_of_week = %s,
+                        repeat_days = %s, start_date = %s, end_date = %s,
+                        start_time = %s, end_time = %s, is_active = %s
+                    WHERE pattern_id = %s AND doctor_id = %s
+                    """,
+                    (
+                        new_pattern["consultation_type_id"],
+                        new_pattern["day_of_week"],
+                        ",".join(new_pattern["repeat_days"]),
+                        new_pattern["start_date"],
+                        new_pattern["end_date"],
+                        new_pattern["start_time"],
+                        new_pattern["end_time"],
+                        new_pattern["is_active"],
+                        pattern_id,
+                        doctor_id,
+                    ),
+                )
+            connection.commit()
+        except Exception:
+            try:
+                restore_availability_slots(affected_slots)
+            except Exception:
+                logger.exception(
+                    "Could not restore availability slots after row update failed"
+                )
+            raise
+
+        regenerate_availability_slots(doctor_id)
+        message = (
+            "Availability deleted."
+            if method == "DELETE"
+            else "Availability updated."
+        )
+        return response(200, {"pattern_id": pattern_id, "message": message})
+
+    if tail or method != "PUT":
         raise LookupError("Availability endpoint not found")
 
     patterns = body.get("patterns")
@@ -767,10 +1223,7 @@ def availability_route(connection, cursor, doctor_id, method, body):
             end = time.fromisoformat(pattern["end_time"])
         except (KeyError, TypeError, ValueError):
             raise ValueError("Each pattern needs a consultation type, weekday, start, and end") from None
-        if day_name not in {
-            "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY",
-            "FRIDAY", "SATURDAY", "SUNDAY",
-        }:
+        if day_name not in AVAILABILITY_WEEKDAYS:
             raise ValueError("day_of_week must be a weekday name")
         if start >= end:
             raise ValueError("Pattern end_time must be after start_time")
@@ -785,9 +1238,9 @@ def availability_route(connection, cursor, doctor_id, method, body):
             )
         cursor.execute(
             """
-                        SELECT consultation_type_id FROM doctor_consulting_types
-                        WHERE consultation_type_id = %s AND doctor_id = %s
-                            AND is_active = TRUE
+            SELECT consultation_type_id FROM doctor_consulting_types
+            WHERE consultation_type_id = %s AND doctor_id = %s
+              AND is_active = TRUE
             """,
             (consultation_id, doctor_id),
         )
@@ -796,17 +1249,16 @@ def availability_route(connection, cursor, doctor_id, method, body):
         normalized.append((consultation_id, day_name, start, end))
 
     requested_patterns = set(normalized)
-    slot_consultation_ids = consultation_type_ids_with_slots(doctor_id)
     cursor.execute(
         """
         SELECT pattern_id, consultation_type_id, day_of_week, start_time, end_time
-        FROM availability_patterns
-        WHERE doctor_id = %s
+        FROM availability_patterns WHERE doctor_id = %s
         """,
         (doctor_id,),
     )
     existing_patterns = cursor.fetchall()
     existing_values = set()
+    removed_patterns = []
     for pattern in existing_patterns:
         value = (
             int(pattern["consultation_type_id"]),
@@ -815,32 +1267,45 @@ def availability_route(connection, cursor, doctor_id, method, body):
             parse_sql_time(pattern["end_time"]),
         )
         existing_values.add(value)
-        if (
-            value[0] in slot_consultation_ids
-            and value not in requested_patterns
-        ):
-            raise ConflictError(
-                "Availability can't be removed or changed after its slots are generated."
-            )
-        if value not in requested_patterns and value[0] not in slot_consultation_ids:
+        if value not in requested_patterns:
+            removed_patterns.append((pattern["pattern_id"], value))
+
+    affected_slots = []
+    if removed_patterns:
+        affected_slots = slots_for_availability_patterns(
+            doctor_id,
+            [value for _, value in removed_patterns],
+        )
+        ensure_availability_slots_unbooked(cursor, doctor_id, affected_slots)
+    try:
+        for pattern_id, _ in removed_patterns:
             cursor.execute(
                 "DELETE FROM availability_patterns WHERE pattern_id = %s",
-                (pattern["pattern_id"],),
+                (pattern_id,),
             )
+        for consultation_id, day_name, start, end in normalized:
+            value = (consultation_id, day_name, start, end)
+            if value in existing_values:
+                continue
+            cursor.execute(
+                """
+                INSERT INTO availability_patterns
+                    (doctor_id, consultation_type_id, day_of_week, start_time, end_time)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (doctor_id, consultation_id, day_name, start, end),
+            )
+        connection.commit()
+    except Exception:
+        try:
+            restore_availability_slots(affected_slots)
+        except Exception:
+            logger.exception(
+                "Could not restore availability slots after database update failed"
+            )
+        raise
 
-    for consultation_id, day_name, start, end in normalized:
-        value = (consultation_id, day_name, start, end)
-        if value in existing_values:
-            continue
-        cursor.execute(
-            """
-            INSERT INTO availability_patterns
-                (doctor_id, consultation_type_id, day_of_week, start_time, end_time)
-            VALUES (%s, %s, %s, %s, %s)
-            """,
-            (doctor_id, consultation_id, day_name, start, end),
-        )
-    connection.commit()
+    regenerate_availability_slots(doctor_id)
     logger.info("Availability saved for doctor %s: %s patterns", doctor_id, len(normalized))
     return response(200, {"patterns_saved": len(normalized)})
 
@@ -981,14 +1446,31 @@ def get_day_schedule(cursor, doctor_id, query):
     local_day = date.fromisoformat(query["date"])
     start_utc, end_utc = utc_day_bounds(local_day)
     result = slots_table.query(
-        IndexName="DoctorStartIndex",
         KeyConditionExpression=Key("doctor_id").eq(doctor_id)
-        & Key("start_time").between(
+        & Key("slot_start_time").between(
             utc_iso(start_utc), utc_iso(end_utc - timedelta(seconds=1))
         ),
     )
     slots = result.get("Items", [])
     slot_ids = [int(item["slot_id"]) for item in slots]
+    consultation_names = {}
+    consultation_ids = {
+        int(item["consultation_type_id"]) for item in slots
+    }
+    if consultation_ids:
+        placeholders = ",".join(["%s"] * len(consultation_ids))
+        cursor.execute(
+            f"""
+            SELECT consultation_type_id, consultation_name
+            FROM consultation_types
+            WHERE consultation_type_id IN ({placeholders})
+            """,
+            tuple(consultation_ids),
+        )
+        consultation_names = {
+            int(row["consultation_type_id"]): row["consultation_name"]
+            for row in cursor.fetchall()
+        }
     appointments_by_slot = {}
     if slot_ids:
         placeholders = ",".join(["%s"] * len(slot_ids))
@@ -1010,13 +1492,20 @@ def get_day_schedule(cursor, doctor_id, query):
             )
     for item in slots:
         item["appointments"] = appointments_by_slot.get(int(item["slot_id"]), [])
-        item["consultation_name"] = item.get("consultation_name", "")
-    slots.sort(key=lambda item: item["start_time"])
+        item["consultation_name"] = consultation_names.get(
+            int(item["consultation_type_id"]), ""
+        )
+        item["start_time"] = item["slot_start_time"]
+        item["end_time"] = item["slot_end_time"]
+    slots.sort(key=lambda item: item["slot_start_time"])
     return response(200, {"date": local_day.isoformat(), "slots": slots})
 
 
 def lambda_handler(event, context):
     started_at = perf_counter()
+    request_id = getattr(context, "aws_request_id", "unknown")
+    method = event.get("httpMethod", "GET")
+    path = event.get("path", (event.get("pathParameters") or {}).get("proxy", "/me"))
     try:
         result = route_doctor_api(event)
     except PermissionError as error:
@@ -1027,14 +1516,61 @@ def lambda_handler(event, context):
         result = response(404, {"message": str(error)})
     except (ValueError, TypeError, json.JSONDecodeError) as error:
         result = response(400, {"message": str(error)})
-    except pymysql.err.IntegrityError:
-        logger.exception("Doctor API rejected a conflicting database change")
-        result = response(409, {"message": "The requested change conflicts with existing data"})
+    except pymysql.err.IntegrityError as error:
+        if (
+            error.args
+            and error.args[0] == 1062
+            and "license_number" in str(error).lower()
+        ):
+            logger.warning(
+                "Doctor profile rejected: duplicate license number "
+                "method=%s path=%s request_id=%s",
+                method,
+                path,
+                request_id,
+            )
+            result = response(409, {"message": "License number already exists."})
+        else:
+            logger.exception(
+                "Doctor API rejected a conflicting database change: method=%s path=%s request_id=%s",
+                method,
+                path,
+                request_id,
+            )
+            result = response(
+                409,
+                {"message": "The requested change conflicts with existing data"},
+            )
     except Exception:
-        logger.exception("Doctor API request failed")
+        logger.exception(
+            "Doctor API request failed unexpectedly: method=%s path=%s request_id=%s",
+            method,
+            path,
+            request_id,
+        )
         result = response(500, {"message": "Internal server error"})
     status_code = result["statusCode"]
     duration_ms = (perf_counter() - started_at) * 1000
+    if status_code >= 400:
+        error_body = result.get("body", {})
+        if isinstance(error_body, str):
+            try:
+                error_body = json.loads(error_body)
+            except json.JSONDecodeError:
+                error_body = {}
+        reason = (
+            error_body.get("message", "Request rejected")
+            if isinstance(error_body, dict)
+            else "Request rejected"
+        )
+        logger.warning(
+            "Doctor API request failed: method=%s path=%s status=%s reason=%s request_id=%s",
+            method,
+            path,
+            status_code,
+            reason,
+            request_id,
+        )
     metric_data = [
         ("DoctorApiRequests", 1, "Count"),
         ("DoctorApiDurationMs", duration_ms, "Milliseconds"),
@@ -1045,10 +1581,10 @@ def lambda_handler(event, context):
         publish_metric(metric_name, value, unit)
     logger.info(
         "Doctor API request completed: method=%s path=%s status=%s duration_ms=%.2f request_id=%s",
-        event.get("httpMethod", "GET"),
-        (event.get("pathParameters") or {}).get("proxy", "/me"),
+        method,
+        path,
         status_code,
         duration_ms,
-        getattr(context, "aws_request_id", "unknown"),
+        request_id,
     )
     return result

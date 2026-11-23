@@ -159,6 +159,8 @@ def save_session(
 
 def lambda_handler(event, context):
 
+    request_id = getattr(context, "aws_request_id", "unknown")
+
     try:
 
         body = json.loads(event.get("body", "{}"))
@@ -172,6 +174,10 @@ def lambda_handler(event, context):
         logger.info("Login started")
 
         if not email or not password:
+            logger.warning(
+                "Login rejected: missing email or password request_id=%s",
+                request_id,
+            )
 
             return {
                 "statusCode": 400,
@@ -209,6 +215,10 @@ def lambda_handler(event, context):
             connection.close()
 
         if not user:
+            logger.warning(
+                "Login rejected: invalid credentials request_id=%s",
+                request_id,
+            )
 
             publish_metric(
                 "LoginFailure",
@@ -228,6 +238,10 @@ def lambda_handler(event, context):
             password.encode("utf-8"),
             user["password_hash"].encode("utf-8")
         ):
+            logger.warning(
+                "Login rejected: invalid credentials request_id=%s",
+                request_id,
+            )
 
             publish_metric(
                 "LoginFailure",
@@ -287,7 +301,9 @@ def lambda_handler(event, context):
         )
 
         logger.info(
-            f"Login successful for user {user['user_id']}"
+            "Login successful: user_id=%s request_id=%s",
+            user["user_id"],
+            request_id,
         )
 
         access_expiry_minutes = int(
@@ -312,7 +328,8 @@ def lambda_handler(event, context):
     except Exception as exception:
 
         logger.exception(
-            f"Login failed: {str(exception)}"
+            "Login failed: request_id=%s",
+            request_id,
         )
 
         publish_metric(

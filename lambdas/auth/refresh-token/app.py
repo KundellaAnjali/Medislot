@@ -83,6 +83,7 @@ def get_connection():
 def lambda_handler(event, context):
 
     connection = None
+    request_id = getattr(context, "aws_request_id", "unknown")
 
     try:
 
@@ -95,6 +96,10 @@ def lambda_handler(event, context):
         )
 
         if not refresh_token:
+            logger.warning(
+                "Token refresh rejected: missing refresh token request_id=%s",
+                request_id,
+            )
 
             return {
                 "statusCode": 400,
@@ -133,6 +138,10 @@ def lambda_handler(event, context):
         )
 
         if not session:
+            logger.warning(
+                "Token refresh rejected: invalid refresh token request_id=%s",
+                request_id,
+            )
 
             publish_metric(
                 "RefreshFailure",
@@ -159,6 +168,10 @@ def lambda_handler(event, context):
             session["expires_at"]
             < current_timestamp
         ):
+            logger.warning(
+                "Token refresh rejected: refresh token expired request_id=%s",
+                request_id,
+            )
 
             publish_metric(
                 "RefreshFailure",
@@ -197,6 +210,11 @@ def lambda_handler(event, context):
             user = cursor.fetchone()
 
         if not user:
+            logger.warning(
+                "Token refresh rejected: active user not found session_id=%s request_id=%s",
+                session["session_id"],
+                request_id,
+            )
 
             publish_metric(
                 "RefreshFailure",
@@ -256,11 +274,9 @@ def lambda_handler(event, context):
         )
 
         logger.info(
-            (
-                "Access token refreshed "
-                f"for user "
-                f"{user['user_id']}"
-            )
+            "Access token refreshed: user_id=%s request_id=%s",
+            user["user_id"],
+            request_id,
         )
 
         publish_metric(
@@ -283,7 +299,8 @@ def lambda_handler(event, context):
     except Exception as exception:
 
         logger.exception(
-            f"Refresh failed: {str(exception)}"
+            "Token refresh failed: request_id=%s",
+            request_id,
         )
 
         publish_metric(

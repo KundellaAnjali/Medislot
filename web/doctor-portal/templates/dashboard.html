@@ -11,12 +11,12 @@
     <a class="sidebar-brand" href="{{ url_for('doctor_dashboard') }}">MediSlot<span>.</span></a>
     <p class="sidebar-caption">DOCTOR WORKSPACE</p>
     <nav class="sidebar-nav" aria-label="Doctor navigation">
-      <button class="sidebar-link is-active" type="button" data-view-target="dashboard-view" aria-current="page"><span class="nav-icon">&#9638;</span>Dashboard</button>
-      <button class="sidebar-link" type="button" data-view-target="availability-view"><span class="nav-icon">&#9711;</span>Availability</button>
-      <button class="sidebar-link" type="button" data-view-target="blackout-view"><span class="nav-icon">&#9632;</span>Blackout</button>
-      <button class="sidebar-link" type="button" data-view-target="schedule-view"><span class="nav-icon">&#9776;</span>Schedule</button>
-      <button class="sidebar-link" type="button" data-view-target="consulting-view"><span class="nav-icon">&#10010;</span>Consulting Type</button>
-      <button class="sidebar-link" type="button" data-view-target="profile-view-tab"><span class="nav-icon">&#9679;</span>Profile Details</button>
+      <button class="sidebar-link is-active" type="button" data-view-target="dashboard-view" aria-controls="dashboard-view" aria-current="page"><span class="nav-icon" aria-hidden="true">&#9638;</span>Dashboard</button>
+      <button class="sidebar-link" type="button" data-view-target="availability-view" aria-controls="availability-view"><span class="nav-icon" aria-hidden="true">&#9711;</span>Availability</button>
+      <button class="sidebar-link" type="button" data-view-target="blackout-view" aria-controls="blackout-view"><span class="nav-icon" aria-hidden="true">&#9632;</span>Blackout</button>
+      <button class="sidebar-link" type="button" data-view-target="schedule-view" aria-controls="schedule-view"><span class="nav-icon" aria-hidden="true">&#9776;</span>Schedule</button>
+      <button class="sidebar-link" type="button" data-view-target="consulting-view" aria-controls="consulting-view"><span class="nav-icon" aria-hidden="true">&#10010;</span>Consultation types</button>
+      <button class="sidebar-link" type="button" data-view-target="profile-view-tab" aria-controls="profile-view-tab"><span class="nav-icon" aria-hidden="true">&#9679;</span>Profile details</button>
     </nav>
     <div class="sidebar-bottom">
       <div class="sidebar-user"><span class="sidebar-avatar">{{ (profile.first_name or 'D')[:1] }}{{ (profile.last_name or '')[:1] }}</span><span><strong>Dr. {{ profile.first_name or 'Doctor' }}</strong><small>{{ 'Verified' if profile.is_verified else 'Profile pending' }}</small></span></div>
@@ -28,7 +28,7 @@
 
   <main class="doctor-main">
     <header class="main-header">
-      <div><p class="eyebrow">MediSlot / Doctor workspace</p><p class="header-date">{{ schedule.date }} <span>UTC</span></p></div>
+      <div><p class="eyebrow">MediSlot / Doctor workspace</p><p class="header-date"><time datetime="{{ schedule.date }}">{{ schedule.date }}</time> <span>UTC</span></p></div>
       <div class="header-actions">
         <span class="status-pill {{ 'verified' if profile.is_verified else 'pending' }}"><span></span>{{ 'Verified' if profile.is_verified else 'Profile incomplete' }}</span>
         <span class="header-avatar">{{ (profile.first_name or 'D')[:1] }}{{ (profile.last_name or '')[:1] }}</span>
@@ -36,27 +36,54 @@
     </header>
     <div class="main-content">
       {% with messages = get_flashed_messages(with_categories=true) %}
-        {% for category, message in messages %}<p class="notice {{ category }}">{{ message }}</p>{% endfor %}
+        {% for category, message in messages %}<p class="notice {{ category }} {{ 'availability-toast' if category == 'error' else '' }}">{{ message }}</p>{% endfor %}
       {% endwith %}
       {% if not profile.is_verified %}<p class="notice verification-notice">Complete your contact, licence, experience, qualification, specialization, hospital details and profile photo to unlock availability and consultation settings.</p>{% endif %}
 
       <section class="dashboard-view" id="dashboard-view" data-view>
-        <div class="view-heading"><div><p class="eyebrow">Overview</p><h1>Good day, {{ profile.first_name or 'Doctor' }}</h1><p class="view-subtitle">Here is your practice at a glance.</p></div><button class="button secondary" type="button" data-go-view="schedule-view">View schedule <span aria-hidden="true">&#8594;</span></button></div>
+        <div class="dashboard-welcome">
+          <div class="dashboard-welcome-copy">
+            <p class="eyebrow">Your clinic workspace</p>
+            <h1>Good day, {{ profile.first_name or 'Doctor' }}</h1>
+            <p>Manage your appointments and practice details.</p>
+          </div>
+          <div class="dashboard-quick-actions" aria-label="Quick actions">
+            <button class="button secondary" type="button" data-go-view="schedule-view"><span aria-hidden="true">&#9776;</span> View schedule</button>
+            {% if profile.is_verified %}
+              <button class="button primary" type="button" data-go-view="availability-view"><span aria-hidden="true">&#9711;</span> Availability</button>
+              <button class="button primary" type="button" data-go-view="consulting-view"><span aria-hidden="true">&#10010;</span> Consultation types</button>
+            {% else %}
+              <button class="button primary" type="button" data-go-view="profile-view-tab"><span aria-hidden="true">+</span> Complete profile</button>
+            {% endif %}
+          </div>
+        </div>
         <div class="metric-grid">
-          <article class="metric-panel"><span class="metric-label">Consultation types</span><strong>{{ consultations|selectattr('is_active')|list|length }}</strong><small>Active services</small></article>
-          <article class="metric-panel"><span class="metric-label">Weekly availability</span><strong>{{ patterns|length }}</strong><small>Configured patterns</small></article>
-          <article class="metric-panel"><span class="metric-label">Slots on {{ schedule.date }}</span><strong>{{ schedule.slots|length }}</strong><small>UTC schedule</small></article>
-          <article class="metric-panel"><span class="metric-label">Practice location</span><strong class="metric-location">{{ profile.hospital_name or 'Not set' }}</strong><small>{{ profile.city or 'Add a city' }}</small></article>
+          <button class="metric-panel metric-action" type="button" data-go-view="consulting-view">
+            <span class="metric-icon" aria-hidden="true">&#10010;</span><span class="metric-label">Consultation types</span>
+            <strong>{{ consultations|selectattr('is_active')|list|length }}</strong><small>Active services <span aria-hidden="true">&#8594;</span></small>
+          </button>
+          <button class="metric-panel metric-action" type="button" data-go-view="availability-view">
+            <span class="metric-icon" aria-hidden="true">&#9711;</span><span class="metric-label">Weekly availability</span>
+            <strong>{{ patterns|length }}</strong><small>Configured patterns <span aria-hidden="true">&#8594;</span></small>
+          </button>
+          <button class="metric-panel metric-action" type="button" data-go-view="schedule-view">
+            <span class="metric-icon" aria-hidden="true">&#9776;</span><span class="metric-label">{{ 'Slots today' if schedule.date == current_utc_date else 'Slots on ' ~ schedule.date }}</span>
+            <strong>{{ upcoming_slots|length }}</strong><small>Upcoming slots (UTC) <span aria-hidden="true">&#8594;</span></small>
+          </button>
+          <button class="metric-panel metric-action" type="button" data-go-view="profile-view-tab">
+            <span class="metric-icon" aria-hidden="true">&#9673;</span><span class="metric-label">Practice location</span>
+            <strong class="metric-location">{{ profile.hospital_name or 'Not set' }}</strong><small>{{ profile.city or 'Add a city' }} <span aria-hidden="true">&#8594;</span></small>
+          </button>
         </div>
         <section class="dashboard-panel">
-          <div class="panel-heading"><div><p class="eyebrow">Today</p><h2>Next on your schedule</h2></div><button class="text-button" type="button" data-go-view="schedule-view">Open schedule</button></div>
-          {% if schedule.slots %}
+          <div class="panel-heading"><div><p class="eyebrow">{{ 'Today' if schedule.date == current_utc_date else schedule.date }}</p><h2>Next on your schedule</h2></div><button class="text-button" type="button" data-go-view="schedule-view">Open schedule</button></div>
+          {% if upcoming_slots %}
             <div class="schedule-list">
-              {% for slot in schedule.slots[:4] %}
+              {% for slot in upcoming_slots[:4] %}
                 <article class="schedule-row"><time class="slot-time">{{ slot.start_time[11:16] }}</time><div class="slot-main"><strong>{{ slot.consultation_name or 'Consultation' }}</strong><span>{{ slot.appointments|length }} of {{ slot.capacity }} seats booked</span></div><div class="slot-patients">{% for appointment in slot.appointments %}<span>{{ appointment.first_name }} {{ appointment.last_name }}</span>{% else %}<span class="muted">No patients booked</span>{% endfor %}</div><span class="slot-state">{{ 'Blocked' if slot.status == 0 else ('Booked' if slot.appointments else 'Open') }}</span></article>
               {% endfor %}
             </div>
-          {% else %}<div class="empty-state compact-empty"><span class="empty-symbol">&#9711;</span><p>No slots on this date</p></div>{% endif %}
+          {% else %}<div class="empty-state compact-empty"><span class="empty-symbol">&#9711;</span><p>No upcoming slots for this date</p></div>{% endif %}
         </section>
         <section class="dashboard-panel profile-summary-panel">
           <div class="panel-heading"><div><p class="eyebrow">Profile</p><h2>Professional details</h2></div><button class="text-button" type="button" data-go-view="profile-view-tab">View profile</button></div>
@@ -69,18 +96,53 @@
       </section>
 
       <section class="dashboard-view" id="availability-view" data-view hidden>
-        <div class="view-heading"><div><p class="eyebrow">Recurring weekly</p><h1>Availability</h1><p class="view-subtitle">Set the consultation hours that generate bookable slots.</p></div></div>
-        <section class="dashboard-panel">
-          <form method="post" action="{{ url_for('save_availability') }}" id="availability-form">
-            <fieldset class="configuration-controls" {{ 'disabled' if not profile.is_verified else '' }}>
-              <div class="pattern-list" id="pattern-list">
-                {% for pattern in patterns %}
-                  <div class="pattern-row"><select name="consultation_type_id" aria-label="Consultation type" required>{% for consultation in consultations if consultation.is_active %}<option value="{{ consultation.consultation_type_id }}" {{ 'selected' if consultation.consultation_type_id == pattern.consultation_type_id else '' }}>{{ consultation.consultation_name }}</option>{% endfor %}</select><select name="day_of_week" aria-label="Weekday" required>{% for day in ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY'] %}<option value="{{ day }}" {{ 'selected' if day == pattern.day_of_week else '' }}>{{ day.title() }}</option>{% endfor %}</select><input name="start_time" type="time" aria-label="Start time" value="{{ pattern.start_time|string|truncate(5, True, '') }}" required><input name="end_time" type="time" aria-label="End time" value="{{ pattern.end_time|string|truncate(5, True, '') }}" required><button class="remove-row" type="button" title="Remove availability pattern" aria-label="Remove availability pattern">&times;</button></div>
-                {% endfor %}
-              </div>
-              <div class="form-actions"><button class="button secondary" type="button" id="add-pattern">+ Add availability</button><button class="button primary" type="submit">Save availability</button></div>
-            </fieldset>
-          </form>
+        <div class="view-heading"><div><h1>Availability</h1></div></div>
+        <section class="dashboard-panel availability-panel">
+          <div class="availability-toolbar">
+            <button class="button primary" type="button" id="add-pattern" {{ 'disabled' if not profile.is_verified else '' }}>+ Add Availability</button>
+          </div>
+          <fieldset class="availability-fieldset" {{ 'disabled' if not profile.is_verified else '' }}>
+            <div class="availability-table-wrap">
+              <table class="availability-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Consultation Type</th>
+                    <th scope="col">Start Time</th>
+                    <th scope="col">End Time</th>
+                    <th scope="col">Repeat Days</th>
+                    <th scope="col">Status</th>
+                  </tr>
+                </thead>
+                <tbody class="pattern-list" id="pattern-list">
+                  {% for pattern in patterns %}
+                    {% set selected_days = pattern.repeat_days if pattern.repeat_days is iterable and pattern.repeat_days is not string else (pattern.repeat_days.split(',') if pattern.repeat_days else [pattern.day_of_week]) %}
+                    <tr class="pattern-row" data-saved-pattern data-pattern-id="{{ pattern.pattern_id }}" data-start-date="{{ pattern.start_date or '' }}" data-end-date="{{ pattern.end_date or '' }}">
+                      <td><select name="consultation_type_id" aria-label="Consultation type" required disabled>{% for consultation in consultations if consultation.is_active %}<option value="{{ consultation.consultation_type_id }}" {{ 'selected' if consultation.consultation_type_id == pattern.consultation_type_id else '' }}>{{ consultation.consultation_name }}</option>{% endfor %}</select></td>
+                      <td><input name="start_time" type="time" aria-label="Start time" value="{{ pattern.start_time|string|truncate(5, True, '') }}" required disabled></td>
+                      <td><input name="end_time" type="time" aria-label="End time" value="{{ pattern.end_time|string|truncate(5, True, '') }}" required disabled></td>
+                      <td>
+                        {% set weekday_picker_id = 'weekday-options-' ~ pattern.pattern_id %}
+                        <div class="weekday-picker">
+                          <button class="weekday-toggle" type="button" aria-expanded="false" aria-controls="{{ weekday_picker_id }}" disabled>
+                            <span class="weekday-selection-label">{% set selected_labels = [] %}{% for day in ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY'] %}{% if day in selected_days %}{% set _ = selected_labels.append(day[:3].title()) %}{% endif %}{% endfor %}{{ selected_labels|join(', ') or 'Select days' }}</span>
+                            <span aria-hidden="true">&#9662;</span>
+                          </button>
+                          <div class="weekday-options" id="{{ weekday_picker_id }}" popover="auto" role="group" aria-label="Repeat days">
+                            {% for day in ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY'] %}
+                              <label><input name="repeat_days" type="checkbox" value="{{ day }}" aria-label="{{ day[:3].title() }}" {{ 'checked' if day in selected_days else '' }} disabled>{{ day[:3].title() }}</label>
+                            {% endfor %}
+                          </div>
+                        </div>
+                      </td>
+                      <td><select name="is_active" aria-label="Status" required disabled><option value="true" {{ 'selected' if pattern.is_active is not defined or pattern.is_active else '' }}>Active</option><option value="false" {{ 'selected' if pattern.is_active is defined and not pattern.is_active else '' }}>Inactive</option></select></td>
+                      <td class="pattern-actions-cell"><div class="pattern-actions"><button class="button secondary pattern-edit" type="button">Edit</button><button class="button secondary danger-text pattern-delete" type="button">Delete</button></div></td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% if not profile.is_verified %}<p class="muted availability-verification-note">Availability management is available after your profile is verified.</p>{% endif %}
+          </fieldset>
         </section>
       </section>
 
@@ -95,9 +157,17 @@
       </section>
 
       <section class="dashboard-view" id="schedule-view" data-view hidden>
-        <div class="view-heading"><div><p class="eyebrow">Appointments</p><h1>Schedule</h1><p class="view-subtitle">Booked patient appointments and open slots, shown in UTC.</p></div><form class="date-picker" method="get" action="{{ url_for('doctor_dashboard') }}"><label for="schedule-date">Date</label><input id="schedule-date" type="date" name="date" value="{{ schedule.date }}"><button class="button secondary" type="submit">View day</button></form></div>
+        <div class="view-heading"><div><p class="eyebrow">Appointments</p><h1>Schedule</h1><p class="view-subtitle">Booked patient appointments and open slots, shown in UTC.</p></div><form class="date-picker" method="get" action="{{ url_for('doctor_dashboard') }}"><input type="hidden" name="view" value="schedule-view"><label for="schedule-date">Date</label><input id="schedule-date" type="date" name="date" value="{{ schedule.date }}"><button class="button secondary" type="submit">View day</button></form></div>
         <section class="dashboard-panel">
-          {% if schedule.slots %}<div class="schedule-list">{% for slot in schedule.slots %}<article class="schedule-row"><time class="slot-time">{{ slot.start_time[11:16] }}</time><div class="slot-main"><strong>{{ slot.consultation_name or 'Consultation' }}</strong><span>{{ slot.appointments|length }} of {{ slot.capacity }} seats booked</span></div><div class="slot-patients">{% for appointment in slot.appointments %}<span>{{ appointment.first_name }} {{ appointment.last_name }}</span>{% else %}<span class="muted">No patients booked</span>{% endfor %}</div><span class="slot-state">{{ 'Blocked' if slot.status == 0 else ('Booked' if slot.appointments else 'Open') }}</span></article>{% endfor %}</div>{% else %}<div class="empty-state"><span class="empty-symbol">&#9711;</span><p>No slots on this date</p></div>{% endif %}
+          {% if schedule.slots %}
+            <div class="schedule-tools">
+              <label class="schedule-search"><span class="sr-only">Search schedule</span><span aria-hidden="true">&#9906;</span><input id="schedule-search" type="search" placeholder="Search patients or consultation types" autocomplete="off"></label>
+              <label class="schedule-status-filter"><span class="sr-only">Filter by appointment status</span><select id="schedule-status"><option value="all">All appointments</option><option value="booked">Booked</option><option value="open">Open</option><option value="blocked">Blocked</option></select></label>
+              <span class="schedule-result-count" id="schedule-result-count" aria-live="polite">{{ schedule.slots|length }} slots</span>
+            </div>
+            <div class="schedule-list" id="schedule-list">{% for slot in schedule.slots %}<article class="schedule-row" data-slot-state="{{ 'blocked' if slot.status == 0 else ('booked' if slot.appointments else 'open') }}"><time class="slot-time">{{ slot.start_time[11:16] }}</time><div class="slot-main"><strong>{{ slot.consultation_name or 'Consultation' }}</strong><span>{{ slot.appointments|length }} of {{ slot.capacity }} seats booked</span></div><div class="slot-patients">{% for appointment in slot.appointments %}<span>{{ appointment.first_name }} {{ appointment.last_name }}</span>{% else %}<span class="muted">No patients booked</span>{% endfor %}</div><span class="slot-state">{{ 'Blocked' if slot.status == 0 else ('Booked' if slot.appointments else 'Open') }}</span></article>{% endfor %}</div>
+            <div class="empty-state filtered-empty" id="schedule-filter-empty" hidden><span class="empty-symbol">&#9906;</span><p>No slots match these filters</p></div>
+          {% else %}<div class="empty-state"><span class="empty-symbol">&#9711;</span><p>No slots on this date</p></div>{% endif %}
         </section>
       </section>
 
@@ -169,14 +239,42 @@
       });
       if (updateUrl) {
         const url = new URL(window.location.href);
-        url.searchParams.set('view', id);
-        window.history.replaceState(null, '', url);
+        if (url.searchParams.get('view') !== id) {
+          url.searchParams.set('view', id);
+          window.history.pushState({view: id}, '', url);
+        }
       }
     };
     navLinks.forEach(link => link.addEventListener('click', () => activateView(link.dataset.viewTarget, true)));
     document.querySelectorAll('[data-go-view]').forEach(button => button.addEventListener('click', () => activateView(button.dataset.goView, true)));
     const requestedView = new URLSearchParams(window.location.search).get('view');
     activateView(views.some(view => view.id === requestedView) ? requestedView : 'dashboard-view');
+    window.addEventListener('popstate', () => {
+      const view = new URLSearchParams(window.location.search).get('view');
+      activateView(views.some(item => item.id === view) ? view : 'dashboard-view');
+    });
+
+    const scheduleRows = [...document.querySelectorAll('#schedule-list .schedule-row')];
+    const scheduleSearch = document.getElementById('schedule-search');
+    const scheduleStatus = document.getElementById('schedule-status');
+    const scheduleCount = document.getElementById('schedule-result-count');
+    const scheduleFilterEmpty = document.getElementById('schedule-filter-empty');
+    const filterSchedule = () => {
+      const query = scheduleSearch?.value.trim().toLocaleLowerCase() || '';
+      const status = scheduleStatus?.value || 'all';
+      let visibleCount = 0;
+      scheduleRows.forEach(row => {
+        const matchesText = row.textContent.toLocaleLowerCase().includes(query);
+        const matchesStatus = status === 'all' || row.dataset.slotState === status;
+        const visible = matchesText && matchesStatus;
+        row.hidden = !visible;
+        if (visible) visibleCount += 1;
+      });
+      if (scheduleCount) scheduleCount.textContent = `${visibleCount} of ${scheduleRows.length} slots`;
+      if (scheduleFilterEmpty) scheduleFilterEmpty.hidden = visibleCount > 0;
+    };
+    scheduleSearch?.addEventListener('input', filterSchedule);
+    scheduleStatus?.addEventListener('change', filterSchedule);
 
     const profileView = document.getElementById('profile-view');
     const profileForm = document.getElementById('profile-form');
@@ -189,14 +287,216 @@
 
     const patternList = document.getElementById('pattern-list');
     const weekdays = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY'];
+    const availabilityEndpoint = '{{ url_for("save_availability") }}';
     const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
-    document.getElementById('add-pattern')?.addEventListener('click', () => {
-      const row = document.createElement('div');
-      row.className = 'pattern-row';
-      row.innerHTML = `<select name="consultation_type_id" aria-label="Consultation type" required>${activeConsultations.map(item => `<option value="${item.consultation_type_id}">${escapeHtml(item.consultation_name)}</option>`).join('')}</select><select name="day_of_week" aria-label="Weekday" required>${weekdays.map(day => `<option value="${day}">${day[0] + day.slice(1).toLowerCase()}</option>`).join('')}</select><input name="start_time" type="time" aria-label="Start time" required><input name="end_time" type="time" aria-label="End time" required><button class="remove-row" type="button" title="Remove availability pattern" aria-label="Remove availability pattern">&times;</button>`;
-      patternList.appendChild(row);
+    let weekdayPickerSequence = 0;
+    const positionWeekdayPopover = (toggle, popover) => {
+      const bounds = toggle.getBoundingClientRect();
+      const popoverBounds = popover.getBoundingClientRect();
+      const left = Math.max(8, Math.min(bounds.left, window.innerWidth - popoverBounds.width - 8));
+      const top = bounds.bottom + popoverBounds.height <= window.innerHeight - 8
+        ? bounds.bottom + 4
+        : Math.max(8, bounds.top - popoverBounds.height - 4);
+      popover.style.left = `${left}px`;
+      popover.style.top = `${top}px`;
+    };
+    const initializeWeekdayPicker = row => {
+      const toggle = row.querySelector('.weekday-toggle');
+      const popover = row.querySelector('.weekday-options');
+      if (!toggle || !popover) return;
+      popover.addEventListener('toggle', () => {
+        const isOpen = popover.matches(':popover-open');
+        toggle.setAttribute('aria-expanded', String(isOpen));
+        if (isOpen) positionWeekdayPopover(toggle, popover);
+      });
+    };
+    patternList?.querySelectorAll('.pattern-row').forEach(initializeWeekdayPicker);
+    window.addEventListener('resize', () => {
+      patternList?.querySelectorAll('.weekday-options:popover-open').forEach(popover => {
+        positionWeekdayPopover(popover.parentElement.querySelector('.weekday-toggle'), popover);
+      });
     });
-    patternList?.addEventListener('click', event => { if (event.target.closest('.remove-row')) event.target.closest('.pattern-row').remove(); });
+    window.addEventListener('scroll', () => {
+      patternList?.querySelectorAll('.weekday-options:popover-open').forEach(popover => {
+        positionWeekdayPopover(popover.parentElement.querySelector('.weekday-toggle'), popover);
+      });
+    }, true);
+    const readAvailabilityResponse = async response => {
+      const contentType = response.headers.get('content-type') || '';
+      let result;
+      if (contentType.includes('application/json')) {
+        result = await response.json();
+      } else {
+        const detail = response.redirected
+          ? 'Your session may have expired. Refresh the page and sign in again.'
+          : `The server returned an unexpected response (${response.status}).`;
+        throw new Error(detail);
+      }
+      if (!response.ok) throw new Error(result.message || 'Availability request failed.');
+      return result;
+    };
+    const showAvailabilityToast = (message, category = 'success') => {
+      document.querySelector('.availability-toast')?.remove();
+      const toast = document.createElement('p');
+      toast.className = `notice ${category} availability-toast`;
+      toast.setAttribute('role', category === 'error' ? 'alert' : 'status');
+      toast.setAttribute('aria-live', category === 'error' ? 'assertive' : 'polite');
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      window.setTimeout(() => {
+        toast.style.maxHeight = `${toast.scrollHeight}px`;
+        toast.classList.add('is-dismissing');
+        window.setTimeout(() => toast.remove(), 350);
+      }, category === 'error' ? 5000 : 3000);
+    };
+    document.getElementById('add-pattern')?.addEventListener('click', () => {
+      const row = document.createElement('tr');
+      row.className = 'pattern-row is-editing';
+      const weekdayPickerId = `weekday-options-new-${++weekdayPickerSequence}`;
+      row.innerHTML = `<td><select name="consultation_type_id" aria-label="Consultation type" required><option value="">Choose type</option>${activeConsultations.map(item => `<option value="${item.consultation_type_id}">${escapeHtml(item.consultation_name)}</option>`).join('')}</select></td><td><input name="start_time" type="time" aria-label="Start time" required></td><td><input name="end_time" type="time" aria-label="End time" required></td><td><div class="weekday-picker"><button class="weekday-toggle" type="button" aria-expanded="false" aria-controls="${weekdayPickerId}"><span class="weekday-selection-label">Select days</span><span aria-hidden="true">&#9662;</span></button><div class="weekday-options" id="${weekdayPickerId}" popover="auto" role="group" aria-label="Repeat days">${weekdays.map(day => `<label><input name="repeat_days" type="checkbox" value="${day}" aria-label="${day.slice(0, 3)}">${day.slice(0, 3)[0] + day.slice(1, 3).toLowerCase()}</label>`).join('')}</div></div></td><td><select name="is_active" aria-label="Status" required><option value="true" selected>Active</option><option value="false">Inactive</option></select></td><td class="pattern-actions-cell"><div class="pattern-actions"><button class="button primary pattern-save" type="button">Save</button><button class="button secondary pattern-cancel" type="button">Cancel</button></div></td>`;
+      patternList.appendChild(row);
+      initializeWeekdayPicker(row);
+      row.querySelector('[name="consultation_type_id"]').focus();
+    });
+    patternList?.addEventListener('change', event => {
+      if (!event.target.matches('[name="repeat_days"]')) return;
+      const picker = event.target.closest('.weekday-picker');
+      const selectedDays = [...picker.querySelectorAll('[name="repeat_days"]:checked')]
+        .map(input => input.value.slice(0, 3)[0] + input.value.slice(1, 3).toLowerCase());
+      picker.querySelector('.weekday-selection-label').textContent =
+        selectedDays.length ? selectedDays.join(', ') : 'Select days';
+    });
+    patternList?.addEventListener('click', event => {
+      const button = event.target.closest('button');
+      const row = button?.closest('.pattern-row');
+      if (!row) return;
+
+      if (button.classList.contains('weekday-toggle')) {
+        if (button.disabled) return;
+        const popover = row.querySelector('.weekday-options');
+        if (popover.matches(':popover-open')) {
+          popover.hidePopover();
+        } else {
+          popover.showPopover();
+          positionWeekdayPopover(button, popover);
+        }
+        return;
+      }
+
+      if (button.classList.contains('pattern-cancel')) {
+        if (!row.hasAttribute('data-saved-pattern')) {
+          row.remove();
+          return;
+        }
+        row.querySelectorAll('input, select').forEach((field, index) => {
+          const original = row._availabilityOriginalValues?.[index];
+          if (!original) return;
+          if (field.type === 'checkbox') field.checked = original.checked;
+          else field.value = original.value;
+          field.disabled = true;
+        });
+        const selectedDays = [...row.querySelectorAll('[name="repeat_days"]:checked')]
+          .map(input => input.value.slice(0, 3)[0] + input.value.slice(1, 3).toLowerCase());
+        row.querySelector('.weekday-selection-label').textContent =
+          selectedDays.length ? selectedDays.join(', ') : 'Select days';
+        row.querySelector('.weekday-toggle').disabled = true;
+        const weekdayPopover = row.querySelector('.weekday-options');
+        if (weekdayPopover.matches(':popover-open')) weekdayPopover.hidePopover();
+        const updateButton = row.querySelector('.pattern-update');
+        updateButton.textContent = 'Edit';
+        updateButton.classList.remove('pattern-update');
+        updateButton.classList.add('pattern-edit');
+        row.querySelector('.pattern-cancel').remove();
+        row.classList.remove('is-editing');
+        delete row._availabilityOriginalValues;
+        return;
+      }
+
+      if (button.classList.contains('pattern-edit')) {
+        row._availabilityOriginalValues = [...row.querySelectorAll('input, select')].map(field => ({
+          value: field.value,
+          checked: field.type === 'checkbox' ? field.checked : undefined,
+        }));
+        row.querySelectorAll('select, input, .weekday-toggle').forEach(field => { field.disabled = false; });
+        button.textContent = 'Update';
+        button.classList.remove('pattern-edit');
+        button.classList.add('pattern-update');
+        button.insertAdjacentHTML('afterend', '<button class="button secondary pattern-cancel" type="button">Cancel</button>');
+        row.classList.add('is-editing');
+        return;
+      }
+
+      if (button.classList.contains('pattern-save') || button.classList.contains('pattern-update')) {
+        const invalidField = [...row.querySelectorAll('input:not([name="repeat_days"]), select')].find(field => !field.checkValidity());
+        if (invalidField) {
+          invalidField.reportValidity();
+          return;
+        }
+        const values = Object.fromEntries(
+          [...row.querySelectorAll('input, select:not([multiple])')].map(field => [field.name, field.value])
+        );
+        const repeatDays = [...row.querySelectorAll('[name="repeat_days"]:checked')].map(input => input.value);
+        if (!repeatDays.length) {
+          showAvailabilityToast('Select at least one repeat day.', 'error');
+          row.querySelector('.weekday-picker').open = true;
+          return;
+        }
+        const isNew = button.classList.contains('pattern-save');
+        const payload = {
+          consultation_type_id: values.consultation_type_id,
+          start_date: row.dataset.startDate || null,
+          end_date: row.dataset.endDate || null,
+          start_time: values.start_time,
+          end_time: values.end_time,
+          repeat_days: repeatDays,
+          is_active: values.is_active === 'true',
+        };
+        const endpoint = isNew
+          ? availabilityEndpoint
+          : `${availabilityEndpoint}/${row.dataset.patternId}`;
+        const method = isNew ? 'POST' : 'PUT';
+        row.querySelectorAll('.pattern-actions button').forEach(action => { action.disabled = true; });
+        fetch(endpoint, {
+          method,
+          headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+          body: JSON.stringify(payload),
+        }).then(readAvailabilityResponse).then(result => {
+          if (isNew) {
+            row.dataset.patternId = result.pattern_id;
+            row.setAttribute('data-saved-pattern', '');
+            row.dataset.startDate = '';
+            row.dataset.endDate = '';
+          }
+          row.querySelectorAll('select, input, .weekday-toggle').forEach(field => { field.disabled = true; });
+          const weekdayPopover = row.querySelector('.weekday-options');
+          if (weekdayPopover.matches(':popover-open')) weekdayPopover.hidePopover();
+          row.classList.remove('is-editing');
+          const actions = row.querySelector('.pattern-actions');
+          actions.innerHTML = '<button class="button secondary pattern-edit" type="button">Edit</button><button class="button secondary danger-text pattern-delete" type="button">Delete</button>';
+          delete row._availabilityOriginalValues;
+          showAvailabilityToast(isNew ? 'Availability saved.' : 'Availability updated.');
+        }).catch(error => {
+          showAvailabilityToast(error.message || 'Could not save availability.', 'error');
+          row.querySelectorAll('.pattern-actions button').forEach(action => { action.disabled = false; });
+        });
+        return;
+      }
+
+      if (button.classList.contains('pattern-delete')) {
+        if (!window.confirm('Are you sure you want to delete this availability?')) return;
+        row.querySelectorAll('.pattern-actions button').forEach(action => { action.disabled = true; });
+        fetch(`${availabilityEndpoint}/${row.dataset.patternId}`, {
+          method: 'DELETE',
+          headers: {'Accept': 'application/json'},
+        }).then(readAvailabilityResponse).then(() => {
+          row.remove();
+          showAvailabilityToast('Availability deleted.');
+        }).catch(error => {
+          row.querySelectorAll('.pattern-actions button').forEach(action => { action.disabled = false; });
+          showAvailabilityToast(error.message || 'Could not delete availability.', 'error');
+        });
+      }
+    });
 
     const durations = {'Quick Consult':15,'Standard Consult':30,'Detailed Consult':60,'Health Camp Session':60};
     const configureCapacity = (form, typeName) => {
@@ -232,5 +532,7 @@
       } catch (error) { status.textContent = error.message; }
     });
   </script>
+  <script src="{{ url_for('static', filename='notifications.js') }}"></script>
+  <script src="{{ url_for('static', filename='ui-enhancements.js') }}"></script>
 </body>
 </html>
