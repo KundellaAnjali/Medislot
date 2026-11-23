@@ -187,9 +187,6 @@ def materialize_for_doctor_day(
                             "consultation_type_id": pattern[
                                 "consultation_type_id"
                             ],
-                            "consultation_name": pattern[
-                                "consultation_name"
-                            ],
                             "slot_start_time": start_iso,
                             "slot_end_time": end_iso,
                             "local_date": local_day.isoformat(),
@@ -233,7 +230,7 @@ def materialize_handler(event, context):
             cursor.execute(
                 """
                 SELECT d.doctor_id, ct.consultation_type_id,
-                       ct.consultation_name, ct.duration_minutes, ct.capacity,
+                       ct.duration_minutes, ct.capacity,
                        ap.day_of_week, ap.start_time, ap.end_time
                 FROM doctors d
                 JOIN doctor_consulting_types dct
