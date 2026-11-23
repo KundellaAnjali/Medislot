@@ -9,18 +9,27 @@
 <body class="patient-page">
   <header class="patient-topbar">
     <a class="wordmark" href="/dashboard/patient">MediSlot<span>.</span></a>
+    <nav class="patient-nav" aria-label="Patient navigation">
+      <a href="#patient-profile">My profile</a>
+      <a href="#doctor-search">Find a doctor</a>
+    </nav>
     <form method="post" action="{{ url_for('logout') }}">
       <button class="button secondary" type="submit">Logout</button>
     </form>
   </header>
   <main class="patient-content">
-    <p class="eyebrow">Patient portal</p>
-    <h1>Your care, in one place.</h1>
-    <p>Manage your profile details and keep your account information up to date.</p>
+    <section class="patient-hero">
+      <div>
+        <p class="eyebrow">Your patient portal</p>
+        <h1>Your care, in one place.</h1>
+        <p>Keep your details up to date and find the right care when you need it.</p>
+      </div>
+      <a class="button patient-hero-action" href="#doctor-search">Find a doctor <span aria-hidden="true">&#8594;</span></a>
+    </section>
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% for category, message in messages %}<p class="notice {{ category }}">{{ message }}</p>{% endfor %}
     {% endwith %}
-    <section class="patient-profile">
+    <section class="patient-profile" id="patient-profile">
       <div class="patient-profile-heading">
         <div>
           <p class="eyebrow">Your account</p>
@@ -83,7 +92,7 @@
       {% endif %}
     </section>
 
-    <section class="doctor-search">
+    <section class="doctor-search" id="doctor-search">
       <div class="patient-profile-heading">
         <div>
           <p class="eyebrow">Find care</p>
@@ -105,6 +114,7 @@
         </label>
         <input type="hidden" name="limit" value="{{ doctor_search.pagination.limit if doctor_search else 10 }}">
         <button class="button primary" type="submit">Search doctors</button>
+        <a class="button secondary" href="{{ url_for('patient_doctor_search') }}">Clear filters</a>
       </form>
 
       {% if doctor_search %}

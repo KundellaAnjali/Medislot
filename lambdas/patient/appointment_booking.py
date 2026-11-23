@@ -177,10 +177,13 @@ def reserve_slot(doctor_id, slot_start_time, slot):
                     "AND #status = :active "
                     "AND booked_count = :booked_count "
                     "AND version = :version "
-                    "AND booked_count < capacity "
+                    "AND booked_count < #capacity "
                     "AND slot_start_time > :now"
                 ),
-                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeNames={
+                    "#status": "status",
+                    "#capacity": "capacity",
+                },
                 ExpressionAttributeValues={
                     ":one": 1,
                     ":active": 1,

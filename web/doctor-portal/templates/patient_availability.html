@@ -15,9 +15,11 @@
   </header>
   <main class="patient-content">
     <a class="availability-back-link" href="{{ url_for('patient_dashboard') }}">Back to dashboard</a>
-    <p class="eyebrow">Find care</p>
-    <h1>Doctor availability</h1>
-    <p>Choose a date range to see open appointment slots with Doctor {{ doctor_id }}.</p>
+    <section class="availability-hero">
+      <p class="eyebrow">Find care</p>
+      <h1>Choose a time that works for you.</h1>
+      <p>Browse open appointments with Doctor {{ doctor_id }}. All appointment times are shown in UTC.</p>
+    </section>
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% for category, message in messages %}<p class="notice {{ category }}" role="{{ 'alert' if category == 'error' else 'status' }}">{{ message }}</p>{% endfor %}
     {% endwith %}
