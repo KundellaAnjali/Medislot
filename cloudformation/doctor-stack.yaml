@@ -8,6 +8,9 @@ Parameters:
   WebAppArtifactKey:
     Type: String
     Default: doctor-portal/doctor-portal.zip
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: kkey
 
 Globals:
   Function:
@@ -195,6 +198,7 @@ Resources:
   DoctorPortalInstance:
     Type: AWS::EC2::Instance
     Properties:
+      KeyName: !Ref KeyPairName
       ImageId: !Sub "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}"
       InstanceType: t3.micro
       IamInstanceProfile:
