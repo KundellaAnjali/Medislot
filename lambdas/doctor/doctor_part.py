@@ -7,7 +7,7 @@ from time import perf_counter
 
 import boto3
 import pymysql
-from boto3.dynamodb.conditions import Attr
+from boto3.dynamodb.conditions import Attr, Key
 from botocore.exceptions import ClientError
 from slot_queries import query_slots_in_range
 lambda_client = boto3.client("lambda")
@@ -79,6 +79,152 @@ def queue_slot_materialization(start_date, end_date):
         "Slot materialization queued: start_date=%s end_date=%s",
         start_date,
         end_date,
+    )
+
+
+def restore_blackout_slot_locks(locked_slots):
+    for key, original_status in locked_slots:
+        try:
+            slots_table.update_item(
+                Key=key,
+                UpdateExpression="SET #status = :original",
+                ConditionExpression="#status = :locked AND booked_count = :zero",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":original": original_status,
+                    ":locked": -1,
+                    ":zero": 0,
+                },
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] != (
+                "ConditionalCheckFailedException"
+            ):
+                raise
+
+
+def lock_unbooked_slots_for_blackout(doctor_id, start_utc, end_utc):
+    query_args = {
+        "KeyConditionExpression": Key("doctor_id").eq(doctor_id),
+    }
+    locked_slots = []
+    try:
+        while True:
+            result = slots_table.query(**query_args)
+            for slot in result.get("Items", []):
+                slot_start = parse_utc_datetime(slot["slot_start_time"])
+                slot_end = parse_utc_datetime(slot["slot_end_time"])
+                if slot_start >= end_utc or slot_end <= start_utc:
+                    continue
+
+                key = {
+                    "doctor_id": doctor_id,
+                    "slot_start_time": slot["slot_start_time"],
+                }
+                for _ in range(3):
+                    current = slots_table.get_item(
+                        Key=key,
+                        ConsistentRead=True,
+                    ).get("Item")
+                    if not current:
+                        break
+                    if int(current.get("booked_count", 0)) > 0:
+                        raise ConflictError(
+                            "A slot in this blackout range already has an "
+                            "appointment. Cancel or move the appointment first."
+                        )
+
+                    original_status = int(current.get("status", 1))
+                    if original_status not in {0, 1}:
+                        raise ConflictError(
+                            "A slot in this range is being updated. Please retry."
+                        )
+                    try:
+                        slots_table.update_item(
+                            Key=key,
+                            UpdateExpression="SET #status = :locked",
+                            ConditionExpression=(
+                                "#status = :original AND booked_count = :zero"
+                            ),
+                            ExpressionAttributeNames={"#status": "status"},
+                            ExpressionAttributeValues={
+                                ":locked": -1,
+                                ":original": original_status,
+                                ":zero": 0,
+                            },
+                        )
+                        locked_slots.append((key, original_status))
+                        break
+                    except ClientError as error:
+                        if error.response["Error"]["Code"] != (
+                            "ConditionalCheckFailedException"
+                        ):
+                            raise
+                else:
+                    raise ConflictError(
+                        "A slot in this range changed while checking. Please retry."
+                    )
+
+            last_key = result.get("LastEvaluatedKey")
+            if not last_key:
+                return locked_slots
+            query_args["ExclusiveStartKey"] = last_key
+    except Exception:
+        restore_blackout_slot_locks(locked_slots)
+        raise
+
+
+def remove_or_block_blackout_slot(doctor_id, slot):
+    key = {
+        "doctor_id": doctor_id,
+        "slot_start_time": slot["slot_start_time"],
+    }
+    for _ in range(3):
+        current = slots_table.get_item(Key=key, ConsistentRead=True).get("Item")
+        if not current:
+            return
+
+        booked_count = int(current.get("booked_count", 0))
+        status = int(current.get("status", 1))
+        try:
+            if booked_count > 0:
+                slots_table.update_item(
+                    Key=key,
+                    UpdateExpression="SET #status = :blocked",
+                    ConditionExpression=(
+                        "booked_count = :booked_count AND #status = :status"
+                    ),
+                    ExpressionAttributeNames={"#status": "status"},
+                    ExpressionAttributeValues={
+                        ":blocked": 0,
+                        ":booked_count": booked_count,
+                        ":status": status,
+                    },
+                )
+            else:
+                slots_table.delete_item(
+                    Key=key,
+                    ConditionExpression=(
+                        "attribute_exists(slot_start_time) "
+                        "AND (attribute_not_exists(booked_count) "
+                        "OR booked_count = :zero) AND #status = :status"
+                    ),
+                    ExpressionAttributeNames={"#status": "status"},
+                    ExpressionAttributeValues={
+                        ":zero": 0,
+                        ":status": status,
+                    },
+                )
+            return
+        except ClientError as error:
+            if error.response["Error"]["Code"] != (
+                "ConditionalCheckFailedException"
+            ):
+                raise
+
+    raise RuntimeError(
+        "Could not safely reconcile blackout slot for doctor "
+        f"{doctor_id} at {slot['slot_start_time']}"
     )
 
 
@@ -425,25 +571,7 @@ def delete_slots_for_blackout(doctor_id, start_utc, end_utc):
             slot_end = parse_utc_datetime(slot["slot_end_time"])
 
             if slot_start < end_utc and slot_end > start_utc:
-
-                if int(slot.get("booked_count", 0)) > 0:
-                    slots_table.update_item(
-                        Key={
-                            "doctor_id": doctor_id,
-                            "slot_start_time": slot["slot_start_time"],
-                        },
-                        UpdateExpression="SET #status = :status",
-                        ExpressionAttributeNames={"#status": "status"},
-                        ExpressionAttributeValues={":status": 0},
-                    )
-                    continue
-
-                slots_table.delete_item(
-                    Key={
-                        "doctor_id": doctor_id,
-                        "slot_start_time": slot["slot_start_time"],
-                    }
-                )
+                remove_or_block_blackout_slot(doctor_id, slot)
 
         if "LastEvaluatedKey" not in result:
             break
@@ -1033,29 +1161,41 @@ def blackouts_route(connection, cursor, doctor_id, method, tail, body):
             _, end_utc = utc_day_bounds(end_day)
         if end_utc <= start_utc:
             raise ValueError("Blackout end must be after its start")
-        cursor.execute(
-            """
-            INSERT INTO blackout_dates (doctor_id, start_datetime, end_datetime)
-            VALUES (%s, %s, %s)
-            """,
-            (
-                doctor_id,
-                start_utc.replace(tzinfo=None),
-                end_utc.replace(tzinfo=None),
-            ),
-        )
-        blackout_id = cursor.lastrowid
-        connection.commit()
-
-        delete_slots_for_blackout(
+        locked_slots = lock_unbooked_slots_for_blackout(
             doctor_id,
             start_utc,
             end_utc,
         )
-        queue_slot_materialization(
-            start_utc.date(),
-            (end_utc - timedelta(microseconds=1)).date(),
-        )
+        committed = False
+        try:
+            cursor.execute(
+                """
+                INSERT INTO blackout_dates (doctor_id, start_datetime, end_datetime)
+                VALUES (%s, %s, %s)
+                """,
+                (
+                    doctor_id,
+                    start_utc.replace(tzinfo=None),
+                    end_utc.replace(tzinfo=None),
+                ),
+            )
+            blackout_id = cursor.lastrowid
+            connection.commit()
+            committed = True
+
+            delete_slots_for_blackout(
+                doctor_id,
+                start_utc,
+                end_utc,
+            )
+            queue_slot_materialization(
+                start_utc.date(),
+                (end_utc - timedelta(microseconds=1)).date(),
+            )
+        except Exception:
+            if not committed:
+                restore_blackout_slot_locks(locked_slots)
+            raise
 
         logger.info(
             "Blackout %s added for doctor %s; slot regeneration queued",

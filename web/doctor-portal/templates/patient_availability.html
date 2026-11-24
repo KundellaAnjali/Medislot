@@ -47,7 +47,11 @@
         <p class="notice error" role="alert" data-auto-dismiss>{{ error_message }}</p>
       {% elif availability is not none %}
         <p class="doctor-search-count">
-          {{ availability|length }} slot{{ '' if availability|length == 1 else 's' }} listed
+          {% if availability_total %}
+            Showing {{ (availability_page - 1) * availability_page_size + 1 }}–{{ [(availability_page * availability_page_size), availability_total]|min }} of {{ availability_total }} slots
+          {% else %}
+            0 slots listed
+          {% endif %}
         </p>
         {% if availability %}
           {% for day in availability_by_date %}
@@ -71,6 +75,7 @@
                       <input type="hidden" name="slot_start_time" value="{{ slot.start_time }}">
                       <input type="hidden" name="start_date" value="{{ start_date }}">
                       <input type="hidden" name="end_date" value="{{ end_date }}">
+                      <input type="hidden" name="page" value="{{ availability_page }}">
                       <input type="hidden" name="consultation_type" value="{{ selected_consultation_type }}">
                       <input type="hidden" name="idempotency_key" value="{{ idempotency_keys[slot.start_time] }}">
                       {% if slot.available_seats > 0 %}
@@ -91,6 +96,17 @@
             {% endfor %}
         {% else %}
           <p class="doctor-search-empty">No available slots were found in this date range.</p>
+        {% endif %}
+        {% if availability_total_pages > 1 %}
+          <nav class="doctor-search-pagination availability-pagination" aria-label="Availability pages">
+          {% if availability_page > 1 %}
+            <a class="button secondary" href="{{ url_for('patient_doctor_availability', doctor_id=doctor_id, start_date=start_date, end_date=end_date, page=availability_page - 1, consultation_type=selected_consultation_type) }}">Previous</a>
+          {% endif %}
+          <span>Page {{ availability_page }} of {{ availability_total_pages }}</span>
+          {% if availability_page < availability_total_pages %}
+            <a class="button secondary" href="{{ url_for('patient_doctor_availability', doctor_id=doctor_id, start_date=start_date, end_date=end_date, page=availability_page + 1, consultation_type=selected_consultation_type) }}">Next</a>
+          {% endif %}
+          </nav>
         {% endif %}
       {% endif %}
     </section>

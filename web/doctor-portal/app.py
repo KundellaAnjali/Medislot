@@ -694,6 +694,10 @@ def patient_doctor_availability(doctor_id):
     availability = None
     error_message = None
     status_code = 200
+    page_size = 12
+    page = max(request.args.get("page", 1, type=int) or 1, 1)
+    availability_total = 0
+    availability_total_pages = 0
     consultation_type = request.args.get("consultation_type", "").strip()
     consultation_types = []
 
@@ -751,6 +755,13 @@ def patient_doctor_availability(doctor_id):
                 for slot in availability
                 if slot.get("consultation_type") == consultation_type
             ]
+        availability_total = len(availability)
+        availability_total_pages = (
+            (availability_total + page_size - 1) // page_size
+        )
+        page = min(page, availability_total_pages) if availability_total_pages else 1
+        start_index = (page - 1) * page_size
+        availability = availability[start_index : start_index + page_size]
     except ApiError as error:
         if error.status_code in {401, 403}:
             return patient_api_error(error)
@@ -787,6 +798,10 @@ def patient_doctor_availability(doctor_id):
         selected_consultation_type=consultation_type,
         availability=availability,
         availability_by_date=availability_by_date,
+        availability_page=page,
+        availability_page_size=page_size,
+        availability_total=availability_total,
+        availability_total_pages=availability_total_pages,
         idempotency_keys=idempotency_keys,
         error_message=error_message,
     ), status_code
@@ -799,6 +814,7 @@ def book_appointment():
     slot_start_time = request.form.get("slot_start_time", "").strip()
     start_date = request.form.get("start_date", "").strip()
     end_date = request.form.get("end_date", "").strip()
+    availability_page = max(request.form.get("page", 1, type=int) or 1, 1)
     consultation_type = request.form.get("consultation_type", "").strip()
     payment_method = request.form.get("payment_method", "UPI").strip().upper()
     idempotency_key = request.form.get("idempotency_key", "").strip()
@@ -813,6 +829,7 @@ def book_appointment():
                 doctor_id=doctor_id,
                 **({"start_date": start_date} if start_date else {}),
                 **({"end_date": end_date} if end_date else {}),
+                **({"page": availability_page} if availability_page > 1 else {}),
                 **(
                     {"consultation_type": consultation_type}
                     if consultation_type
@@ -860,6 +877,7 @@ def book_appointment():
                     doctor_id=doctor_id,
                     **({"start_date": start_date} if start_date else {}),
                     **({"end_date": end_date} if end_date else {}),
+                    **({"page": availability_page} if availability_page > 1 else {}),
                     **(
                         {"consultation_type": consultation_type}
                         if consultation_type
@@ -888,6 +906,7 @@ def book_appointment():
             doctor_id=doctor_id,
             **({"start_date": start_date} if start_date else {}),
             **({"end_date": end_date} if end_date else {}),
+            **({"page": availability_page} if availability_page > 1 else {}),
             **(
                 {"consultation_type": consultation_type}
                 if consultation_type

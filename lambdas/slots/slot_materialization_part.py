@@ -105,6 +105,49 @@ def build_slot_id(doctor_id, consultation_id, start_time):
     return int(hashlib.sha256(identity).hexdigest()[:15], 16)
 
 
+def remove_blackout_slot(doctor_id, start_iso):
+    key = {
+        "doctor_id": doctor_id,
+        "slot_start_time": start_iso,
+    }
+    for _ in range(3):
+        slot = slots_table.get_item(Key=key, ConsistentRead=True).get("Item")
+        if not slot:
+            return
+
+        booked_count = int(slot.get("booked_count", 0))
+        try:
+            if booked_count > 0:
+                slots_table.update_item(
+                    Key=key,
+                    UpdateExpression="SET #status = :blocked",
+                    ConditionExpression="booked_count = :booked_count",
+                    ExpressionAttributeNames={"#status": "status"},
+                    ExpressionAttributeValues={
+                        ":blocked": 0,
+                        ":booked_count": booked_count,
+                    },
+                )
+            else:
+                slots_table.delete_item(
+                    Key=key,
+                    ConditionExpression=(
+                        "attribute_not_exists(booked_count) "
+                        "OR booked_count = :zero"
+                    ),
+                    ExpressionAttributeValues={":zero": 0},
+                )
+            return
+        except ClientError as error:
+            if error.response["Error"]["Code"] != (
+                "ConditionalCheckFailedException"
+            ):
+                raise
+
+    raise RuntimeError(
+        f"Could not reconcile blackout slot for doctor {doctor_id} at {start_iso}"
+    )
+
 
 def materialize_for_doctor_day(
     doctor,
@@ -168,9 +211,9 @@ def materialize_for_doctor_day(
                     is_blackout = True
                     break
 
+            start_iso = utc_iso(slot_local)
             if not is_blackout:
 
-                start_iso = utc_iso(slot_local)
                 end_iso = utc_iso(slot_end)
 
                 slot_id = build_slot_id(
@@ -228,6 +271,8 @@ def materialize_for_doctor_day(
                             "ConditionalCheckFailedException"
                         ):
                             raise
+            else:
+                remove_blackout_slot(doctor["doctor_id"], start_iso)
 
             # Always move forward using the original duration
             slot_local = slot_end
