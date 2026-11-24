@@ -28,3 +28,5 @@ EventBridge delivery is at-least-once; consumers should deduplicate each event b
 Refund settings are read from `/medislot/{environment}/FULL_REFUND_HOURS`, `/PARTIAL_REFUND_HOURS`, and `/PARTIAL_REFUND_PERCENT`. At exactly 24 hours, the partial tier applies; full refund requires strictly more than 24 hours. At exactly 12 hours, the partial tier still applies; no refund applies strictly below 12 hours. Doctor-initiated slot cancellations override the time windows and use the full tier.
 
 The ledger records calculated refund liability from successful payment amounts. There is no payment-provider integration in the configured services, so this implementation does not initiate a card/bank transfer; connect the ledger transaction to a payment processor before treating the amount as externally refunded.
+ 
+it have some notifications thing but not fully completed
