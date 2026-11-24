@@ -1,3 +1,4 @@
+
 name: Infrastructure Deployment
 
 on:
@@ -184,6 +185,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Added: Python 3.12 setup for SAM build
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Load Parameters
         run: |
           echo "ENVIRONMENT=$(jq -r '.[] | select(.ParameterKey=="EnvironmentName") | .ParameterValue' ${{ env.PARAMETERS_FILE }})" >> $GITHUB_ENV
@@ -203,6 +210,7 @@ jobs:
 
       - name: Build Auth Stack
         run: |
+          python --version
           sam build \
             --template-file ${{ env.TEMPLATE_FILE }}
 
@@ -252,6 +260,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Added: Python 3.12 setup for SAM build
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Load Parameters
         run: |
           ENVIRONMENT=$(jq -r '.[] | select(.ParameterKey=="EnvironmentName") | .ParameterValue' parameters/doctor-parameters.json)
@@ -261,6 +275,7 @@ jobs:
           echo "PORTAL_KEY_NAME=$PORTAL_KEY_NAME" >> $GITHUB_ENV
 
           echo "Loaded Environment: $ENVIRONMENT"
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
@@ -268,6 +283,7 @@ jobs:
 
       - name: Setup SAM CLI
         uses: aws-actions/setup-sam@v2
+
       - name: Debug Environment
         run: |
           echo "ENVIRONMENT=${ENVIRONMENT}"
@@ -291,6 +307,7 @@ jobs:
           aws s3 cp doctor-portal.zip \
             "s3://${ASSETS_BUCKET}/doctor-portal/doctor-portal.zip" \
             --region ${{ secrets.AWS_REGION }}
+
       - name: Validate Doctor Stack
         run: |
           sam validate \
@@ -298,6 +315,7 @@ jobs:
 
       - name: Build Doctor Stack
         run: |
+          python --version
           sam build \
             --template-file ${{ env.TEMPLATE_FILE }}
 
@@ -464,6 +482,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Added: Python 3.12 setup for SAM build
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Load Environment
         run: |
           echo "ENVIRONMENT=$(jq -r '.[] | select(.ParameterKey=="EnvironmentName") | .ParameterValue' ${{ env.PARAMETERS_FILE }})" >> $GITHUB_ENV
@@ -483,6 +507,7 @@ jobs:
 
       - name: Build Patient Stack
         run: |
+          python --version
           sam build \
             --template-file ${{ env.TEMPLATE_FILE }}
 
