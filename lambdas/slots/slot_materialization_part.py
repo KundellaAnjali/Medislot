@@ -187,15 +187,18 @@ def materialize_for_doctor_day(
                             "consultation_type_id": pattern[
                                 "consultation_type_id"
                             ],
-                            "slot_start_time": start_iso,
-                            "slot_end_time": end_iso,
+                            "consultation_name": pattern[
+                                "consultation_name"
+                            ],
+                            "start_time": start_iso,
+                            "end_time": end_iso,
                             "local_date": local_day.isoformat(),
                             "capacity": int(pattern["capacity"]),
                             "booked_count": 0,
                             "version": 0,
                             "status": 1
                         },
-                        ConditionExpression="attribute_not_exists(slot_start_time)"
+                        ConditionExpression="attribute_not_exists(slot_id)"
                     )
 
                     created += 1
@@ -215,7 +218,6 @@ def materialize_for_doctor_day(
 
 def materialize_handler(event, context):
     started_at = perf_counter()
-    request_id = getattr(context, "aws_request_id", "unknown")
     connection = None
     created_count = 0
     processed_dates = 0
@@ -230,7 +232,7 @@ def materialize_handler(event, context):
             cursor.execute(
                 """
                 SELECT d.doctor_id, ct.consultation_type_id,
-                       ct.duration_minutes, ct.capacity,
+                       ct.consultation_name, ct.duration_minutes, ct.capacity,
                        ap.day_of_week, ap.start_time, ap.end_time
                 FROM doctors d
                 JOIN doctor_consulting_types dct
@@ -300,22 +302,18 @@ def materialize_handler(event, context):
             processed_dates,
             created_count,
             duration_ms,
-            request_id,
+            getattr(context, "aws_request_id", "unknown"),
         )
         return {
             "statusCode": 200,
             "created_slots": created_count,
             "processed_dates": processed_dates,
         }
-    except Exception as error:
+    except Exception:
         duration_ms = (perf_counter() - started_at) * 1000
         publish_metric("SlotMaterializationErrors", 1)
         publish_metric("SlotMaterializationDurationMs", duration_ms, "Milliseconds")
-        logger.exception(
-            "Slot materialization failed: error_type=%s request_id=%s",
-            type(error).__name__,
-            request_id,
-        )
+        logger.exception("Slot materialization failed")
         raise
     finally:
         if connection:

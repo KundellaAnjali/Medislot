@@ -94,7 +94,6 @@ def build_filters(filters):
 
 def search_doctors(connection, filters, page, limit):
     clauses, filter_values = build_filters(filters)
-    clauses.insert(0, "d.is_verified = TRUE")
     where_clause = f"WHERE {' AND '.join(clauses)}" if clauses else ""
 
     with connection.cursor() as cursor:
@@ -121,9 +120,6 @@ def search_doctors(connection, filters, page, limit):
                     SEPARATOR ', '
                 ) AS specialization,
                 h.city,
-                d.qualification AS qualifications,
-                d.languages,
-                d.experience_years,
                 d.is_verified AS verification_status
             FROM doctors d
             LEFT JOIN hospitals h ON h.hospital_id = d.hospital_id
@@ -138,9 +134,6 @@ def search_doctors(connection, filters, page, limit):
                 d.last_name,
                 h.hospital_name,
                 h.city,
-                d.qualification,
-                d.languages,
-                d.experience_years,
                 d.is_verified
             ORDER BY d.doctor_id
             LIMIT %s OFFSET %s
@@ -162,20 +155,10 @@ def search_doctors(connection, filters, page, limit):
 
 
 def lambda_handler(event, context):
-    request_id = getattr(context, "aws_request_id", "unknown")
     authorizer = event.get("requestContext", {}).get("authorizer", {})
     if not authorizer.get("userId"):
-        logger.warning(
-            "Doctor search rejected: missing authenticated identity request_id=%s",
-            request_id,
-        )
         return response(401, {"message": "Authentication is required."})
     if authorizer.get("role") != "PATIENT":
-        logger.warning(
-            "Doctor search access denied: expected_role=PATIENT actual_role=%s request_id=%s",
-            authorizer.get("role", "unknown"),
-            request_id,
-        )
         return response(
             403,
             {"message": "You are not allowed to search the patient directory."},
@@ -187,22 +170,11 @@ def lambda_handler(event, context):
     if method != "GET" or not (
         resource == "/doctors/search" or path.endswith("/doctors/search")
     ):
-        logger.warning(
-            "Doctor search route not found: method=%s path=%s request_id=%s",
-            method,
-            path,
-            request_id,
-        )
         return response(404, {"message": "Route not found."})
 
     try:
         filters, page, limit = parse_search(event)
     except SearchValidationError as error:
-        logger.warning(
-            "Doctor search request rejected: reason=%s request_id=%s",
-            str(error),
-            request_id,
-        )
         return response(400, {"message": str(error)})
 
     try:
@@ -217,18 +189,12 @@ def lambda_handler(event, context):
             page,
             limit,
             results["pagination"]["total"],
-            request_id,
+            getattr(context, "aws_request_id", "unknown"),
         )
         return response(200, results)
     except pymysql.MySQLError:
         logger.exception(
             "Doctor search database request failed: request_id=%s",
-            request_id,
+            getattr(context, "aws_request_id", "unknown"),
         )
         return response(500, {"message": "Could not search doctors right now."})
-    except Exception:
-        logger.exception(
-            "Doctor search failed unexpectedly: request_id=%s",
-            request_id,
-        )
-        raise

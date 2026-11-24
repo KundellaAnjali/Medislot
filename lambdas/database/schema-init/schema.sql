@@ -198,17 +198,9 @@ CREATE TABLE IF NOT EXISTS availability_patterns (
 
     day_of_week VARCHAR(20) NOT NULL,
 
-    repeat_days VARCHAR(100) NULL,
-
-    start_date DATE NULL,
-
-    end_date DATE NULL,
-
     start_time TIME NOT NULL,
 
     end_time TIME NOT NULL,
-
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
