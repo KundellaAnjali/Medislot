@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import time
+import uuid
 from datetime import datetime, timezone
 
 import boto3
@@ -25,6 +26,7 @@ logger.setLevel(logging.INFO)
 
 SLOTS_TABLE_NAME = os.environ["SLOTS_TABLE_NAME"]
 IDEMPOTENCY_TABLE_NAME = os.environ["IDEMPOTENCY_TABLE_NAME"]
+ENVIRONMENT = os.environ.get("ENVIRONMENT_NAME", "").lower()
 RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4, 0.8)
 UTC_SLOT_TIME_PATTERN = re.compile(
     r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|\+00:00)$"
@@ -66,6 +68,17 @@ def publish_metric(metric_name, value=1):
         logger.exception("Could not publish booking metric %s", metric_name)
 
 
+PAYMENT_METHODS = {
+    "CREDIT_CARD",
+    "DEBIT_CARD",
+    "UPI",
+    "NET_BANKING",
+    "WALLET",
+    "CASH",
+}
+PAYMENT_OUTCOMES = {"SUCCESS", "FAILED"}
+
+
 def parse_booking_request(event):
     raw_body = event.get("body")
     if event.get("isBase64Encoded") and raw_body:
@@ -80,10 +93,16 @@ def parse_booking_request(event):
         raise BookingError(400, "Request body must be valid JSON.") from error
     if not isinstance(body, dict):
         raise BookingError(400, "Request body must be a JSON object.")
-    if set(body) != {"doctor_id", "slot_start_time"}:
+    allowed = {
+        "doctor_id",
+        "slot_start_time",
+        "payment_method",
+        "test_payment_outcome",
+    }
+    if not {"doctor_id", "slot_start_time"}.issubset(body) or set(body) - allowed:
         raise BookingError(
             400,
-            "Request must contain only doctor_id and slot_start_time.",
+            "Request must contain doctor_id and slot_start_time, with optional payment_method and test_payment_outcome.",
         )
 
     doctor_value = body["doctor_id"]
@@ -116,7 +135,35 @@ def parse_booking_request(event):
         .isoformat(timespec=timespec)
         .replace("+00:00", "Z")
     )
-    return doctor_id, slot_start_time
+    payment_method = body.get("payment_method", "UPI")
+    if (
+        not isinstance(payment_method, str)
+        or payment_method.upper() not in PAYMENT_METHODS
+    ):
+        raise BookingError(
+            400,
+            f"payment_method must be one of: {', '.join(sorted(PAYMENT_METHODS))}.",
+        )
+    payment_outcome = body.get("test_payment_outcome", "SUCCESS")
+    if (
+        not isinstance(payment_outcome, str)
+        or payment_outcome.upper() not in PAYMENT_OUTCOMES
+    ):
+        raise BookingError(
+            400,
+            "test_payment_outcome must be SUCCESS or FAILED.",
+        )
+    if "test_payment_outcome" in body and ENVIRONMENT.startswith(("prod", "live")):
+        raise BookingError(
+            400,
+            "test_payment_outcome is available only in non-production environments.",
+        )
+    return (
+        doctor_id,
+        slot_start_time,
+        payment_method.upper(),
+        payment_outcome.upper(),
+    )
 
 
 def get_slot(doctor_id, slot_start_time):
@@ -237,9 +284,17 @@ def release_slot_reservation(doctor_id, slot_start_time):
             doctor_id,
             slot_start_time,
         )
+        raise
 
 
-def create_booking(user_id, idempotency_key, doctor_id, slot_start_time):
+def create_booking(
+    user_id,
+    idempotency_key,
+    doctor_id,
+    slot_start_time,
+    payment_method,
+    payment_outcome,
+):
     service = AppointmentService(
         repository=AppointmentRepository(),
         idempotency_table=idempotency_table,
@@ -254,6 +309,8 @@ def create_booking(user_id, idempotency_key, doctor_id, slot_start_time):
             idempotency_key,
             doctor_id,
             slot_start_time,
+            payment_method,
+            payment_outcome,
         )
     except AppointmentServiceError as error:
         raise BookingError(error.status_code, str(error)) from error
@@ -311,20 +368,42 @@ def lambda_handler(event, context):
 
     try:
         idempotency_key = get_idempotency_key(event)
-        doctor_id, slot_start_time = parse_booking_request(event)
+        (
+            doctor_id,
+            slot_start_time,
+            payment_method,
+            payment_outcome,
+        ) = parse_booking_request(event)
         result, created = create_booking(
             user_id,
             idempotency_key,
             doctor_id,
             slot_start_time,
+            payment_method,
+            payment_outcome,
         )
+        if result.get("payment_status", "SUCCESS") == "FAILED":
+            publish_metric("FailedBookings")
+            logger.info(
+                "Test payment failed: patient_user_id=%s doctor_id=%s "
+                "appointment_id=%s transaction_id=%s request_id=%s",
+                user_id,
+                doctor_id,
+                result["appointment_id"],
+                result["transaction_id"],
+                request_id,
+            )
+            return response(402, result)
         publish_metric("SuccessfulBookings")
         logger.info(
             "Appointment booked: patient_user_id=%s doctor_id=%s "
-            "appointment_id=%s created=%s request_id=%s",
+            "appointment_id=%s payment_method=%s transaction_id=%s "
+            "created=%s request_id=%s",
             user_id,
             doctor_id,
             result["appointment_id"],
+            result["payment_method"],
+            result["transaction_id"],
             created,
             request_id,
         )

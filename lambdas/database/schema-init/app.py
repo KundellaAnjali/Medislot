@@ -106,6 +106,64 @@ def ensure_index(cursor, table_name, index_name, columns):
     return True
 
 
+def ensure_unique_index(cursor, table_name, index_name, columns):
+    cursor.execute(
+        """
+        SELECT COUNT(*)
+        FROM information_schema.statistics
+        WHERE table_schema = DATABASE()
+          AND table_name = %s
+          AND index_name = %s
+        """,
+        (table_name, index_name),
+    )
+    if cursor.fetchone()[0]:
+        return False
+
+    column_list = ", ".join(f"`{column}`" for column in columns)
+    cursor.execute(
+        f"ALTER TABLE `{table_name}` ADD UNIQUE INDEX `{index_name}` ({column_list})"
+    )
+    return True
+
+
+def drop_index(cursor, table_name, index_name, supporting_index=None):
+    cursor.execute(
+        """
+        SELECT COUNT(*)
+        FROM information_schema.statistics
+        WHERE table_schema = DATABASE()
+          AND table_name = %s
+          AND index_name = %s
+        """,
+        (table_name, index_name),
+    )
+    if not cursor.fetchone()[0]:
+        return False
+
+    if supporting_index:
+        support_name, support_columns = supporting_index
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM information_schema.statistics
+            WHERE table_schema = DATABASE()
+              AND table_name = %s
+              AND column_name = %s
+              AND seq_in_index = 1
+              AND index_name <> %s
+            """,
+            (table_name, support_columns[0], index_name),
+        )
+        if not cursor.fetchone()[0]:
+            ensure_index(cursor, table_name, support_name, support_columns)
+
+    cursor.execute(
+        f"ALTER TABLE `{table_name}` DROP INDEX `{index_name}`"
+    )
+    return True
+
+
 def table_exists(cursor, table_name):
     cursor.execute(
         """
@@ -116,6 +174,84 @@ def table_exists(cursor, table_name):
         (table_name,),
     )
     return bool(cursor.fetchone()[0])
+
+
+def migrate_simulated_payments(cursor):
+    cursor.execute(
+        """
+        UPDATE payments
+        SET transaction_id = CONCAT('PAY-', REPLACE(UUID(), '-', '')),
+            payment_method = CASE MOD(payment_id, 6)
+                WHEN 0 THEN 'CREDIT_CARD'
+                WHEN 1 THEN 'DEBIT_CARD'
+                WHEN 2 THEN 'UPI'
+                WHEN 3 THEN 'NET_BANKING'
+                WHEN 4 THEN 'WALLET'
+                ELSE 'CASH'
+            END,
+            status = 'SUCCESS',
+            paid_at = COALESCE(paid_at, created_at, UTC_TIMESTAMP(6))
+        WHERE status = 'SIMULATED'
+           OR payment_method = 'SIMULATED'
+           OR transaction_id LIKE 'SIMULATED-%'
+        """
+    )
+    migrated_rows = cursor.rowcount
+    cursor.execute(
+        """
+        UPDATE payments p
+        JOIN payments earlier
+          ON earlier.transaction_id = p.transaction_id
+         AND earlier.payment_id < p.payment_id
+        SET p.transaction_id = CONCAT('PAY-', REPLACE(UUID(), '-', ''))
+        """
+    )
+    migrated_rows += cursor.rowcount
+    return migrated_rows
+
+
+def migrate_pending_refunds(cursor):
+    cursor.execute(
+        """
+        UPDATE refunds
+        SET refund_transaction_id = CONCAT('REF-', REPLACE(UUID(), '-', '')),
+            refunded_at = CASE
+                WHEN status = 'PENDING' THEN UTC_TIMESTAMP(6)
+                ELSE COALESCE(refunded_at, UTC_TIMESTAMP(6))
+            END,
+            status = 'SUCCESS'
+        WHERE status IN ('PENDING', 'SUCCESS')
+          AND refund_amount > 0
+          AND (
+              status = 'PENDING'
+              OR refund_transaction_id IS NULL
+              OR refunded_at IS NULL
+          )
+        """
+    )
+    migrated_rows = cursor.rowcount
+    cursor.execute(
+        """
+        UPDATE payments p
+        JOIN refunds r ON r.appointment_id = p.appointment_id
+        SET p.status = 'REFUNDED'
+        WHERE r.status = 'SUCCESS'
+          AND r.refund_amount > 0
+          AND p.status IN ('SUCCESS', 'PAID', 'COMPLETED', 'SIMULATED')
+        """
+    )
+    migrated_rows += cursor.rowcount
+    cursor.execute(
+        """
+        UPDATE refunds r
+        JOIN refunds earlier
+          ON earlier.refund_transaction_id = r.refund_transaction_id
+         AND earlier.refund_id < r.refund_id
+        SET r.refund_transaction_id = CONCAT('REF-', REPLACE(UUID(), '-', ''))
+        """
+    )
+    migrated_rows += cursor.rowcount
+    return migrated_rows
 
 
 def migrate_refunds(cursor):
@@ -301,6 +437,13 @@ def lambda_handler(event, context):
                     executed_statements += 1
 
             migrate_refunds(cursor)
+            if drop_index(
+                cursor,
+                "refunds",
+                "idx_refunds_patient_created",
+                ("idx_refunds_patient", ("patient_id",)),
+            ):
+                executed_statements += 1
 
             doctor_search_indexes = (
                 (
@@ -504,16 +647,25 @@ def lambda_handler(event, context):
             if "is_active" in consultation_columns:
                 cursor.execute("ALTER TABLE consultation_types DROP COLUMN is_active")
 
-            with open("seed-doctors.sql", "r", encoding="utf-8") as seed_file:
-                seed_sql = seed_file.read()
+            if migrate_simulated_payments(cursor):
+                executed_statements += 1
+            if migrate_pending_refunds(cursor):
+                executed_statements += 1
 
-            seeded_statements = 0
-            for statement in seed_sql.split(";"):
-                statement = statement.strip()
-                if statement:
-                    cursor.execute(statement)
-                    seeded_statements += 1
-            executed_statements += seeded_statements
+            if ensure_unique_index(
+                cursor,
+                "payments",
+                "uq_payment_transaction_id",
+                ("transaction_id",),
+            ):
+                executed_statements += 1
+            if ensure_unique_index(
+                cursor,
+                "refunds",
+                "uq_refund_transaction_id",
+                ("refund_transaction_id",),
+            ):
+                executed_statements += 1
 
         publish_metric(
             "SchemaInitializationSuccess",
@@ -530,7 +682,6 @@ def lambda_handler(event, context):
             "SchemaInitializationCompleted",
             {
                 "executedStatements": executed_statements,
-                "seedStatements": seeded_statements,
             }
         )
 
@@ -540,7 +691,6 @@ def lambda_handler(event, context):
                 {
                     "message": "Schema initialized successfully",
                     "executed_statements": executed_statements,
-                    "seed_statements": seeded_statements,
                 }
             )
         }

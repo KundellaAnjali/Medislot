@@ -61,6 +61,7 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
 .button { min-height: 38px; display: inline-flex; align-items: center; justify-content: center; gap: 12px; padding: 0 14px; border: 1px solid transparent; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 700; white-space: nowrap; }
 .button.primary { color: #fff; background: var(--teal); }
 .button.primary:hover { background: var(--teal-dark); }
+.button.primary:disabled { color: #5f6d69; background: #e4eae7; border-color: #d3ddd8; cursor: not-allowed; }
 .button.secondary { color: var(--ink); background: #fff; border-color: var(--line); }
 .button.secondary:hover { border-color: var(--teal); color: var(--teal); }
 .schedule-list { border-top: 1px solid var(--line); }
@@ -319,9 +320,12 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
 .patient-availability { margin-top: 24px; padding: 25px; border: 1px solid var(--line); border-radius: 5px; background: #fff; }
 .availability-form { display: flex; align-items: end; flex-wrap: wrap; gap: 14px; }
 .availability-form label { display: grid; gap: 7px; color: var(--muted); font-size: 12px; }
+.availability-day { display: grid; gap: 10px; }
+.availability-day + .availability-day { margin-top: 24px; }
+.availability-day-heading { padding-bottom: 10px; border-bottom: 1px solid var(--line); color: var(--ink); font-size: 16px; }
 .availability-results { display: grid; gap: 10px; }
 .availability-slot { padding: 16px; border: 1px solid var(--line); border-radius: 4px; }
-.availability-slot h2 { margin-bottom: 10px; font-size: 14px; }
+.availability-slot h2, .availability-slot h3 { margin-bottom: 10px; font-size: 14px; }
 .availability-slot p { margin: 6px 0 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .availability-slot p strong { color: var(--ink); }
 .public-doctor-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
@@ -392,10 +396,23 @@ input:focus, select:focus { outline: 2px solid #9bd1c4; outline-offset: 1px; bor
 
 .appointment-booking-form {
   display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
   justify-content: flex-end;
   padding-top: 12px;
   border-top: 1px solid var(--line);
 }
+
+.appointment-booking-form label {
+  display: grid;
+  flex: 1 1 190px;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.appointment-booking-form select { min-width: 0; }
 
 .appointment-booking-form .button {
   min-width: 190px;
@@ -600,7 +617,7 @@ input:focus, select:focus {
   background: linear-gradient(145deg, #fff, #fbfdfc);
 }
 .availability-slot-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.availability-slot h2 { font-size: 16px; }
+.availability-slot h2, .availability-slot h3 { font-size: 16px; }
 .consultation-badge { padding: 7px 10px; border-radius: 999px; color: #24654f; background: #eaf6ed; font-size: 11px; font-weight: 700; }
 .availability-slot-details { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
 .availability-slot-details > div { min-width: 0; padding: 12px; border-radius: 8px; background: #f4f8f6; }
@@ -1084,4 +1101,215 @@ input:focus, select:focus {
 @media (prefers-reduced-motion: reduce) {
   .patient-quick-action { transition: none; }
   .patient-quick-action:hover { transform: none; }
+}
+
+/* Shared dashboard polish */
+.doctor-app,
+.patient-dashboard-page {
+  background:
+    radial-gradient(ellipse at 82% 0%, rgb(213 237 228 / 34%), transparent 34rem),
+    #f3f7f5;
+}
+
+.doctor-sidebar,
+.patient-dashboard-page .patient-sidebar {
+  border-color: #e2ebe6;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 8px 0 28px rgb(22 55 46 / 4%);
+}
+
+.sidebar-link,
+.patient-sidebar-link {
+  transition: color .18s ease, background .18s ease, transform .18s ease;
+}
+
+.sidebar-link:hover,
+.patient-sidebar-link:hover {
+  transform: translateX(2px);
+}
+
+.sidebar-link.is-active,
+.patient-sidebar-link.is-active {
+  box-shadow: inset 3px 0 0 #188579;
+}
+
+.main-header,
+.patient-main-header {
+  border-color: rgb(220 232 226 / 85%);
+  background: rgb(255 255 255 / 88%);
+  box-shadow: 0 8px 24px rgb(24 52 43 / 3%);
+  backdrop-filter: blur(16px);
+}
+
+.doctor-welcome {
+  border-radius: 18px;
+  box-shadow: 0 20px 46px rgb(13 87 78 / 14%);
+}
+
+.doctor-welcome-actions .button,
+.patient-welcome-actions .button {
+  min-height: 44px;
+}
+
+.metric-panel,
+.dashboard-panel,
+.patient-appointments,
+.patient-profile,
+.doctor-search {
+  border-color: #e3ebe7;
+  box-shadow: 0 8px 28px rgb(28 59 48 / 5%);
+}
+
+.metric-panel,
+.dashboard-panel,
+.patient-appointment-card,
+.doctor-search-card {
+  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+
+.dashboard-panel:hover,
+.patient-appointments:hover,
+.patient-profile:hover,
+.doctor-search:hover {
+  border-color: #d3e4dc;
+  box-shadow: 0 14px 34px rgb(28 59 48 / 7%);
+}
+
+.metric-panel:hover,
+.patient-appointment-card:hover {
+  transform: translateY(-2px);
+  border-color: #c5ddd2;
+  box-shadow: 0 12px 28px rgb(28 59 48 / 8%);
+}
+
+.patient-appointment-card {
+  border-color: #e5ede9;
+  border-radius: 12px;
+}
+
+.patient-appointment-details > p > strong {
+  color: #64757a;
+}
+
+.view-heading {
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgb(220 232 226 / 78%);
+}
+
+.view-heading .eyebrow,
+.panel-heading .eyebrow {
+  letter-spacing: .12em;
+}
+
+.view-enter {
+  animation: dashboard-view-enter .24s ease both;
+}
+
+@keyframes dashboard-view-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.doctor-app :is(button, a, input, select),
+.patient-dashboard-page :is(button, a, input, select) {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.doctor-app :is(button, a, input, select):focus-visible,
+.patient-dashboard-page :is(button, a, input, select):focus-visible {
+  outline: 3px solid rgb(66 161 145 / 48%);
+  outline-offset: 3px;
+}
+
+.doctor-app .button:active,
+.patient-dashboard-page .button:active,
+.patient-quick-action:active {
+  transform: translateY(1px);
+}
+
+.doctor-app input::placeholder,
+.patient-dashboard-page input::placeholder {
+  color: #96a4a4;
+}
+
+.doctor-app :disabled,
+.patient-dashboard-page :disabled {
+  cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+  .doctor-app .sidebar-nav {
+    display: flex;
+    max-width: 100%;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+    padding-bottom: 3px;
+  }
+
+  .doctor-app .sidebar-nav .sidebar-link {
+    flex: 0 0 auto;
+    min-width: max-content;
+    padding-inline: 9px;
+  }
+
+  .doctor-app .sidebar-link.is-active,
+  .patient-sidebar-link.is-active {
+    box-shadow: inset 0 -3px 0 #188579;
+  }
+}
+
+@media (max-width: 680px) {
+  .doctor-app .doctor-sidebar {
+    box-shadow: 0 8px 22px rgb(24 52 43 / 7%);
+  }
+
+  .doctor-app .main-header,
+  .patient-main-header {
+    box-shadow: 0 5px 16px rgb(24 52 43 / 4%);
+  }
+
+  .patient-dashboard-page .patient-sidebar-nav {
+    justify-content: flex-start;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+  }
+
+  .patient-dashboard-page .patient-sidebar-nav .patient-sidebar-link {
+    flex: 0 0 auto;
+    min-width: max-content;
+    padding-inline: 10px;
+  }
+
+  .doctor-app .view-heading {
+    padding-bottom: 12px;
+  }
+
+  .patient-appointment-card:hover,
+  .metric-panel:hover {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-enter {
+    animation: none;
+  }
+
+  .sidebar-link,
+  .patient-sidebar-link,
+  .metric-panel,
+  .dashboard-panel,
+  .patient-appointment-card,
+  .doctor-search-card {
+    transition: none;
+  }
+
+  .sidebar-link:hover,
+  .patient-sidebar-link:hover,
+  .metric-panel:hover,
+  .patient-appointment-card:hover {
+    transform: none;
+  }
 }

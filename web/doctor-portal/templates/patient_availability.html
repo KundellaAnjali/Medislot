@@ -14,7 +14,7 @@
     </form>
   </header>
   <main class="patient-content">
-    <a class="button secondary availability-back-link" href="{{ url_for('patient_dashboard') }}">Patient dashboard</a>
+    <a class="button secondary availability-back-link" href="{{ url_for('patient_dashboard') }}">Previous</a>
     <section class="availability-hero">
       <p class="eyebrow">Find care</p>
       <h1>Choose a time that works for you.</h1>
@@ -47,33 +47,49 @@
         <p class="notice error" role="alert" data-auto-dismiss>{{ error_message }}</p>
       {% elif availability is not none %}
         <p class="doctor-search-count">
-          {{ availability|length }} slot{{ '' if availability|length == 1 else 's' }} available
+          {{ availability|length }} slot{{ '' if availability|length == 1 else 's' }} listed
         </p>
         {% if availability %}
-          <div class="availability-results">
-            {% for slot in availability %}
-              <article class="availability-slot availability-slot-card">
-                <div class="availability-slot-heading">
-                  <h2>{{ slot.consultation_type or 'Consultation' }}</h2>
-                  <span class="consultation-badge">{{ slot.available_seats }} seat{{ '' if slot.available_seats == 1 else 's' }} available</span>
-                </div>
-                <dl class="availability-slot-details">
-                  <div><dt>Starts</dt><dd>{{ slot.start_time }}</dd></div>
-                  <div><dt>Ends</dt><dd>{{ slot.end_time }}</dd></div>
-                  <div><dt>Capacity</dt><dd>{{ slot.booked_count }} of {{ slot.capacity }} booked</dd></div>
-                </dl>
-                <form method="post" action="{{ url_for('book_appointment') }}" class="appointment-booking-form">
-                  <input type="hidden" name="doctor_id" value="{{ doctor_id }}">
-                  <input type="hidden" name="slot_start_time" value="{{ slot.start_time }}">
-                  <input type="hidden" name="start_date" value="{{ start_date }}">
-                  <input type="hidden" name="end_date" value="{{ end_date }}">
-                  <input type="hidden" name="consultation_type" value="{{ selected_consultation_type }}">
-                  <input type="hidden" name="idempotency_key" value="{{ idempotency_keys[slot.start_time] }}">
-                  <button class="button primary" type="submit">Book this appointment</button>
-                </form>
-              </article>
+          {% for day in availability_by_date %}
+            {% set day_loop = loop %}
+            <section class="availability-day" aria-labelledby="availability-day-{{ loop.index }}">
+              <h2 class="availability-day-heading" id="availability-day-{{ loop.index }}">{{ day.date[8:10] }}-{{ day.date[5:7] }}-{{ day.date[:4] }}</h2>
+              <div class="availability-results">
+                {% for slot in day.slots %}
+                  <article class="availability-slot availability-slot-card">
+                    <div class="availability-slot-heading">
+                      <h3>{{ slot.consultation_type or 'Consultation' }}</h3>
+                      <span class="consultation-badge">{{ 'Booked' if slot.is_full or slot.available_seats <= 0 else slot.available_seats ~ ' seat' ~ ('' if slot.available_seats == 1 else 's') ~ ' available' }}</span>
+                    </div>
+                    <dl class="availability-slot-details">
+                      <div><dt>Starts</dt><dd>{{ slot.start_time }}</dd></div>
+                      <div><dt>Ends</dt><dd>{{ slot.end_time }}</dd></div>
+                      <div><dt>Capacity</dt><dd>{{ slot.booked_count }} of {{ slot.capacity }} booked</dd></div>
+                    </dl>
+                    <form method="post" action="{{ url_for('book_appointment') }}" class="appointment-booking-form">
+                      <input type="hidden" name="doctor_id" value="{{ doctor_id }}">
+                      <input type="hidden" name="slot_start_time" value="{{ slot.start_time }}">
+                      <input type="hidden" name="start_date" value="{{ start_date }}">
+                      <input type="hidden" name="end_date" value="{{ end_date }}">
+                      <input type="hidden" name="consultation_type" value="{{ selected_consultation_type }}">
+                      <input type="hidden" name="idempotency_key" value="{{ idempotency_keys[slot.start_time] }}">
+                      {% if slot.available_seats > 0 %}
+                        <label for="payment-method-{{ day_loop.index }}-{{ loop.index }}">Payment method
+                          <select id="payment-method-{{ day_loop.index }}-{{ loop.index }}" name="payment_method">
+                            {% for method in ['UPI', 'CREDIT_CARD', 'DEBIT_CARD', 'NET_BANKING', 'WALLET', 'CASH'] %}
+                              <option value="{{ method }}">{{ method|replace('_', ' ')|title }}</option>
+                            {% endfor %}
+                          </select>
+                        </label>
+                      {% endif %}
+                      <button class="button primary" type="submit" {% if slot.is_full or slot.available_seats <= 0 %}disabled aria-describedby="slot-booked-{{ day_loop.index }}-{{ loop.index }}"{% endif %}>{{ 'Booked' if slot.is_full or slot.available_seats <= 0 else 'Book this appointment' }}</button>
+                      {% if slot.is_full or slot.available_seats <= 0 %}<span id="slot-booked-{{ day_loop.index }}-{{ loop.index }}" class="notice" role="status">This time slot is fully booked.</span>{% endif %}
+                    </form>
+                  </article>
+                {% endfor %}
+              </div>
+            </section>
             {% endfor %}
-          </div>
         {% else %}
           <p class="doctor-search-empty">No available slots were found in this date range.</p>
         {% endif %}

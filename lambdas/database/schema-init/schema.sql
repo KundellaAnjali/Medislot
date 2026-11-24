@@ -299,6 +299,9 @@ CREATE TABLE IF NOT EXISTS payments (
 
     paid_at TIMESTAMP NULL,
 
+    CONSTRAINT uq_payment_transaction_id
+        UNIQUE (transaction_id),
+
     CONSTRAINT fk_payment_appointment
         FOREIGN KEY (
             appointment_id
@@ -337,13 +340,14 @@ CREATE TABLE IF NOT EXISTS refunds (
 
     refunded_at TIMESTAMP NULL,
 
+    CONSTRAINT uq_refund_transaction_id
+        UNIQUE (refund_transaction_id),
+
     CONSTRAINT fk_refund_appointment
         FOREIGN KEY (appointment_id)
         REFERENCES appointments(appointment_id),
 
     CONSTRAINT fk_refund_patient
         FOREIGN KEY (patient_id)
-        REFERENCES patients(patient_id),
-
-    INDEX idx_refunds_patient_created (patient_id, created_at, refund_id)
+        REFERENCES patients(patient_id)
 );

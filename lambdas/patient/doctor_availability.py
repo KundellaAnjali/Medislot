@@ -120,8 +120,6 @@ def get_slots(doctor_id, start_date, end_date):
             continue
         capacity = int(slot["capacity"])
         booked_count = int(slot.get("booked_count", 0))
-        if booked_count >= capacity:
-            continue
         slots.append(
             {
                 "slot_id": int(slot["slot_id"]),
@@ -132,6 +130,7 @@ def get_slots(doctor_id, start_date, end_date):
                 "capacity": capacity,
                 "booked_count": booked_count,
                 "available_seats": capacity - booked_count,
+                "is_full": booked_count >= capacity,
             }
         )
 

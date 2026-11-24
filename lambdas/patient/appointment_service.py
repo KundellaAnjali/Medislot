@@ -40,16 +40,29 @@ class AppointmentService:
         self.reserve_slot = reserve_slot
         self.release_slot = release_slot
 
-    def book(self, user_id, key, doctor_id, slot_start_time):
+    def book(
+        self,
+        user_id,
+        key,
+        doctor_id,
+        slot_start_time,
+        payment_method="UPI",
+        payment_outcome="SUCCESS",
+    ):
         idempotency_key = hashlib.sha256(
             f"{user_id}:{key}".encode("utf-8")
         ).hexdigest()
+        request_data = {
+            "doctor_id": doctor_id,
+            "slot_start_time": slot_start_time,
+        }
+        if payment_method != "UPI":
+            request_data["payment_method"] = payment_method
+        if payment_outcome != "SUCCESS":
+            request_data["payment_outcome"] = payment_outcome
         request_hash = hashlib.sha256(
             json.dumps(
-                {
-                    "doctor_id": doctor_id,
-                    "slot_start_time": slot_start_time,
-                },
+                request_data,
                 sort_keys=True,
                 separators=(",", ":"),
             ).encode("utf-8")
@@ -84,6 +97,8 @@ class AppointmentService:
                 slot_start_time=slot_start_time,
                 slot_id=int(slot["slot_id"]),
                 consultation_type_id=int(slot["consultation_type_id"]),
+                payment_method=payment_method,
+                payment_outcome=payment_outcome,
                 reserve_slot=reserve,
                 release_slot=release,
             )
@@ -154,6 +169,8 @@ class AppointmentService:
         if record.get("event_published"):
             return
         payload = record["response_payload"]
+        if payload.get("payment_status", "SUCCESS") != "SUCCESS":
+            return
         event_detail = {
             "appointment_id": str(payload["appointment_id"]),
             "patient_id": str(payload["patient_id"]),

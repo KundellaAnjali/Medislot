@@ -1,5 +1,6 @@
 import logging
 import os
+import uuid
 from datetime import datetime, timezone
 
 import boto3
@@ -31,6 +32,8 @@ class AppointmentRepository:
         slot_start_time,
         slot_id,
         consultation_type_id,
+        payment_method,
+        payment_outcome,
         reserve_slot,
         release_slot,
     ):
@@ -118,6 +121,13 @@ class AppointmentRepository:
                 appointment_start = datetime.fromisoformat(
                     slot_start_time.replace("Z", "+00:00")
                 ).replace(tzinfo=None)
+                transaction_id = f"PAY-{uuid.uuid4().hex.upper()}"
+                appointment_status = (
+                    "CONFIRMED" if payment_outcome == "SUCCESS" else "CANCELLED"
+                )
+                booking_status = (
+                    "BOOKED" if payment_outcome == "SUCCESS" else "CANCELLED"
+                )
 
                 cursor.execute(
                     """
@@ -125,16 +135,17 @@ class AppointmentRepository:
                         (patient_id, doctor_id, slot_id, consultation_type_id,
                          appointment_status, appointment_datetime,
                          slot_start_time, status, created_at)
-                    VALUES (%s, %s, %s, %s, 'CONFIRMED', %s, %s, 'BOOKED',
-                            UTC_TIMESTAMP(6))
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, UTC_TIMESTAMP(6))
                     """,
                     (
                         patient_id,
                         doctor_id,
                         slot_id,
                         consultation_type_id,
+                        appointment_status,
                         appointment_start,
                         appointment_start,
+                        booking_status,
                     ),
                 )
                 appointment_id = int(cursor.lastrowid)
@@ -143,24 +154,45 @@ class AppointmentRepository:
                     INSERT INTO payments
                         (appointment_id, amount, transaction_id,
                          payment_method, status, created_at, paid_at)
-                    VALUES (%s, %s, %s, 'SIMULATED', 'SIMULATED',
-                            UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
+                    VALUES (%s, %s, %s, %s, %s, UTC_TIMESTAMP(6),
+                            CASE WHEN %s = 'SUCCESS' THEN UTC_TIMESTAMP(6) ELSE NULL END)
                     """,
                     (
                         appointment_id,
                         consultation["fee"],
-                        f"SIMULATED-{appointment_id}",
+                        transaction_id,
+                        payment_method,
+                        payment_outcome,
+                        payment_outcome,
                     ),
                 )
+                if payment_outcome == "FAILED":
+                    failed_slot_reservation = reserved_slot
+                    reserved_slot = None
+                    release_slot(failed_slot_reservation)
                 response_payload = {
                     "appointment_id": appointment_id,
                     "patient_id": patient_id,
                     "doctor_id": doctor_id,
                     "slot_id": slot_id,
                     "slot_start_time": slot_start_time,
-                    "status": "BOOKED",
-                    "appointment_status": "CONFIRMED",
-                    "booked_count": int(reserved_slot["booked_count"]),
+                    "message": (
+                        "Test payment failed; the slot reservation was released."
+                        if payment_outcome == "FAILED"
+                        else "Test payment succeeded."
+                    ),
+                    "status": (
+                        "BOOKED" if payment_outcome == "SUCCESS" else "PAYMENT_FAILED"
+                    ),
+                    "appointment_status": appointment_status,
+                    "payment_method": payment_method,
+                    "payment_status": payment_outcome,
+                    "transaction_id": transaction_id,
+                    "booked_count": (
+                        int(reserved_slot["booked_count"])
+                        if reserved_slot is not None
+                        else None
+                    ),
                 }
 
             commit_started = True
@@ -423,22 +455,43 @@ class AppointmentRepository:
                         INSERT INTO refunds
                             (appointment_id, patient_id, refund_amount,
                              refund_percentage, refund_transaction_id,
-                             refund_reason, status, created_at)
-                        VALUES (%s, %s, %s, %s, NULL, %s, %s, UTC_TIMESTAMP(6))
+                             refund_reason, status, created_at, refunded_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, UTC_TIMESTAMP(6),
+                                CASE WHEN %s = 'SUCCESS' THEN UTC_TIMESTAMP(6) ELSE NULL END)
                         """,
                         (
                             appointment["appointment_id"],
                             appointment["patient_id"],
                             refund["refund_amount"],
                             refund["refund_percentage"],
+                            (
+                                f"REF-{uuid.uuid4().hex.upper()}"
+                                if refund["refund_amount"] > 0
+                                else None
+                            ),
                             refund["refund_reason"],
                             (
-                                "PENDING"
+                                "SUCCESS"
+                                if refund["refund_amount"] > 0
+                                else "NOT_REQUIRED"
+                            ),
+                            (
+                                "SUCCESS"
                                 if refund["refund_amount"] > 0
                                 else "NOT_REQUIRED"
                             ),
                         ),
                     )
+                    if refund["refund_amount"] > 0:
+                        cursor.execute(
+                            """
+                            UPDATE payments
+                            SET status = 'REFUNDED'
+                            WHERE appointment_id = %s
+                              AND status IN ('SUCCESS', 'PAID', 'COMPLETED', 'SIMULATED')
+                            """,
+                            (appointment["appointment_id"],),
+                        )
                     slot_start_utc = appointment_time.replace(
                         tzinfo=timezone.utc
                     )
@@ -554,13 +607,34 @@ class AppointmentRepository:
                            COALESCE(a.status, 'BOOKED') AS status,
                            a.appointment_status, a.created_at,
                            ct.consultation_name AS consultation_type,
-                           ct.duration_minutes, dct.fee
+                           p.status AS payment_status,
+                           p.payment_method,
+                           p.transaction_id,
+                           r.status AS refund_status,
+                           r.refund_amount,
+                           r.refund_transaction_id,
+                           r.refunded_at,
+                           ct.duration_minutes, dct.fee,
+                           patient.first_name AS patient_first_name,
+                           patient.last_name AS patient_last_name,
+                           patient.phone_number AS patient_phone_number,
+                           patient.date_of_birth AS patient_date_of_birth,
+                           patient.gender AS patient_gender,
+                           patient_user.email AS patient_email
                     FROM appointments a
+                    LEFT JOIN patients patient
+                      ON patient.patient_id = a.patient_id
+                    LEFT JOIN users patient_user
+                      ON patient_user.user_id = patient.user_id
                     LEFT JOIN consultation_types ct
                       ON ct.consultation_type_id = a.consultation_type_id
                     LEFT JOIN doctor_consulting_types dct
                       ON dct.consultation_type_id = a.consultation_type_id
                      AND dct.doctor_id = a.doctor_id
+                    LEFT JOIN payments p
+                      ON p.appointment_id = a.appointment_id
+                    LEFT JOIN refunds r
+                      ON r.appointment_id = a.appointment_id
                     {scope}
                     ORDER BY a.created_at DESC, a.appointment_id DESC
                     LIMIT %s OFFSET %s
@@ -594,6 +668,13 @@ class AppointmentRepository:
                            COALESCE(a.status, 'BOOKED') AS status,
                            a.appointment_status, a.created_at,
                            ct.consultation_name AS consultation_type,
+                           p.status AS payment_status,
+                           p.payment_method,
+                           p.transaction_id,
+                           r.status AS refund_status,
+                           r.refund_amount,
+                           r.refund_transaction_id,
+                           r.refunded_at,
                            ct.duration_minutes, dct.fee
                     FROM appointments a
                     LEFT JOIN consultation_types ct
@@ -601,6 +682,10 @@ class AppointmentRepository:
                     LEFT JOIN doctor_consulting_types dct
                       ON dct.consultation_type_id = a.consultation_type_id
                      AND dct.doctor_id = a.doctor_id
+                    LEFT JOIN payments p
+                      ON p.appointment_id = a.appointment_id
+                    LEFT JOIN refunds r
+                      ON r.appointment_id = a.appointment_id
                     {scope}
                       AND a.appointment_id = %s
                     LIMIT 1
