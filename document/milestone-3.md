@@ -21,13 +21,9 @@ The dashboard displays the saved profile and offers an edit mode with persisted 
 
 ## Slot Materialization
 
-`SlotMaterializerFunction` runs daily at 02:00 UTC through EventBridge Scheduler. Availability and blackout dates use UTC throughout; there is no per-doctor timezone conversion. The rolling window is `/medislot/{environment}/booking-window-days` in SSM Parameter Store, initially 30 days. Slot start and end are stored as UTC timestamps. IDs are deterministic and the composite-key condition makes reruns safe.
+`SlotMaterializerFunction` runs daily at 02:00 UTC through EventBridge Scheduler. Availability and blackout dates use UTC throughout; there is no per-doctor timezone conversion. The rolling window is `/medislot/{environment}/booking-window-days` in SSM Parameter Store, initially 30 days. Slot start and end are stored as UTC timestamps. IDs are deterministic and DynamoDB `attribute_not_exists(slot_id)` makes reruns safe.
 
-The slots table uses `doctor_id` (Number) as its partition key and `slot_start_time` (String) as its sort key, with no GSIs. `slot_end_time` and the other slot data are attributes; `slot_id` remains an attribute for the relational appointment link. `expires_at`, when present, is an ISO-8601 UTC string, so DynamoDB TTL is disabled and patient availability checks expiry in application code.
-
-DynamoDB cannot change a table's primary key in place. The data stack creates `${EnvironmentName}-slots-v2` and retains the old `${EnvironmentName}-slots` table. The new table starts empty; existing slots are not copied, so this cutover is intended for a clean start after deliberately deleting old slot data. The old table remains retained until it is deliberately removed.
-
-Appointment `slot_id` is migrated to `BIGINT` so it can hold the deterministic DynamoDB slot identifier. The schema initializer removes the old doctor timezone column and checks the slot ID type idempotently.
+The slots table's `DoctorStartIndex` supports the doctor day view. Appointment `slot_id` is migrated to `BIGINT` so it can hold the deterministic DynamoDB slot identifier. The schema initializer removes the old doctor timezone column and checks the slot ID type idempotently.
 
 ## Deployment
 

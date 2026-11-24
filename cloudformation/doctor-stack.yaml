@@ -30,7 +30,7 @@ Resources:
       Environment:
         Variables:
           ENVIRONMENT_NAME: !Ref EnvironmentName
-          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots-v2"
+          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots"
           PHOTO_BUCKET_NAME:
             Fn::ImportValue: !Sub "${EnvironmentName}-AssetsBucket"
       VpcConfig:
@@ -53,7 +53,7 @@ Resources:
       Environment:
         Variables:
           ENVIRONMENT_NAME: !Ref EnvironmentName
-          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots-v2"
+          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots"
           PHOTO_BUCKET_NAME:
             Fn::ImportValue: !Sub "${EnvironmentName}-AssetsBucket"
       VpcConfig:

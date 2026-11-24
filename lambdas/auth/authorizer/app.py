@@ -68,8 +68,6 @@ def generate_policy(
 
 def lambda_handler(event, context):
 
-    request_id = getattr(context, "aws_request_id", "unknown")
-
     try:
 
         token = event.get("authorizationToken")
@@ -122,7 +120,7 @@ def lambda_handler(event, context):
         logger.info(
             "Authorization allowed: role=%s request_id=%s",
             decoded_token["role"],
-            request_id,
+            getattr(context, "aws_request_id", "unknown"),
         )
         return generate_policy(
             decoded_token["sub"],
@@ -140,8 +138,7 @@ def lambda_handler(event, context):
         logger.error(
             json.dumps(
                 {
-                    "event": "TokenExpired",
-                    "request_id": request_id,
+                    "event": "TokenExpired"
                 }
             )
         )
@@ -152,14 +149,12 @@ def lambda_handler(event, context):
             event["methodArn"]
         )
 
-    except InvalidTokenError as error:
+    except InvalidTokenError:
 
         logger.error(
             json.dumps(
                 {
-                    "event": "InvalidToken",
-                    "reason": str(error),
-                    "request_id": request_id,
+                    "event": "InvalidToken"
                 }
             )
         )
@@ -172,12 +167,11 @@ def lambda_handler(event, context):
 
     except Exception as exception:
 
-        logger.exception(
+        logger.error(
             json.dumps(
                 {
                     "event": "AuthorizationFailed",
-                    "error": str(exception),
-                    "request_id": request_id,
+                    "error": str(exception)
                 }
             )
         )

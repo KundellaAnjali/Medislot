@@ -81,6 +81,8 @@ Resources:
       AttributeDefinitions:
         - AttributeName: session_id
           AttributeType: S
+        - AttributeName: user_id
+          AttributeType: N
         - AttributeName: refresh_token_hash
           AttributeType: S
         - AttributeName: jti
@@ -91,6 +93,13 @@ Resources:
           KeyType: HASH
 
       GlobalSecondaryIndexes:
+        - IndexName: UserIdIndex
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
         - IndexName: RefreshTokenHashIndex
           KeySchema:
             - AttributeName: refresh_token_hash
@@ -192,24 +201,52 @@ Resources:
 
   SlotsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
     Properties:
-      TableName: !Sub "${EnvironmentName}-slots-v2"
+      TableName: !Sub "${EnvironmentName}-slots"
 
       BillingMode: PAY_PER_REQUEST
 
       AttributeDefinitions:
+        - AttributeName: slot_id
+          AttributeType: N
         - AttributeName: doctor_id
           AttributeType: N
-        - AttributeName: slot_start_time
+        - AttributeName: start_time
           AttributeType: S
+        - AttributeName: status
+          AttributeType: N
 
       KeySchema:
-        - AttributeName: doctor_id
+        - AttributeName: slot_id
           KeyType: HASH
-        - AttributeName: slot_start_time
-          KeyType: RANGE
+
+      GlobalSecondaryIndexes:
+        - IndexName: DoctorIdIndex
+          KeySchema:
+            - AttributeName: doctor_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+        - IndexName: DoctorStartIndex
+          KeySchema:
+            - AttributeName: doctor_id
+              KeyType: HASH
+            - AttributeName: start_time
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+        - IndexName: StatusIndex
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
 
   NotificationsTable:
     Type: AWS::DynamoDB::Table

@@ -33,8 +33,6 @@ def publish_metric(metric_name, value):
 
 def lambda_handler(event, context):
 
-    request_id = getattr(context, "aws_request_id", "unknown")
-
     try:
 
         body = json.loads(
@@ -46,10 +44,6 @@ def lambda_handler(event, context):
         )
 
         if not refresh_token:
-            logger.warning(
-                "Logout rejected: missing refresh token request_id=%s",
-                request_id,
-            )
 
             return {
                 "statusCode": 400,
@@ -88,10 +82,6 @@ def lambda_handler(event, context):
         )
 
         if not session:
-            logger.warning(
-                "Logout rejected: session not found request_id=%s",
-                request_id,
-            )
 
             publish_metric(
                 "LogoutFailure",
@@ -116,9 +106,11 @@ def lambda_handler(event, context):
         )
 
         logger.info(
-            "Logout successful: user_id=%s request_id=%s",
-            session["user_id"],
-            request_id,
+            (
+                "Logout successful "
+                f"for user "
+                f"{session['user_id']}"
+            )
         )
 
         publish_metric(
@@ -139,8 +131,7 @@ def lambda_handler(event, context):
     except Exception as exception:
 
         logger.exception(
-            "Logout failed: request_id=%s",
-            request_id,
+            f"Logout failed: {str(exception)}"
         )
 
         publish_metric(

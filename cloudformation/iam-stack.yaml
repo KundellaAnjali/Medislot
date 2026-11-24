@@ -205,7 +205,8 @@ Resources:
                   - dynamodb:GetItem
                   - dynamodb:Scan
                 Resource:
-                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-slots-v2"
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-slots"
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-slots/index/*"
 
               - Effect: Allow
                 Action:
@@ -253,7 +254,7 @@ Resources:
                 Action:
                   - dynamodb:Query
                 Resource:
-                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-slots-v2"
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-slots/index/DoctorStartIndex"
               - Effect: Allow
                 Action:
                   - cloudwatch:PutMetricData
