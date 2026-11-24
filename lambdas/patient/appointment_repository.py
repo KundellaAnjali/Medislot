@@ -43,7 +43,13 @@ class AppointmentRepository:
         try:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    "SELECT patient_id FROM patients WHERE user_id = %s FOR UPDATE",
+                    """
+                    SELECT p.patient_id, p.first_name, u.email
+                    FROM patients p
+                    JOIN users u ON u.user_id = p.user_id
+                    WHERE p.user_id = %s
+                    FOR UPDATE
+                    """,
                     (user_id,),
                 )
                 patient = cursor.fetchone()
@@ -134,8 +140,8 @@ class AppointmentRepository:
                     INSERT INTO appointments
                         (patient_id, doctor_id, slot_id, consultation_type_id,
                          appointment_status, appointment_datetime,
-                         slot_start_time, status, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, UTC_TIMESTAMP(6))
+                         slot_start_time, status, cancelled_by, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, UTC_TIMESTAMP(6))
                     """,
                     (
                         patient_id,
@@ -146,6 +152,7 @@ class AppointmentRepository:
                         appointment_start,
                         appointment_start,
                         booking_status,
+                        "SYSTEM" if booking_status == "CANCELLED" else None,
                     ),
                 )
                 appointment_id = int(cursor.lastrowid)
@@ -175,6 +182,10 @@ class AppointmentRepository:
                     "patient_id": patient_id,
                     "doctor_id": doctor_id,
                     "slot_id": slot_id,
+                    "_notification": {
+                        "email": patient["email"],
+                        "first_name": patient["first_name"],
+                    },
                     "slot_start_time": slot_start_time,
                     "message": (
                         "Test payment failed; the slot reservation was released."
@@ -357,6 +368,21 @@ class AppointmentRepository:
                 tier_counts = {}
                 changed_any = False
                 for appointment in targets:
+                    cursor.execute(
+                        """
+                        SELECT p.first_name, u.email
+                        FROM patients p
+                        JOIN users u ON u.user_id = p.user_id
+                        WHERE p.patient_id = %s
+                        """,
+                        (appointment["patient_id"],),
+                    )
+                    patient_notification = cursor.fetchone()
+                    if not patient_notification:
+                        raise AppointmentRepositoryError(
+                            404, "Patient profile was not found."
+                        )
+
                     if appointment["status"] == "CANCELLED":
                         cursor.execute(
                             """
@@ -407,6 +433,10 @@ class AppointmentRepository:
                                 "refund_percentage": str(percentage),
                                 "refund_reason": existing_refund["refund_reason"],
                                 "refund_tier": tier,
+                                "_notification": {
+                                    "email": patient_notification["email"],
+                                    "first_name": patient_notification["first_name"],
+                                },
                             }
                         )
                         continue
@@ -440,10 +470,11 @@ class AppointmentRepository:
                     cursor.execute(
                         """
                         UPDATE appointments
-                        SET status = 'CANCELLED', appointment_status = 'CANCELLED'
+                        SET status = 'CANCELLED', appointment_status = 'CANCELLED',
+                            cancelled_by = %s
                         WHERE appointment_id = %s AND status = 'BOOKED'
                         """,
-                        (appointment["appointment_id"],),
+                        (role, appointment["appointment_id"]),
                     )
                     if cursor.rowcount != 1:
                         raise AppointmentRepositoryError(
@@ -513,6 +544,10 @@ class AppointmentRepository:
                         "refund_amount": str(refund["refund_amount"]),
                         "refund_percentage": str(refund["refund_percentage"]),
                         "refund_reason": refund["refund_reason"],
+                        "_notification": {
+                            "email": patient_notification["email"],
+                            "first_name": patient_notification["first_name"],
+                        },
                     }
                     tier = refund["refund_tier"]
                     tier_counts[tier] = tier_counts.get(tier, 0) + 1
@@ -548,6 +583,31 @@ class AppointmentRepository:
         except Exception:
             connection.rollback()
             raise
+        finally:
+            connection.close()
+
+    def get_patient_notification(self, patient_id):
+        connection = self.connection_factory()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT p.first_name, u.email
+                    FROM patients p
+                    JOIN users u ON u.user_id = p.user_id
+                    WHERE p.patient_id = %s
+                    """,
+                    (patient_id,),
+                )
+                patient = cursor.fetchone()
+                if not patient:
+                    raise AppointmentRepositoryError(
+                        404, "Patient profile was not found."
+                    )
+                return {
+                    "email": patient["email"],
+                    "first_name": patient["first_name"],
+                }
         finally:
             connection.close()
 
@@ -605,7 +665,7 @@ class AppointmentRepository:
                            COALESCE(a.slot_start_time, a.appointment_datetime)
                                AS slot_start_time,
                            COALESCE(a.status, 'BOOKED') AS status,
-                           a.appointment_status, a.created_at,
+                           a.appointment_status, a.cancelled_by, a.created_at,
                            ct.consultation_name AS consultation_type,
                            p.status AS payment_status,
                            p.payment_method,
@@ -666,7 +726,7 @@ class AppointmentRepository:
                            COALESCE(a.slot_start_time, a.appointment_datetime)
                                AS slot_start_time,
                            COALESCE(a.status, 'BOOKED') AS status,
-                           a.appointment_status, a.created_at,
+                           a.appointment_status, a.cancelled_by, a.created_at,
                            ct.consultation_name AS consultation_type,
                            p.status AS payment_status,
                            p.payment_method,

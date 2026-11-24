@@ -471,7 +471,7 @@ jobs:
 
     env:
       TEMPLATE_FILE: cloudformation/patient-stack.yaml
-      PARAMETERS_FILE: parameters/auth-parameters.json
+      PARAMETERS_FILE: parameters/patient-parameters.json
 
     steps:
       - uses: actions/checkout@v4
@@ -508,7 +508,8 @@ jobs:
           sam deploy \
             --template-file .aws-sam/build/template.yaml \
             --stack-name ${ENVIRONMENT}-medislot-patient-stack \
-            --parameter-overrides EnvironmentName=${ENVIRONMENT} \
+            --parameter-overrides \
+            $(jq -r '.[] | "\(.ParameterKey)=\(.ParameterValue)"' ${{ env.PARAMETERS_FILE }}) \
             --capabilities CAPABILITY_NAMED_IAM \
             --resolve-s3 \
             --no-fail-on-empty-changeset \

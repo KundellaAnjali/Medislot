@@ -71,7 +71,7 @@ def queue_slot_materialization(start_date, end_date):
                 "start_date": start_date.isoformat(),
                 "end_date": end_date.isoformat(),
             }
-        ),
+        ).encode("utf-8"),
     )
     if result.get("StatusCode") != 202:
         raise RuntimeError("Slot materialization invocation was not accepted")

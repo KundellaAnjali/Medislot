@@ -60,7 +60,6 @@
           <article class="metric-panel"><span class="metric-label">Appointment records</span><strong>{{ appointments|length }}</strong><small>On this page</small></article>
           <article class="metric-panel"><span class="metric-label">Booked appointments</span><strong>{{ active_bookings.count }}</strong><small>Manage or review</small></article>
           <article class="metric-panel"><span class="metric-label">Profile</span><strong>{{ 'Complete' if profile and profile.get('profile_filled') else 'In progress' }}</strong><small>{{ 'Your details are saved' if profile and profile.get('profile_filled') else 'Add details for smoother care' }}</small></article>
-          <article class="metric-panel"><span class="metric-label">Time zone</span><strong class="metric-location">UTC</strong><small>All appointment times shown in UTC</small></article>
         </div>
         <section class="dashboard-panel patient-overview-panel">
           <div class="panel-heading"><div><p class="eyebrow">Your care</p><h2>Stay on top of your health</h2></div></div>

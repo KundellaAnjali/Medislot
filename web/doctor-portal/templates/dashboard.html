@@ -157,6 +157,7 @@
                           data-open-appointment-details
                           data-patient-name="{{ appointment.first_name|title }} {{ appointment.last_name|title }}"
                           data-patient-id="{{ appointment.patient_id }}"
+                          data-patient-phone="{{ appointment.phone_number or '' }}"
                           data-appointment-id="{{ appointment.appointment_id }}"
                           data-booked-at="{{ appointment.created_at or '' }}"
                           data-slot-time="{{ slot.start_time }}"
@@ -178,6 +179,7 @@
                       <button class="button secondary manage-booking" type="button" data-open-appointment-details
                         data-patient-name="{{ slot.appointments[0].first_name|title }} {{ slot.appointments[0].last_name|title }}"
                         data-patient-id="{{ slot.appointments[0].patient_id }}"
+                        data-patient-phone="{{ slot.appointments[0].phone_number or '' }}"
                         data-appointment-id="{{ slot.appointments[0].appointment_id }}"
                         data-booked-at="{{ slot.appointments[0].created_at or '' }}"
                         data-slot-time="{{ slot.start_time }}"
@@ -224,6 +226,7 @@
           <dl class="appointment-detail-list">
             <div><dt>Patient</dt><dd id="detail-patient-name"></dd></div>
             <div><dt>Patient ID</dt><dd id="detail-patient-id"></dd></div>
+            <div><dt>Patient phone</dt><dd id="detail-patient-phone"></dd></div>
             <div><dt>Booking reference</dt><dd id="detail-appointment-id"></dd></div>
             <div><dt>Booked on</dt><dd id="detail-booked-at"></dd></div>
             <div><dt>Slot time (UTC)</dt><dd id="detail-slot-time"></dd></div>
@@ -284,6 +287,7 @@
                     </div>
                     <p><strong>Patient</strong><button class="patient-name-link" type="button" title="Patient details&#10;Patient ID: {{ appointment.patient_id }}&#10;Phone: {{ appointment.patient_phone_number or 'Not provided' }}&#10;Email: {{ appointment.patient_email or 'Not provided' }}&#10;Date of birth: {{ appointment.patient_date_of_birth or 'Not provided' }}&#10;Gender: {{ appointment.patient_gender or 'Not provided' }}">{{ appointment.patient_first_name|default('Patient', true)|title }} {{ appointment.patient_last_name|default('', true)|title }}</button></p>
                     <p><strong>Patient ID</strong><span>{{ appointment.patient_id }}</span></p>
+                    {% if is_cancelled %}<p><strong>Cancelled by</strong><span>{{ appointment.cancelled_by|title if appointment.cancelled_by else 'Not recorded' }}</span></p>{% endif %}
                     <p><strong>Date and time</strong><time class="patient-appointment-time" datetime="{{ appointment.slot_start_time }}">{{ appointment.slot_start_time }}</time><span class="patient-utc-label">UTC</span></p>
                     <p><strong>Consultation type</strong><span>{{ appointment.consultation_type or 'Not available' }}</span></p>
                     <p><strong>Fee</strong><span>{% if appointment.fee is not none %}{{ '%.2f'|format(appointment.fee|float) }}{% else %}Not available{% endif %}</span></p>
@@ -520,6 +524,7 @@
     document.querySelectorAll('[data-open-appointment-details]').forEach(button => button.addEventListener('click', () => {
       document.getElementById('detail-patient-name').textContent = button.dataset.patientName;
       document.getElementById('detail-patient-id').textContent = button.dataset.patientId;
+      document.getElementById('detail-patient-phone').textContent = button.dataset.patientPhone || 'Not provided';
       document.getElementById('detail-appointment-id').textContent = button.dataset.appointmentId;
       document.getElementById('detail-booked-at').textContent = displayDateTime(button.dataset.bookedAt);
       document.getElementById('detail-slot-time').textContent = displayDateTime(button.dataset.slotTime);

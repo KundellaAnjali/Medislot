@@ -154,8 +154,14 @@ class AppointmentCancellationService:
                 cancellation_event = {
                     key: value
                     for key, value in cancellation.items()
-                    if key not in {"refund_tier"}
+                    if key not in {"refund_tier", "_notification"}
                 }
+                cancellation_event["patient_email"] = cancellation[
+                    "_notification"
+                ]["email"]
+                cancellation_event["patient_first_name"] = (
+                    cancellation["_notification"]["first_name"] or ""
+                )
                 seat_event = {
                     "appointment_id": str(cancellation["appointment_id"]),
                     "doctor_id": str(cancellation["doctor_id"]),
@@ -175,6 +181,7 @@ class AppointmentCancellationService:
                 raise CancellationError(
                     503, "Cancellation was saved, but follow-up processing failed."
                 ) from error
+            cancellation.pop("_notification", None)
         for tier_count in result.pop("tier_counts", []):
             try:
                 cloudwatch.put_metric_data(

@@ -76,8 +76,24 @@ class AppointmentService:
             ) from error
         if cached:
             self._validate_cached_request(cached, request_hash)
+            payload = cached["response_payload"]
+            if (
+                payload.get("payment_status", "SUCCESS") == "SUCCESS"
+                and "_notification" not in payload
+            ):
+                try:
+                    payload["_notification"] = (
+                        self.repository.get_patient_notification(
+                            int(payload["patient_id"])
+                        )
+                    )
+                except AppointmentRepositoryError as error:
+                    raise AppointmentServiceError(
+                        error.status_code, str(error)
+                    ) from error
             self._publish_booking_event(cached, idempotency_key)
-            return cached["response_payload"], False
+            payload.pop("_notification", None)
+            return payload, False
 
         slot = self.get_slot(doctor_id, slot_start_time)
         if slot is None:
@@ -116,6 +132,7 @@ class AppointmentService:
             },
             idempotency_key,
         )
+        payload.pop("_notification", None)
         return payload, created
 
     def _get_dynamodb_record(self, idempotency_key):
@@ -176,6 +193,9 @@ class AppointmentService:
             "patient_id": str(payload["patient_id"]),
             "doctor_id": str(payload["doctor_id"]),
             "slot_id": str(payload["slot_id"]),
+            "patient_email": payload["_notification"]["email"],
+            "patient_first_name": payload["_notification"]["first_name"] or "",
+            "slot_start_time": payload["slot_start_time"],
             "status": "BOOKED",
         }
         try:

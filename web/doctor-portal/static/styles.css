@@ -1010,6 +1010,7 @@ input:focus, select:focus {
 .patient-dashboard-view[hidden] { display: none; }
 .patient-dashboard-page .patient-welcome { min-height: 220px; margin-bottom: 18px; }
 .patient-dashboard-page .patient-welcome h1 { font-size: clamp(27px, 3.5vw, 38px); }
+.patient-metric-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .patient-metric-grid .metric-panel { min-width: 0; }
 .patient-metric-grid .metric-panel > strong { overflow-wrap: anywhere; }
 .patient-overview-panel { padding: clamp(20px, 3vw, 28px); }

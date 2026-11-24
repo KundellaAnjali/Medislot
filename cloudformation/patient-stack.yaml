@@ -6,6 +6,10 @@ Parameters:
   EnvironmentName:
     Type: String
 
+  NotificationSenderEmail:
+    Type: String
+    Description: Verified Amazon SES email identity used for appointment messages
+
 Globals:
   Function:
     Runtime: python3.12
@@ -129,6 +133,107 @@ Resources:
         SubnetIds:
           - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetAId"
           - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+  AppointmentEmailNotificationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "${EnvironmentName}-appointment-email-notifications"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: notification_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: notification_id
+          KeyType: HASH
+
+  AppointmentNotificationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${EnvironmentName}-appointment-notification-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: SendAppointmentEmail
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                Resource:
+                  - !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${NotificationSenderEmail}"
+                Condition:
+                  StringEquals:
+                    ses:FromAddress: !Ref NotificationSenderEmail
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt AppointmentEmailNotificationsTable.Arn
+
+  AppointmentNotificationFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-appointment-email-notification"
+      Handler: appointment_notification.lambda_handler
+      CodeUri: ../lambdas/patient/
+      Role: !GetAtt AppointmentNotificationRole.Arn
+      Environment:
+        Variables:
+          NOTIFICATION_SENDER_EMAIL: !Ref NotificationSenderEmail
+          EMAIL_NOTIFICATIONS_TABLE_NAME: !Ref AppointmentEmailNotificationsTable
+
+  AppointmentBookedNotificationRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Send a patient email when an appointment is booked
+      EventPattern:
+        source:
+          - medislot.appointments
+        detail-type:
+          - AppointmentBooked
+      State: ENABLED
+      Targets:
+        - Id: AppointmentBookedEmailTarget
+          Arn: !GetAtt AppointmentNotificationFunction.Arn
+
+  AppointmentCancelledNotificationRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Send a patient email when an appointment is cancelled
+      EventPattern:
+        source:
+          - medislot.appointments
+        detail-type:
+          - AppointmentCancelled
+      State: ENABLED
+      Targets:
+        - Id: AppointmentCancelledEmailTarget
+          Arn: !GetAtt AppointmentNotificationFunction.Arn
+
+  AppointmentBookedNotificationPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AppointmentNotificationFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt AppointmentBookedNotificationRule.Arn
+
+  AppointmentCancelledNotificationPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AppointmentNotificationFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt AppointmentCancelledNotificationRule.Arn
 
   PatientApiAuthorizer:
     Type: AWS::ApiGateway::Authorizer

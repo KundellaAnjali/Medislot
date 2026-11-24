@@ -82,8 +82,7 @@
                           </select>
                         </label>
                       {% endif %}
-                      <button class="button primary" type="submit" {% if slot.is_full or slot.available_seats <= 0 %}disabled aria-describedby="slot-booked-{{ day_loop.index }}-{{ loop.index }}"{% endif %}>{{ 'Booked' if slot.is_full or slot.available_seats <= 0 else 'Book this appointment' }}</button>
-                      {% if slot.is_full or slot.available_seats <= 0 %}<span id="slot-booked-{{ day_loop.index }}-{{ loop.index }}" class="notice" role="status">This time slot is fully booked.</span>{% endif %}
+                      <button class="button primary" type="submit" {% if slot.is_full or slot.available_seats <= 0 %}disabled{% endif %}>{{ 'Booked' if slot.is_full or slot.available_seats <= 0 else 'Book this appointment' }}</button>
                     </form>
                   </article>
                 {% endfor %}

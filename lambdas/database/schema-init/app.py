@@ -514,6 +514,10 @@ def lambda_handler(event, context):
                     MODIFY status VARCHAR(32) NOT NULL DEFAULT 'BOOKED'
                     """
                 )
+            if "cancelled_by" not in appointment_columns:
+                cursor.execute(
+                    "ALTER TABLE appointments ADD COLUMN cancelled_by VARCHAR(16) NULL"
+                )
 
             appointment_indexes = (
                 (
