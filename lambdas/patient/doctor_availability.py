@@ -6,7 +6,7 @@ from datetime import date, datetime, time, timezone
 
 import boto3
 import pymysql
-from boto3.dynamodb.conditions import Key
+from slot_queries import query_slots_in_range
 
 
 logger = logging.getLogger()
@@ -105,42 +105,35 @@ def get_slots(doctor_id, start_date, end_date):
     ).isoformat(timespec="seconds").replace("+00:00", "Z")
     now = datetime.now(timezone.utc)
     slots = []
-    query = {
-        "KeyConditionExpression": Key("doctor_id").eq(doctor_id)
-        & Key("slot_start_time").between(start_time, end_time),
-    }
-
-    while True:
-        result = slots_table.query(**query)
-        for slot in result.get("Items", []):
-            slot_start = datetime.fromisoformat(
-                slot["slot_start_time"].replace("Z", "+00:00")
-            )
-            if slot_start <= now:
-                continue
-            if int(slot.get("status", 1)) != 1:
-                continue
-            capacity = int(slot["capacity"])
-            booked_count = int(slot.get("booked_count", 0))
-            if booked_count >= capacity:
-                continue
-            slots.append(
-                {
-                    "slot_id": int(slot["slot_id"]),
-                    "doctor_id": int(slot["doctor_id"]),
-                    "consultation_type_id": int(slot["consultation_type_id"]),
-                    "start_time": slot["slot_start_time"],
-                    "end_time": slot["slot_end_time"],
-                    "capacity": capacity,
-                    "booked_count": booked_count,
-                    "available_seats": capacity - booked_count,
-                }
-            )
-
-        last_key = result.get("LastEvaluatedKey")
-        if not last_key:
-            break
-        query["ExclusiveStartKey"] = last_key
+    for slot in query_slots_in_range(
+        slots_table,
+        doctor_id,
+        start_time,
+        end_time,
+    ):
+        slot_start = datetime.fromisoformat(
+            slot["slot_start_time"].replace("Z", "+00:00")
+        )
+        if slot_start <= now:
+            continue
+        if int(slot.get("status", 1)) != 1:
+            continue
+        capacity = int(slot["capacity"])
+        booked_count = int(slot.get("booked_count", 0))
+        if booked_count >= capacity:
+            continue
+        slots.append(
+            {
+                "slot_id": int(slot["slot_id"]),
+                "doctor_id": int(slot["doctor_id"]),
+                "consultation_type_id": int(slot["consultation_type_id"]),
+                "start_time": slot["slot_start_time"],
+                "end_time": slot["slot_end_time"],
+                "capacity": capacity,
+                "booked_count": booked_count,
+                "available_seats": capacity - booked_count,
+            }
+        )
 
     slots.sort(key=lambda slot: slot["start_time"])
     return slots

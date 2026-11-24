@@ -10,7 +10,6 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 ENVIRONMENT = os.environ["ENVIRONMENT_NAME"]
-MAX_ACTIVE_APPOINTMENTS = 5
 ssm = boto3.client("ssm")
 parameter_cache = {}
 
@@ -82,10 +81,19 @@ class AppointmentRepository:
                     (patient_id,),
                 )
                 active_count = int(cursor.fetchone()["active_count"])
-                if active_count >= MAX_ACTIVE_APPOINTMENTS:
+                max_active_bookings = int(
+                    get_parameter(
+                        f"/medislot/{ENVIRONMENT}/patient-booking/max-active-bookings"
+                    )
+                )
+                if max_active_bookings < 1:
+                    raise ValueError(
+                        "Maximum active booking limit must be a positive integer."
+                    )
+                if active_count >= max_active_bookings:
                     raise AppointmentRepositoryError(
                         409,
-                        f"You can have up to {MAX_ACTIVE_APPOINTMENTS} active appointments.",
+                        f"You can have up to {max_active_bookings} active appointments.",
                     )
 
                 cursor.execute(

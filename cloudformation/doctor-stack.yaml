@@ -8,8 +8,6 @@ Parameters:
   WebAppArtifactKey:
     Type: String
     Default: doctor-portal/doctor-portal.zip
-  PortalKeyName:
-    Type: AWS::EC2::KeyPair::KeyName
 
 Globals:
   Function:
@@ -27,6 +25,8 @@ Resources:
       CodeUri: ../lambdas/doctor/
       Role:
         Fn::ImportValue: !Sub "${EnvironmentName}-DoctorLambdaRoleArn"
+      Layers:
+        - Fn::ImportValue: !Sub "${EnvironmentName}-SharedSlotQueryLayerArn"
       Environment:
         Variables:
           ENVIRONMENT_NAME: !Ref EnvironmentName
@@ -197,7 +197,6 @@ Resources:
     Properties:
       ImageId: !Sub "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}"
       InstanceType: t3.micro
-      KeyName: !Ref PortalKeyName
       IamInstanceProfile:
         Fn::ImportValue: !Sub "${EnvironmentName}-DoctorPortalInstanceProfileName"
       SubnetId:

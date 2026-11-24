@@ -302,6 +302,14 @@ Resources:
       Value: "30"
       Description: Rolling slot materialization window in days
 
+  MaxActiveBookingsParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/patient-booking/max-active-bookings"
+      Type: String
+      Value: "5"
+      Description: Maximum number of active appointments a patient may hold
+
   FullRefundHoursParameter:
     Type: AWS::SSM::Parameter
     Properties:

@@ -7,8 +7,9 @@ from time import perf_counter
 
 import boto3
 import pymysql
-from boto3.dynamodb.conditions import Attr, Key
+from boto3.dynamodb.conditions import Attr
 from botocore.exceptions import ClientError
+from slot_queries import query_slots_in_range
 lambda_client = boto3.client("lambda")
 
 logger = logging.getLogger()
@@ -1115,20 +1116,12 @@ def get_day_schedule(cursor, doctor_id, query):
         raise ValueError("date query parameter is required (YYYY-MM-DD)")
     local_day = date.fromisoformat(query["date"])
     start_utc, end_utc = utc_day_bounds(local_day)
-    query_args = {
-        "KeyConditionExpression": Key("doctor_id").eq(doctor_id)
-        & Key("slot_start_time").between(
-            utc_iso(start_utc), utc_iso(end_utc - timedelta(seconds=1))
-        ),
-    }
-    slots = []
-    while True:
-        result = slots_table.query(**query_args)
-        slots.extend(result.get("Items", []))
-        last_key = result.get("LastEvaluatedKey")
-        if not last_key:
-            break
-        query_args["ExclusiveStartKey"] = last_key
+    slots = query_slots_in_range(
+        slots_table,
+        doctor_id,
+        utc_iso(start_utc),
+        utc_iso(end_utc - timedelta(seconds=1)),
+    )
     consultation_ids = {
         int(item["consultation_type_id"]) for item in slots
     }

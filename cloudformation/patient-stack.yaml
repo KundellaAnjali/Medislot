@@ -73,6 +73,8 @@ Resources:
       FunctionName: !Sub "${EnvironmentName}-doctor-availability"
       Handler: doctor_availability.lambda_handler
       CodeUri: ../lambdas/patient/
+      Layers:
+        - Fn::ImportValue: !Sub "${EnvironmentName}-SharedSlotQueryLayerArn"
       Role:
         Fn::ImportValue: !Sub "${EnvironmentName}-PatientLambdaRoleArn"
       Environment:
