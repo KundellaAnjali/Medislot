@@ -88,6 +88,24 @@ class AppointmentRepository:
                         f"You can have up to {MAX_ACTIVE_APPOINTMENTS} active appointments.",
                     )
 
+                cursor.execute(
+                    """
+                    SELECT fee
+                    FROM doctor_consulting_types
+                    WHERE doctor_id = %s
+                      AND consultation_type_id = %s
+                      AND is_active = TRUE
+                    FOR UPDATE
+                    """,
+                    (doctor_id, consultation_type_id),
+                )
+                consultation = cursor.fetchone()
+                if not consultation:
+                    raise AppointmentRepositoryError(
+                        409,
+                        "The consultation price is unavailable. Please choose another slot.",
+                    )
+
                 reserved_slot = reserve_slot()
                 appointment_start = datetime.fromisoformat(
                     slot_start_time.replace("Z", "+00:00")
@@ -112,6 +130,20 @@ class AppointmentRepository:
                     ),
                 )
                 appointment_id = int(cursor.lastrowid)
+                cursor.execute(
+                    """
+                    INSERT INTO payments
+                        (appointment_id, amount, transaction_id,
+                         payment_method, status, created_at, paid_at)
+                    VALUES (%s, %s, %s, 'SIMULATED', 'SIMULATED',
+                            UTC_TIMESTAMP(6), UTC_TIMESTAMP(6))
+                    """,
+                    (
+                        appointment_id,
+                        consultation["fee"],
+                        f"SIMULATED-{appointment_id}",
+                    ),
+                )
                 response_payload = {
                     "appointment_id": appointment_id,
                     "patient_id": patient_id,
@@ -345,8 +377,10 @@ class AppointmentRepository:
                         """
                         SELECT COALESCE(SUM(amount), 0) AS paid_amount
                         FROM payments
-                        WHERE appointment_id = %s AND status IN
-                            ('PAID', 'COMPLETED', 'SUCCESS', 'REFUNDED')
+                        WHERE appointment_id = %s AND
+                            (status IN ('PAID', 'COMPLETED', 'SUCCESS', 'REFUNDED')
+                             OR (status = 'SIMULATED'
+                                 AND payment_method = 'SIMULATED'))
                         """,
                         (appointment["appointment_id"],),
                     )

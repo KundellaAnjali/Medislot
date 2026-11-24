@@ -504,6 +504,17 @@ def lambda_handler(event, context):
             if "is_active" in consultation_columns:
                 cursor.execute("ALTER TABLE consultation_types DROP COLUMN is_active")
 
+            with open("seed-doctors.sql", "r", encoding="utf-8") as seed_file:
+                seed_sql = seed_file.read()
+
+            seeded_statements = 0
+            for statement in seed_sql.split(";"):
+                statement = statement.strip()
+                if statement:
+                    cursor.execute(statement)
+                    seeded_statements += 1
+            executed_statements += seeded_statements
+
         publish_metric(
             "SchemaInitializationSuccess",
             1
@@ -518,7 +529,8 @@ def lambda_handler(event, context):
             "INFO",
             "SchemaInitializationCompleted",
             {
-                "executedStatements": executed_statements
+                "executedStatements": executed_statements,
+                "seedStatements": seeded_statements,
             }
         )
 
@@ -527,7 +539,8 @@ def lambda_handler(event, context):
             "body": json.dumps(
                 {
                     "message": "Schema initialized successfully",
-                    "executed_statements": executed_statements
+                    "executed_statements": executed_statements,
+                    "seed_statements": seeded_statements,
                 }
             )
         }
