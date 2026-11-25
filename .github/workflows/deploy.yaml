@@ -391,6 +391,14 @@ jobs:
           aws s3 cp "s3://${ASSETS_BUCKET}/doctor-portal/doctor-portal.zip" /tmp/doctor-portal.zip
           unzip -o /tmp/doctor-portal.zip -d /opt/medislot/doctor-portal
           chown -R ec2-user:ec2-user /opt/medislot/doctor-portal
+          mkdir -p /var/lib/medislot/sessions
+          chown -R ec2-user:ec2-user /var/lib/medislot/sessions
+          mkdir -p /etc/systemd/system/medislot-doctor-portal.service.d
+          cat > /etc/systemd/system/medislot-doctor-portal.service.d/session.conf <<'EOF'
+          [Service]
+          Environment=SESSION_FILE_DIR=/var/lib/medislot/sessions
+          EOF
+          systemctl daemon-reload
           /opt/medislot/venv/bin/pip install --no-cache-dir -r /opt/medislot/doctor-portal/requirements.txt
           systemctl restart medislot-doctor-portal
           SCRIPT

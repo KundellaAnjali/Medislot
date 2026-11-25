@@ -27,7 +27,10 @@ logging.basicConfig(
 app.config.update(
     SECRET_KEY=os.environ["FLASK_SECRET_KEY"],
     SESSION_TYPE="filesystem",
-    SESSION_FILE_DIR="/tmp/flask_session",
+    SESSION_FILE_DIR=os.environ.get(
+        "SESSION_FILE_DIR",
+        os.path.join(app.instance_path, "sessions"),
+    ),
     SESSION_PERMANENT=False,
     SESSION_USE_SIGNER=True,
     SESSION_COOKIE_HTTPONLY=True,
@@ -53,6 +56,20 @@ def format_display_datetime(value):
     if parsed_datetime.tzinfo is None:
         parsed_datetime = parsed_datetime.replace(tzinfo=timezone.utc)
     return parsed_datetime.astimezone(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
+
+
+def parse_slot_start_time(value):
+    if not isinstance(value, str):
+        raise ValueError("Slot start time must be a UTC timestamp.")
+    try:
+        slot_start = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError("Slot start time must be a valid UTC timestamp.") from error
+    if slot_start.tzinfo is None or slot_start.utcoffset() != timezone.utc.utcoffset(
+        slot_start
+    ):
+        raise ValueError("Slot start time must be a UTC timestamp.")
+    return slot_start.astimezone(timezone.utc)
 
 
 app.jinja_env.filters["display_date"] = format_display_date
@@ -94,6 +111,14 @@ def role_required(role, profile_path, missing_profile_message):
                 or not refresh_token
                 or session.get("role") != role
             ):
+                app.logger.info(
+                    "Redirecting to sign-in: expected_role=%s session_role=%s "
+                    "access_token_present=%s refresh_token_present=%s",
+                    role,
+                    session.get("role"),
+                    bool(access_token),
+                    bool(refresh_token),
+                )
                 return redirect(url_for("auth", mode="login", role=role))
 
             try:
@@ -737,7 +762,17 @@ def patient_doctor_availability(doctor_id):
             payload.get("slots"), list
         ):
             raise ApiError("Availability API returned an invalid response.")
-        availability = payload["slots"]
+        now = datetime.now(timezone.utc)
+        try:
+            availability = [
+                slot
+                for slot in payload["slots"]
+                if parse_slot_start_time(slot.get("start_time")) > now
+            ]
+        except (AttributeError, ValueError) as error:
+            raise ApiError(
+                "Availability API returned a slot with an invalid start time."
+            ) from error
         if not consultation_types:
             consultation_types = [
                 {"consultation_type": name}
@@ -820,6 +855,29 @@ def book_appointment():
     idempotency_key = request.form.get("idempotency_key", "").strip()
     if not doctor_id or doctor_id <= 0 or not slot_start_time:
         flash("Choose a valid appointment slot before booking.", "error")
+        return redirect(url_for("patient_dashboard"))
+    try:
+        if parse_slot_start_time(slot_start_time) <= datetime.now(timezone.utc):
+            flash(
+                "This appointment slot has already started. Choose a future slot.",
+                "error",
+            )
+            return redirect(
+                url_for(
+                    "patient_doctor_availability",
+                    doctor_id=doctor_id,
+                    **({"start_date": start_date} if start_date else {}),
+                    **({"end_date": end_date} if end_date else {}),
+                    **({"page": availability_page} if availability_page > 1 else {}),
+                    **(
+                        {"consultation_type": consultation_type}
+                        if consultation_type
+                        else {}
+                    ),
+                )
+            )
+    except ValueError:
+        flash("Choose a valid UTC appointment slot.", "error")
         return redirect(url_for("patient_dashboard"))
     if not idempotency_key:
         flash("Booking request is missing its idempotency key. Please retry.", "error")

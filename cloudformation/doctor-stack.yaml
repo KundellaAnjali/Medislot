@@ -247,6 +247,7 @@ Resources:
               User=ec2-user
               WorkingDirectory=/opt/medislot/doctor-portal
               Environment=MEDISLOT_API_BASE_URL=${ApiUrl}
+              Environment=SESSION_FILE_DIR=/var/lib/medislot/sessions
               ExecStart=/bin/bash -c 'export FLASK_SECRET_KEY="$(cat /etc/medislot/flask-secret)"; exec /opt/medislot/venv/bin/gunicorn --workers 2 --bind 127.0.0.1:8000 app:app'
               Restart=always
 

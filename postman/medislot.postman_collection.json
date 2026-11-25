@@ -288,7 +288,7 @@
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/doctors/{{doctorId}}/availability?start_date={{startDate}}&end_date={{endDate}}",
-            "description": "Both date parameters must use YYYY-MM-DD format; end_date must be on or after start_date."
+            "description": "This patient endpoint requires a PATIENT access token. Both date parameters must use YYYY-MM-DD format; end_date must be on or after start_date. Run Get my schedule for a day first to copy its doctor ID and date into these collection variables, then log in as a patient before sending this request."
           },
           "response": []
         },
@@ -648,10 +648,35 @@
         },
         {
           "name": "Get my schedule for a day",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  const slots = Array.isArray(data.slots) ? data.slots : [];",
+                  "  const doctorSlot = slots.find(slot => slot && slot.doctor_id);",
+                  "  const doctorId = doctorSlot && doctorSlot.doctor_id;",
+                  "  const date = data.date;",
+                  "  if (doctorId) pm.collectionVariables.set('doctorId', String(doctorId));",
+                  "  if (date) {",
+                  "    pm.collectionVariables.set('startDate', date);",
+                  "    pm.collectionVariables.set('endDate', date);",
+                  "  }",
+                  "  if (doctorId && date) {",
+                  "    console.log(`Patient availability variables set for doctor ${doctorId} on ${date}. Log in as a patient before requesting availability.`);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "url": "{{baseUrl}}/doctors/me/schedule?date={{date}}",
-            "description": "date is required and must be YYYY-MM-DD."
+            "description": "Requires a DOCTOR access token. date is required and must be YYYY-MM-DD. On success, the test script copies the schedule doctor ID and date to doctorId, startDate, and endDate for the patient availability request."
           },
           "response": []
         }
