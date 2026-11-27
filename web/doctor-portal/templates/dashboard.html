@@ -115,12 +115,47 @@
       </section>
 
       <section class="dashboard-view" id="blackout-view" data-view hidden>
-        <div class="view-heading"><div><p class="eyebrow">Time away</p><h1>Blackout days</h1><p class="view-subtitle">Block a date and time range from new bookings.</p></div></div>
-        <section class="dashboard-panel">
+        <div class="view-heading blackout-page-heading">
+          <div><p class="eyebrow">Availability controls</p><h1>Blackout days</h1><p class="view-subtitle">Protect time away from your practice by blocking periods from new bookings.</p></div>
+          <span class="blackout-summary-chip"><strong>{{ blackouts|length }}</strong> {{ 'window' if blackouts|length == 1 else 'windows' }} configured</span>
+        </div>
+        <section class="dashboard-panel blackout-create-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">Plan time away</p><h2>Create a blackout window</h2><p class="panel-description">Choose when the block begins and ends. Appointments cannot be booked during this period.</p></div>
+          </div>
           {% if profile.is_verified %}
-            <form class="blackout-form" method="post" action="{{ url_for('add_blackout') }}"><label for="blackout-start">Starts</label><input id="blackout-start" name="start_datetime" type="datetime-local" min="{{ schedule.date }}T00:00" required><label for="blackout-end">Ends</label><input id="blackout-end" name="end_datetime" type="datetime-local" min="{{ schedule.date }}T00:00" required><button class="button primary" type="submit">Add blackout</button></form>
+            <form class="blackout-form" method="post" action="{{ url_for('add_blackout') }}" id="blackout-form">
+              <label for="blackout-start">Starts<input id="blackout-start" name="start_datetime" type="datetime-local" min="{{ schedule.date }}T00:00" required></label>
+              <label for="blackout-end">Ends<input id="blackout-end" name="end_datetime" type="datetime-local" min="{{ schedule.date }}T00:00" required></label>
+              <button class="button primary" type="submit"><span aria-hidden="true">+</span> Add blackout</button>
+            </form>
+            <p class="form-hint" id="blackout-form-hint" aria-live="polite">The end time must be after the start time.</p>
+          {% else %}
+            <p class="notice verification-notice">Complete your doctor profile verification to manage blackout windows.</p>
           {% endif %}
-          {% if blackouts %}<ul class="blackout-list">{% for blackout in blackouts %}<li><span>{{ blackout.start_display }} – {{ blackout.end_display }}</span>{% if profile.is_verified %}<form method="post" action="{{ url_for('delete_blackout', blackout_id=blackout.blackout_id) }}"><button class="text-button danger-text" type="submit">Remove</button></form>{% endif %}</li>{% endfor %}</ul>{% else %}<div class="empty-state compact-empty"><p>No blackout windows</p></div>{% endif %}
+        </section>
+        <section class="dashboard-panel blackout-list-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">Your calendar</p><h2>Scheduled time away</h2><p class="panel-description">Review or remove existing blackout windows.</p></div>
+            {% if blackouts %}<span class="count-label">{{ blackouts|length }} total</span>{% endif %}
+          </div>
+          {% if blackouts %}
+            <ul class="blackout-list">
+              {% for blackout in blackouts %}
+                <li class="blackout-card">
+                  <span class="blackout-card-icon" aria-hidden="true">&#9719;</span>
+                  <div class="blackout-card-details"><strong>{{ blackout.start_display }}</strong><span>Through {{ blackout.end_display }}</span></div>
+                  {% if profile.is_verified %}
+                    <form method="post" action="{{ url_for('delete_blackout', blackout_id=blackout.blackout_id) }}" data-confirm-message="Remove this blackout window? This may allow new bookings during that time.">
+                      <button class="button secondary danger-text" type="submit">Remove window</button>
+                    </form>
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <div class="blackout-empty-state"><span class="blackout-empty-icon" aria-hidden="true">&#9719;</span><div><strong>No blackout windows yet</strong><p>When you need time away, add a window above. Your regular availability will stay unchanged.</p></div></div>
+          {% endif %}
         </section>
       </section>
 
@@ -421,44 +456,69 @@
       </section>
 
       <section class="dashboard-view" id="consulting-view" data-view hidden>
-        <div class="view-heading"><div><p class="eyebrow">Services and fees</p><h1>Consulting Type</h1><p class="view-subtitle">Add a service, then manage active consultation types below.</p></div></div>
-        <section class="dashboard-panel">
-          <form class="consultation-form" method="post" action="{{ url_for('create_consultation_type') }}"><fieldset class="configuration-controls" {{ 'disabled' if not profile.is_verified else '' }}><select name="consultation_name" id="consultation-name" required><option value="">Choose an available consultation</option>{% for type_name in available_consultation_types %}<option value="{{ type_name }}">{{ type_name }}</option>{% endfor %}</select><input name="fee" type="number" min="0" step="0.01" placeholder="Fee" aria-label="Fee" required><input name="capacity" id="consultation-capacity" type="number" min="1" max="10" value="1" aria-label="Capacity" required><input name="duration_minutes" id="consultation-duration" type="hidden" value="15"><button class="button primary" type="submit">Add type</button></fieldset></form>
+        <div class="view-heading consulting-page-heading">
+          <div><p class="eyebrow">Services and fees</p><h1>Consulting types</h1><p class="view-subtitle">Configure the services patients can book with you.</p></div>
+          <div class="consulting-summary-chips"><span><strong>{{ consultations|selectattr('is_active')|list|length }}</strong> active</span><span><strong>{{ consultations|length }}</strong> total</span></div>
+        </div>
+        <section class="dashboard-panel consultation-create-panel">
+          <div class="panel-heading"><div><p class="eyebrow">Build your service menu</p><h2>Add a consultation type</h2><p class="panel-description">Choose a service and set its fee and booking capacity.</p></div></div>
+          <form class="consultation-form" method="post" action="{{ url_for('create_consultation_type') }}">
+            <fieldset class="configuration-controls consultation-create-fields" {{ 'disabled' if not profile.is_verified else '' }}>
+              <label for="consultation-name">Consultation type
+                <select name="consultation_name" id="consultation-name" required><option value="">Choose a service</option>{% for type_name in available_consultation_types %}<option value="{{ type_name }}">{{ type_name }}</option>{% endfor %}</select>
+              </label>
+              <label for="consultation-fee">Fee
+                <span class="consultation-input-prefix"><span aria-hidden="true">₹</span><input id="consultation-fee" name="fee" type="number" min="0" step="0.01" placeholder="0.00" required></span>
+              </label>
+              <label for="consultation-capacity">Patients per slot
+                <input name="capacity" id="consultation-capacity" type="number" min="1" max="10" value="1" required>
+              </label>
+              <input name="duration_minutes" id="consultation-duration" type="hidden" value="15">
+              <button class="button primary consultation-add-button" type="submit">Add consultation</button>
+            </fieldset>
+          </form>
+          {% if not profile.is_verified %}<p class="form-hint">Complete your profile verification to add or edit consultation types.</p>{% endif %}
         </section>
-        <section class="dashboard-panel">
-          <div class="panel-heading"><div><p class="eyebrow">Current menu</p><h2>Active consultation types</h2></div><span class="count-label">{{ consultations|selectattr('is_active')|list|length }} active</span></div>
+        <section class="dashboard-panel consultation-menu-panel">
+          <div class="panel-heading"><div><p class="eyebrow">Your services</p><h2>Consultation menu</h2><p class="panel-description">Update fees and capacity, or remove a service from your menu.</p></div><span class="count-label">{{ consultations|selectattr('is_active')|list|length }} active</span></div>
           <ul class="consultation-list">
             {% for consultation in consultations %}
-              <li class="{{ 'inactive-consultation' if not consultation.is_active else '' }}">
+              <li class="consultation-card {{ 'inactive-consultation' if not consultation.is_active else '' }}">
                 <div class="consultation-line">
-                  <span><strong>{{ consultation.consultation_name }}</strong><small>{{ consultation.duration_minutes }} min / capacity {{ consultation.capacity }} / {{ 'Active' if consultation.is_active else 'Deactivated' }}</small></span>
-                  <b>{{ '%.2f'|format(consultation.fee|float) }}</b>
-                  {% if consultation.is_active and profile.is_verified %}
-                    <button class="text-button consultation-edit-toggle" type="button" data-target="consultation-edit-{{ consultation.consultation_type_id }}">Edit</button>
+                  <span class="consultation-card-icon" aria-hidden="true">&#10003;</span>
+                  <div class="consultation-card-details"><strong>{{ consultation.consultation_name }}</strong><small>{{ consultation.duration_minutes }} min consultation · {{ consultation.capacity }} {{ 'patient' if consultation.capacity == 1 else 'patients' }} per slot</small></div>
+                  <div class="consultation-card-price"><strong>₹{{ '%.2f'|format(consultation.fee|float) }}</strong><span>per consultation</span></div>
+                  <span class="consultation-status {{ 'is-active' if consultation.is_active else 'is-inactive' }}">{{ 'Active' if consultation.is_active else 'Inactive' }}</span>
+                  {% if consultation.is_active and profile.is_verified %}<button class="button secondary consultation-edit-toggle" type="button" data-target="consultation-edit-{{ consultation.consultation_type_id }}" aria-expanded="false">Edit</button>{% endif %}
+                  {% if profile.is_verified %}
+                    <form class="delete-form" method="post" action="{{ url_for('delete_consultation_type', consultation_id=consultation.consultation_type_id) }}" data-confirm-message="Remove {{ consultation.consultation_name }} from your consultation menu?">
+                      <button class="text-button danger-text" type="submit">Remove</button>
+                    </form>
                   {% endif %}
                 </div>
                 {% if consultation.is_active and profile.is_verified %}
                   <form class="consultation-edit" id="consultation-edit-{{ consultation.consultation_type_id }}" method="post" action="{{ url_for('update_consultation_type', consultation_id=consultation.consultation_type_id) }}" hidden>
-                    <select name="consultation_name" class="consultation-name-edit" required>
-                      {% for type_name in ['Quick Consult','Standard Consult','Detailed Consult','Health Camp Session'] %}
-                        <option value="{{ type_name }}" {{ 'selected' if type_name == consultation.consultation_name else '' }}>{{ type_name }}</option>
-                      {% endfor %}
-                    </select>
-                    <input name="fee" type="number" min="0" step="0.01" value="{{ consultation.fee }}" aria-label="Fee" required>
-                    <input name="capacity" type="number" min="{{ 2 if consultation.consultation_name == 'Health Camp Session' else 1 }}" max="{{ 10 if consultation.consultation_name == 'Health Camp Session' else 1 }}" value="{{ consultation.capacity }}" aria-label="Capacity" required>
+                    <label>Consultation type
+                      <select name="consultation_name" class="consultation-name-edit" required>
+                        {% for type_name in ['Quick Consult','Standard Consult','Detailed Consult','Health Camp Session'] %}
+                          <option value="{{ type_name }}" {{ 'selected' if type_name == consultation.consultation_name else '' }}>{{ type_name }}</option>
+                        {% endfor %}
+                      </select>
+                    </label>
+                    <label>Fee
+                      <span class="consultation-input-prefix"><span aria-hidden="true">₹</span><input name="fee" type="number" min="0" step="0.01" value="{{ consultation.fee }}" required></span>
+                    </label>
+                    <label>Patients per slot
+                      <input name="capacity" type="number" min="{{ 2 if consultation.consultation_name == 'Health Camp Session' else 1 }}" max="{{ 10 if consultation.consultation_name == 'Health Camp Session' else 1 }}" value="{{ consultation.capacity }}" required>
+                    </label>
                     <input name="duration_minutes" type="hidden" value="{{ consultation.duration_minutes }}">
                     <button class="button secondary" type="submit">Save changes</button>
-                    <button class="button secondary consultation-edit-cancel" type="button" data-target="consultation-edit-{{ consultation.consultation_type_id }}">Cancel</button>
-                  </form>
-                {% endif %}
-                {% if profile.is_verified %}
-                  <form class="delete-form" method="post" action="{{ url_for('delete_consultation_type', consultation_id=consultation.consultation_type_id) }}">
-                    <button class="text-button danger-text" type="submit">Delete</button>
+                    <button class="button secondary consultation-edit-cancel" type="button" data-target="consultation-edit-{{ consultation.consultation_type_id }}" aria-expanded="true">Cancel</button>
                   </form>
                 {% endif %}
               </li>
             {% else %}
-              <li class="muted">No consultation types added</li>
+              <li class="consultation-empty-state"><span class="blackout-empty-icon" aria-hidden="true">&#10003;</span><div><strong>No consultation types yet</strong><p>Add a service above to let patients book an appointment with you.</p></div></li>
             {% endfor %}
           </ul>
         </section>
@@ -808,7 +868,37 @@
     document.querySelectorAll('.consultation-edit-toggle, .consultation-edit-cancel').forEach(button => button.addEventListener('click', () => {
       const form = document.getElementById(button.dataset.target);
       form.hidden = !form.hidden;
+      const toggle = document.querySelector(`.consultation-edit-toggle[data-target="${button.dataset.target}"]`);
+      if (toggle) {
+        toggle.setAttribute('aria-expanded', String(!form.hidden));
+        toggle.textContent = form.hidden ? 'Edit' : 'Close editor';
+      }
     }));
+    document.querySelectorAll('form[data-confirm-message]').forEach(form => form.addEventListener('submit', event => {
+      if (!window.confirm(form.dataset.confirmMessage)) event.preventDefault();
+    }));
+
+    const blackoutForm = document.getElementById('blackout-form');
+    const blackoutStart = document.getElementById('blackout-start');
+    const blackoutEnd = document.getElementById('blackout-end');
+    const blackoutHint = document.getElementById('blackout-form-hint');
+    blackoutStart?.addEventListener('change', () => {
+      blackoutEnd.min = blackoutStart.value || blackoutEnd.min;
+      if (blackoutEnd.value && blackoutEnd.value <= blackoutStart.value) {
+        blackoutEnd.value = '';
+      }
+      blackoutHint.textContent = blackoutStart.value
+        ? 'Choose an end time after the selected start.'
+        : 'The end time must be after the start time.';
+    });
+    blackoutForm?.addEventListener('submit', event => {
+      if (blackoutStart.value && blackoutEnd.value && blackoutEnd.value <= blackoutStart.value) {
+        event.preventDefault();
+        blackoutEnd.setCustomValidity('Choose an end time after the start time.');
+        blackoutEnd.reportValidity();
+      }
+    });
+    blackoutEnd?.addEventListener('input', () => blackoutEnd.setCustomValidity(''));
 
     const patternList = document.getElementById('pattern-list');
     const weekdays = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY'];

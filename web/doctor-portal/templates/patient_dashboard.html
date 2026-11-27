@@ -101,6 +101,9 @@
           <select id="appointment-status-filter">
             <option value="all">All statuses</option>
             <option value="booked">Booked</option>
+            <option value="cancelled">Cancelled</option>
+            <option value="no_show">Not visited</option>
+            <option value="completed">Completed</option>
           </select>
           <button class="button secondary" type="button" id="clear-appointment-filters">Clear filters</button>
         </div>
@@ -109,10 +112,14 @@
           {% for appointment in appointments %}
             {% set active = appointment.status == 'BOOKED' and appointment.appointment_status == 'CONFIRMED' %}
             {% set upcoming_active = active and not appointment.is_past %}
-            {% set is_completed = appointment.status == 'COMPLETED' or appointment.is_ended %}
-            {% set appointment_status = 'Completed' if is_completed else 'Booked' if active else appointment.status|replace('_', ' ')|title %}
-            {% set appointment_badge = 'status-completed' if is_completed else 'status-booked' if active else ('status-cancelled' if appointment.status in ['CANCELLED', 'CANCELED'] else 'status-pending') %}
-            <article class="patient-appointment-card" data-appointment-status="{{ 'completed' if is_completed else 'booked' if active else 'cancelled' if appointment.status in ['CANCELLED', 'CANCELED'] else 'pending' }}" data-appointment-search="{{ appointment.doctor_name }} {{ appointment.doctor_id }} {{ appointment.appointment_id }}">
+            {% set is_cancelled = appointment.status in ['CANCELLED', 'CANCELED'] or appointment.appointment_status in ['CANCELLED', 'CANCELED'] %}
+            {% set is_no_show = appointment.status == 'NO_SHOW' or appointment.appointment_status == 'NO_SHOW' %}
+            {% set is_completed = appointment.status == 'COMPLETED' or appointment.appointment_status == 'COMPLETED' %}
+            {% set status_key = 'cancelled' if is_cancelled else 'no_show' if is_no_show else 'completed' if is_completed else 'booked' if active else 'hidden' %}
+            {% set appointment_status = 'Cancelled' if is_cancelled else 'Not visited' if is_no_show else 'Completed' if is_completed else 'Booked' %}
+            {% set appointment_badge = 'status-cancelled' if is_cancelled else 'status-no-show' if is_no_show else 'status-completed' if is_completed else 'status-booked' %}
+            {% if status_key != 'hidden' %}
+            <article class="patient-appointment-card" data-appointment-status="{{ status_key }}" data-appointment-search="{{ appointment.doctor_name }} {{ appointment.doctor_id }} {{ appointment.appointment_id }}">
               <div class="patient-appointment-details">
                 <div class="appointment-card-heading">
                   <div><span class="schedule-field-label">Booking reference</span><h3>#{{ appointment.appointment_id }}</h3></div>
@@ -138,6 +145,7 @@
                 </form>
               {% endif %}
             </article>
+            {% endif %}
           {% endfor %}
         </div>
         <div class="schedule-empty-state patient-empty-state patient-filter-empty" id="patient-appointment-empty" hidden><span class="schedule-empty-icon" aria-hidden="true">&#9776;</span><h2>No appointments found</h2><p>Try changing your search or status filter.</p></div>
@@ -195,7 +203,7 @@
               <input id="doctor-city" name="city" value="{{ doctor_search_filters.get('city', '') if doctor_search_filters else '' }}" maxlength="100">
             </label>
             <input type="hidden" name="limit" value="{{ doctor_search.pagination.limit if doctor_search else 10 }}">
-            <button class="button primary" type="submit">Apply filters</button>
+            <button class="button primary" type="submit">Search doctors</button>
             <a class="button secondary" href="{{ url_for('patient_doctor_search') }}">Clear filters</a>
           </form>
 

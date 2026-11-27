@@ -839,6 +839,7 @@ class AppointmentRepository:
         appointment_status=None,
         search=None,
     ):
+        self.complete_elapsed_appointments()
         connection = self.connection_factory()
         try:
             with connection.cursor() as cursor:

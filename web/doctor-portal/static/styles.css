@@ -1633,3 +1633,403 @@ input:focus, select:focus {
     flex-direction: column;
   }
 }
+
+.blackout-page-heading,
+.consulting-page-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.blackout-summary-chip,
+.consulting-summary-chips > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 13px;
+  border: 1px solid #dceae4;
+  border-radius: 999px;
+  background: #fff;
+  color: #60736e;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.blackout-summary-chip strong,
+.consulting-summary-chips strong {
+  color: #176f65;
+  font-size: 14px;
+}
+
+.consulting-summary-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.panel-description {
+  margin: 6px 0 0;
+  color: #788783;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.blackout-create-panel,
+.consultation-create-panel,
+.blackout-list-panel,
+.consultation-menu-panel {
+  margin-bottom: 18px;
+}
+
+.blackout-create-panel .panel-heading,
+.consultation-create-panel .panel-heading,
+.blackout-list-panel .panel-heading,
+.consultation-menu-panel .panel-heading {
+  margin-bottom: 16px;
+}
+
+.doctor-app .blackout-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.doctor-app .blackout-form label,
+.consultation-create-fields > label,
+.consultation-edit > label {
+  display: grid;
+  gap: 7px;
+  color: #61736e;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.doctor-app .blackout-form input,
+.consultation-create-fields select,
+.consultation-create-fields input,
+.consultation-edit select,
+.consultation-edit input {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  border: 1px solid #dce7e1;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.doctor-app .blackout-form .button {
+  min-height: 42px;
+  white-space: nowrap;
+}
+
+.form-hint {
+  margin: 10px 0 0;
+  color: #788783;
+  font-size: 10px;
+}
+
+.blackout-list {
+  display: grid;
+  gap: 9px;
+  border: 0;
+}
+
+.blackout-list .blackout-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-height: 72px;
+  padding: 12px 14px;
+  border: 1px solid #e6eeea;
+  border-radius: 10px;
+  background: #fbfdfc;
+  transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease;
+}
+
+.blackout-list .blackout-card:hover {
+  transform: translateY(-1px);
+  border-color: #cfe2d9;
+  box-shadow: 0 8px 18px rgb(26 72 59 / 6%);
+}
+
+.blackout-card-icon,
+.consultation-card-icon,
+.blackout-empty-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 11px;
+  background: #eaf5f0;
+  color: #18776b;
+  font-size: 17px;
+}
+
+.blackout-card-details,
+.consultation-card-details {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.blackout-card-details strong,
+.consultation-card-details strong {
+  color: #2b3c40;
+  font-size: 12px;
+}
+
+.blackout-card-details span,
+.consultation-card-details small {
+  color: #788783;
+  font-size: 10px;
+}
+
+.blackout-card form,
+.consultation-card .delete-form {
+  margin: 0;
+}
+
+.blackout-card .button {
+  min-height: 35px;
+  padding-inline: 12px;
+}
+
+.blackout-empty-state,
+.consultation-empty-state {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 20px;
+  border: 1px dashed #d8e6df;
+  border-radius: 10px;
+  background: #fbfdfc;
+}
+
+.blackout-empty-state strong,
+.consultation-empty-state strong {
+  color: #344a45;
+  font-size: 12px;
+}
+
+.blackout-empty-state p,
+.consultation-empty-state p {
+  margin: 5px 0 0;
+  color: #788783;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.consultation-create-fields {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.4fr) minmax(130px, .75fr) minmax(145px, .8fr) auto;
+  align-items: end;
+  gap: 14px;
+}
+
+.consultation-input-prefix {
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  overflow: hidden;
+  border: 1px solid #dce7e1;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.consultation-input-prefix > span {
+  padding: 0 11px;
+  color: #72817d;
+  font-size: 12px;
+}
+
+.consultation-input-prefix input {
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+
+.consultation-add-button {
+  min-height: 42px;
+  white-space: nowrap;
+}
+
+.consultation-list {
+  display: grid;
+  gap: 10px;
+  border: 0;
+}
+
+.consultation-list > .consultation-card {
+  display: grid;
+  gap: 0;
+  min-height: 0;
+  padding: 14px;
+  border: 1px solid #e5eeea;
+  border-radius: 11px;
+  background: #fff;
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+
+.consultation-list > .consultation-card:hover {
+  border-color: #cfe2d9;
+  box-shadow: 0 8px 18px rgb(26 72 59 / 5%);
+}
+
+.consultation-list > .consultation-card.inactive-consultation {
+  opacity: .72;
+  background: #f8faf9;
+}
+
+.consultation-card .consultation-line {
+  display: grid;
+  grid-template-columns: auto minmax(150px, 1fr) minmax(120px, auto) auto auto auto;
+  align-items: center;
+  gap: 14px;
+}
+
+.consultation-card .consultation-card-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.consultation-card .consultation-card-details {
+  display: grid;
+  gap: 5px;
+}
+
+.consultation-card-price {
+  display: grid;
+  gap: 3px;
+  text-align: right;
+}
+
+.consultation-card-price strong {
+  color: #176f65;
+  font-size: 15px;
+}
+
+.consultation-card-price span {
+  color: #85918d;
+  font-size: 9px;
+}
+
+.consultation-status {
+  padding: 5px 9px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.consultation-status.is-active {
+  background: #e8f5ed;
+  color: #2b714b;
+}
+
+.consultation-status.is-inactive {
+  background: #edf0ef;
+  color: #6b7774;
+}
+
+.consultation-card .consultation-edit {
+  grid-template-columns: minmax(160px, 1.3fr) minmax(120px, .8fr) minmax(140px, .8fr) auto auto;
+  align-items: end;
+  gap: 12px;
+  padding-top: 16px;
+  margin-top: 14px;
+  border-top: 1px solid #edf2ef;
+}
+
+.consultation-card .consultation-edit .button {
+  min-height: 40px;
+}
+
+.consultation-card .delete-form {
+  align-self: center;
+}
+
+.consultation-card .consultation-edit[hidden] {
+  display: none;
+}
+
+.consultation-list > .consultation-empty-state {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  padding: 20px;
+  border: 1px dashed #d8e6df;
+  border-radius: 10px;
+  background: #fbfdfc;
+}
+
+@media (max-width: 900px) {
+  .consultation-create-fields {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .consultation-card .consultation-line {
+    grid-template-columns: auto minmax(120px, 1fr) auto auto;
+  }
+
+  .consultation-card-price {
+    text-align: left;
+  }
+
+  .consultation-card .consultation-edit {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .blackout-page-heading,
+  .consulting-page-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .doctor-app .blackout-form,
+  .consultation-create-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .doctor-app .blackout-form .button,
+  .consultation-add-button {
+    width: 100%;
+  }
+
+  .blackout-list .blackout-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .blackout-card form {
+    grid-column: 2;
+  }
+
+  .blackout-card .button {
+    width: 100%;
+  }
+
+  .consultation-card .consultation-line {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+
+  .consultation-card-price {
+    grid-column: 2;
+  }
+
+  .consultation-card .consultation-status {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .consultation-card .consultation-edit {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,5 +1,6 @@
 import os
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("ENVIRONMENT_NAME", "test")
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
@@ -21,8 +22,11 @@ class FakeCursor:
     def __exit__(self, exc_type, exc_value, traceback):
         return False
 
-    def execute(self, query):
+    def execute(self, query, params=None):
         self.query = query
+
+    def fetchall(self):
+        return []
 
 
 class FakeConnection:
@@ -65,6 +69,21 @@ class AppointmentCompletionTests(unittest.TestCase):
         )
         self.assertTrue(connection.committed)
         self.assertFalse(connection.rolled_back)
+        self.assertTrue(connection.closed)
+
+    def test_listing_reconciles_elapsed_appointments_before_reading(self):
+        connection = FakeConnection()
+        repository = AppointmentRepository(connection_factory=lambda: connection)
+
+        with patch.object(
+            repository,
+            "complete_elapsed_appointments",
+        ) as complete_elapsed:
+            result = repository.list_appointments("ADMIN", 1)
+
+        complete_elapsed.assert_called_once_with()
+        self.assertEqual(result["appointments"], [])
+        self.assertIn("FROM appointments a", connection.cursor_instance.query)
         self.assertTrue(connection.closed)
 
 
