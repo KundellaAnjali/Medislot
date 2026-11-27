@@ -1296,7 +1296,7 @@ def get_day_schedule(cursor, doctor_id, query):
             FROM appointments a
             JOIN patients p ON p.patient_id = a.patient_id
             WHERE a.doctor_id = %s AND a.slot_id IN ({placeholders})
-              AND a.appointment_status = 'CONFIRMED'
+              AND a.appointment_status IN ('CONFIRMED', 'COMPLETED', 'NO_SHOW')
             ORDER BY a.appointment_id
             """,
             (doctor_id, *slot_ids),

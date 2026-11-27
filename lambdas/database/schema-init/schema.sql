@@ -261,6 +261,13 @@ CREATE TABLE IF NOT EXISTS appointments (
 
     cancelled_by VARCHAR(16) NULL,
 
+    INDEX idx_appointments_completion (
+        status,
+        appointment_status,
+        slot_start_time,
+        appointment_datetime
+    ),
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

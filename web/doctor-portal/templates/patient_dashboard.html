@@ -23,9 +23,9 @@
       </form>
     </div>
   </aside>
-  <main class="patient-content patient-main" data-default-view="{{ 'doctor-search-view' if doctor_search else 'patient-dashboard-view' }}">
+  <main class="patient-content patient-main" data-default-view="{{ 'doctor-search-view' if request.endpoint == 'patient_doctor_search' else 'patient-dashboard-view' }}">
     <header class="main-header patient-main-header">
-      <div><p class="eyebrow">MediSlot / Patient workspace</p><p class="header-date">{{ today_display_date }} <span>UTC</span></p></div>
+      <div><p class="eyebrow">MediSlot / Patient workspace</p><p class="header-date">{{ today_display_date }}</p></div>
       <div class="header-actions">
         <span class="status-pill {{ 'verified' if profile and profile.get('profile_filled') else 'pending' }}"><span></span>{{ 'Profile complete' if profile and profile.get('profile_filled') else 'Complete your profile' }}</span>
         <span class="header-avatar">{{ (profile.get('first_name') or 'P')[:1] if profile else 'P' }}{{ (profile.get('last_name') or '')[:1] if profile else '' }}</span>
@@ -44,7 +44,7 @@
             <p>Find trusted care, manage your appointments and keep your health details up to date.</p>
           </div>
           <div class="doctor-welcome-actions">
-            <span class="doctor-date-chip"><span aria-hidden="true">&#9719;</span>{{ today_display_date }} <small>UTC</small></span>
+            <span class="doctor-date-chip"><span aria-hidden="true">&#9719;</span>{{ today_display_date }}</span>
             <button class="button welcome-primary" type="button" data-patient-go-view="doctor-search-view">Find a doctor <span aria-hidden="true">&#8594;</span></button>
             <button class="button welcome-secondary" type="button" data-patient-go-view="patient-appointments-view">View appointments</button>
           </div>
@@ -79,7 +79,7 @@
 
       <section class="patient-dashboard-view" id="patient-appointments-view" data-patient-view hidden>
         <section class="view-heading patient-view-heading">
-          <div><p class="eyebrow">Your care</p><h1>Appointments</h1><p class="view-subtitle">Review your booking details and manage upcoming visits. Times are displayed in UTC.</p></div>
+          <div><p class="eyebrow">Your care</p><h1>Appointments</h1><p class="view-subtitle">Review your booking details and manage upcoming visits.</p></div>
           <button class="button primary" type="button" data-patient-go-view="doctor-search-view">Book an appointment</button>
         </section>
         <section class="patient-appointments dashboard-panel" id="my-appointments">
@@ -96,13 +96,11 @@
         <div class="patient-appointment-toolbar">
           <label for="appointment-search">Search appointments</label>
           <input id="appointment-search" type="search" placeholder="Search doctor or booking reference" autocomplete="off">
+          <button class="button secondary" type="button" id="search-appointments">Search</button>
           <label for="appointment-status-filter">Status</label>
           <select id="appointment-status-filter">
             <option value="all">All statuses</option>
             <option value="booked">Booked</option>
-            <option value="pending">Pending</option>
-            <option value="cancelled">Cancelled</option>
-            <option value="completed">Completed</option>
           </select>
           <button class="button secondary" type="button" id="clear-appointment-filters">Clear filters</button>
         </div>
@@ -111,31 +109,31 @@
           {% for appointment in appointments %}
             {% set active = appointment.status == 'BOOKED' and appointment.appointment_status == 'CONFIRMED' %}
             {% set upcoming_active = active and not appointment.is_past %}
-            {% set past_booked = active and appointment.is_past %}
-            {% set appointment_status = 'Completed' if past_booked or appointment.status == 'COMPLETED' else 'Booked' if upcoming_active else appointment.status|replace('_', ' ')|title %}
-            {% set appointment_badge = 'status-completed' if past_booked or appointment.status == 'COMPLETED' else 'status-booked' if upcoming_active else ('status-cancelled' if appointment.status in ['CANCELLED', 'CANCELED'] else 'status-pending') %}
-            <article class="patient-appointment-card" data-appointment-status="{{ 'completed' if past_booked or appointment.status == 'COMPLETED' else 'booked' if upcoming_active else 'cancelled' if appointment.status in ['CANCELLED', 'CANCELED'] else 'pending' }}" data-appointment-search="doctor {{ appointment.doctor_id }} {{ appointment.appointment_id }}">
+            {% set is_completed = appointment.status == 'COMPLETED' or appointment.is_ended %}
+            {% set appointment_status = 'Completed' if is_completed else 'Booked' if active else appointment.status|replace('_', ' ')|title %}
+            {% set appointment_badge = 'status-completed' if is_completed else 'status-booked' if active else ('status-cancelled' if appointment.status in ['CANCELLED', 'CANCELED'] else 'status-pending') %}
+            <article class="patient-appointment-card" data-appointment-status="{{ 'completed' if is_completed else 'booked' if active else 'cancelled' if appointment.status in ['CANCELLED', 'CANCELED'] else 'pending' }}" data-appointment-search="{{ appointment.doctor_name }} {{ appointment.doctor_id }} {{ appointment.appointment_id }}">
               <div class="patient-appointment-details">
                 <div class="appointment-card-heading">
                   <div><span class="schedule-field-label">Booking reference</span><h3>#{{ appointment.appointment_id }}</h3></div>
                   <span class="status-badge {{ appointment_badge }}">{{ appointment_status }}</span>
                 </div>
-                <p><strong>Doctor</strong><a href="{{ url_for('public_doctor_profile', doctor_id=appointment.doctor_id) }}">View Doctor {{ appointment.doctor_id }} profile</a></p>
-                <p><strong>Date and time</strong><time class="patient-appointment-time" datetime="{{ appointment.slot_start_time }}" data-utc-time="{{ appointment.slot_start_time }}">{{ appointment.slot_start_time }}</time><span class="patient-utc-label">UTC</span></p>
+                <p><strong>Doctor</strong><a href="{{ url_for('public_doctor_profile', doctor_id=appointment.doctor_id) }}">View Dr. {{ appointment.doctor_name }} profile</a></p>
+                <p><strong>Date and time</strong><time class="patient-appointment-time" datetime="{{ appointment.slot_start_time }}" data-utc-time="{{ appointment.slot_start_time }}">{{ appointment.slot_start_time }}</time></p>
                 <p><strong>Consultation type</strong><span>{{ appointment.consultation_type or 'Not available' }}</span></p>
-                <p><strong>Fee</strong><span>{% if appointment.fee is not none %}{{ '%.2f'|format(appointment.fee|float) }}{% else %}Not available{% endif %}</span></p>
                 <p><strong>Duration</strong><span>{% if appointment.duration_minutes is not none %}{{ appointment.duration_minutes }} minutes{% else %}Not available{% endif %}</span></p>
-                <p><strong>Payment status</strong><span>{{ appointment.payment_status|replace('_', ' ')|title if appointment.payment_status else 'Not available' }}</span></p>
-                {% if appointment.payment_method %}<p><strong>Payment method</strong><span>{{ appointment.payment_method|replace('_', ' ')|title }}</span></p>{% endif %}
-                {% if appointment.refund_status and appointment.refund_status != 'NOT_REQUIRED' %}
-                  <p><strong>Refund status</strong><span>{{ appointment.refund_status|replace('_', ' ')|title }}</span></p>
-                  <p><strong>Refund amount</strong><span>{% if appointment.refund_amount is not none %}{{ '%.2f'|format(appointment.refund_amount|float) }}{% else %}Not available{% endif %}</span></p>
-                {% elif appointment.status in ['CANCELLED', 'CANCELED'] and appointment.refund_status == 'NOT_REQUIRED' %}
-                  <p><strong>Refund</strong><span>No refund applicable</span></p>
-                {% endif %}
+                <p><strong>Payment</strong><button class="button secondary payment-details-button" type="button"
+                  data-open-payment-details
+                  data-payment-fee="{{ '%.2f'|format(appointment.fee|float) if appointment.fee is not none else '' }}"
+                  data-payment-status="{{ appointment.payment_status or '' }}"
+                  data-payment-method="{{ appointment.payment_method or '' }}"
+                  data-refund-amount="{{ '%.2f'|format(appointment.refund_amount|float) if appointment.refund_amount is not none else '' }}"
+                  data-refund-status="{{ appointment.refund_status or '' }}"
+                  data-transaction-reference="{{ appointment.transaction_id or '' }}"
+                  data-refund-reference="{{ appointment.refund_transaction_id or '' }}">View Payment Details</button></p>
               </div>
               {% if upcoming_active %}
-                <form method="post" action="{{ url_for('cancel_patient_appointment', appointment_id=appointment.appointment_id) }}" class="patient-cancel-form" data-patient-cancel-form data-appointment-id="{{ appointment.appointment_id }}" data-doctor-name="Doctor {{ appointment.doctor_id }}" data-appointment-time="{{ appointment.slot_start_time }}">
+                <form method="post" action="{{ url_for('cancel_patient_appointment', appointment_id=appointment.appointment_id) }}" class="patient-cancel-form" data-patient-cancel-form data-appointment-id="{{ appointment.appointment_id }}" data-doctor-name="Dr. {{ appointment.doctor_name }}" data-appointment-time="{{ appointment.slot_start_time }}">
                   <button class="button secondary danger-text" type="button" data-open-cancel-dialog>Cancel appointment</button>
                 </form>
               {% endif %}
@@ -159,12 +157,29 @@
         </section>
       </section>
 
+      <dialog class="schedule-dialog payment-details-dialog" id="payment-details-dialog" aria-labelledby="payment-details-title">
+        <div class="schedule-dialog-header">
+          <div><p class="eyebrow">Appointment billing</p><h2 id="payment-details-title">Payment details</h2></div>
+          <button class="icon-button" type="button" data-close-payment-details aria-label="Close payment details">&times;</button>
+        </div>
+        <dl class="appointment-detail-list">
+          <div><dt>Fee</dt><dd id="payment-detail-fee"></dd></div>
+          <div><dt>Payment status</dt><dd id="payment-detail-status"></dd></div>
+          <div><dt>Payment method</dt><dd id="payment-detail-method"></dd></div>
+          <div><dt>Refund amount</dt><dd id="payment-detail-refund-amount"></dd></div>
+          <div><dt>Refund status</dt><dd id="payment-detail-refund-status"></dd></div>
+          <div><dt>Transaction reference</dt><dd id="payment-detail-reference"></dd></div>
+          <div id="payment-refund-reference-row" hidden><dt>Refund reference</dt><dd id="payment-detail-refund-reference"></dd></div>
+        </dl>
+        <div class="schedule-dialog-actions"><button class="button secondary" type="button" data-close-payment-details>Close</button></div>
+      </dialog>
+
       <section class="patient-dashboard-view" id="doctor-search-view" data-patient-view hidden>
-        <div class="view-heading patient-view-heading"><div><p class="eyebrow">Find care</p><h1>Search doctors</h1><p class="view-subtitle">Find the right care by doctor name, specialty, hospital or city.</p></div>{% if doctor_search %}<button class="button secondary" type="button" data-patient-go-view="patient-dashboard-view">Back to dashboard</button>{% endif %}</div>
+        <div class="view-heading patient-view-heading"><div><p class="eyebrow">Find care</p><h1>Search doctors</h1><p class="view-subtitle">Browse verified doctors or use filters to narrow the directory.</p></div>{% if doctor_search %}<button class="button secondary" type="button" data-patient-go-view="patient-dashboard-view">Back to dashboard</button>{% endif %}</div>
         <section class="doctor-search" id="doctor-search">
           <div class="patient-profile-heading">
-            <div><p class="eyebrow">Care directory</p><h2>Find a doctor</h2></div>
-            {% if doctor_search %}<span class="count-label">Search results</span>{% endif %}
+            <div><p class="eyebrow">Care directory</p><h2>Doctors</h2></div>
+            {% if doctor_search %}<span class="count-label">Directory</span>{% endif %}
           </div>
           <form method="get" action="{{ url_for('patient_doctor_search') }}" class="doctor-search-form">
             <label for="doctor-name">Doctor name
@@ -180,7 +195,7 @@
               <input id="doctor-city" name="city" value="{{ doctor_search_filters.get('city', '') if doctor_search_filters else '' }}" maxlength="100">
             </label>
             <input type="hidden" name="limit" value="{{ doctor_search.pagination.limit if doctor_search else 10 }}">
-            <button class="button primary" type="submit">Search doctors</button>
+            <button class="button primary" type="submit">Apply filters</button>
             <a class="button secondary" href="{{ url_for('patient_doctor_search') }}">Clear filters</a>
           </form>
 
@@ -225,7 +240,7 @@
               <div class="schedule-empty-state patient-empty-state"><span class="schedule-empty-icon" aria-hidden="true">&#9906;</span><h2>No doctors found</h2><p>Try a different name, specialty or location.</p><a class="button secondary" href="{{ url_for('patient_doctor_search') }}">Clear search</a></div>
             {% endif %}
           {% else %}
-            <div class="schedule-empty-state patient-empty-state"><span class="schedule-empty-icon" aria-hidden="true">&#9906;</span><h2>Start your search</h2><p>Enter a specialty or location to find a doctor who fits your needs.</p></div>
+            <div class="schedule-empty-state patient-empty-state"><span class="schedule-empty-icon" aria-hidden="true">&#9906;</span><h2>No doctors available</h2><p>Verified doctors will appear here when available.</p></div>
           {% endif %}
         </section>
       </section>
@@ -365,9 +380,10 @@
     const appointmentCards = [...document.querySelectorAll('.patient-appointment-card[data-appointment-status]')];
     const appointmentCount = document.getElementById('patient-appointment-count');
     const appointmentEmptyState = document.getElementById('patient-appointment-empty');
+    let submittedAppointmentSearch = '';
     const filterPatientAppointments = () => {
       const selectedStatus = appointmentStatusFilter?.value || 'all';
-      const query = (appointmentSearch?.value || '').trim().toLocaleLowerCase();
+      const query = submittedAppointmentSearch.toLocaleLowerCase();
       let visible = 0;
       appointmentCards.forEach(card => {
         const statusMatches = selectedStatus === 'all' || card.dataset.appointmentStatus === selectedStatus;
@@ -381,11 +397,22 @@
       }
       if (appointmentEmptyState) appointmentEmptyState.hidden = visible > 0;
     };
-    appointmentSearch?.addEventListener('input', filterPatientAppointments);
+    const submitAppointmentSearch = () => {
+      submittedAppointmentSearch = (appointmentSearch?.value || '').trim();
+      filterPatientAppointments();
+    };
+    document.getElementById('search-appointments')?.addEventListener('click', submitAppointmentSearch);
+    appointmentSearch?.addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        submitAppointmentSearch();
+      }
+    });
     appointmentStatusFilter?.addEventListener('change', filterPatientAppointments);
     document.getElementById('clear-appointment-filters')?.addEventListener('click', () => {
       if (appointmentSearch) appointmentSearch.value = '';
       if (appointmentStatusFilter) appointmentStatusFilter.value = 'all';
+      submittedAppointmentSearch = '';
       filterPatientAppointments();
     });
     filterPatientAppointments();
@@ -395,7 +422,7 @@
       if (!Number.isNaN(parsed.getTime())) {
         element.textContent = new Intl.DateTimeFormat('en-GB', {
           day: '2-digit', month: 'short', year: 'numeric',
-          hour: '2-digit', minute: '2-digit', timeZone: 'UTC', timeZoneName: 'short',
+          hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
         }).format(parsed);
       }
     });
@@ -407,7 +434,7 @@
       if (Number.isNaN(parsed.getTime())) return value;
       return new Intl.DateTimeFormat('en-GB', {
         day: '2-digit', month: 'short', year: 'numeric',
-        hour: '2-digit', minute: '2-digit', timeZone: 'UTC', timeZoneName: 'short',
+        hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
       }).format(parsed);
     };
     document.querySelectorAll('[data-open-cancel-dialog]').forEach(button => button.addEventListener('click', () => {
@@ -423,6 +450,27 @@
     document.getElementById('confirm-patient-cancel').addEventListener('click', () => {
       patientCancelForm?.requestSubmit();
     });
+
+    const paymentDetailsDialog = document.getElementById('payment-details-dialog');
+    const paymentDetailValue = (value, fallback = 'Not available') => value || fallback;
+    document.querySelectorAll('[data-open-payment-details]').forEach(button => button.addEventListener('click', () => {
+      const setPaymentDetail = (id, value) => {
+        document.getElementById(id).textContent = paymentDetailValue(value);
+      };
+      setPaymentDetail('payment-detail-fee', button.dataset.paymentFee);
+      setPaymentDetail('payment-detail-status', button.dataset.paymentStatus?.replace(/_/g, ' '));
+      setPaymentDetail('payment-detail-method', button.dataset.paymentMethod?.replace(/_/g, ' '));
+      setPaymentDetail('payment-detail-refund-amount', button.dataset.refundAmount);
+      setPaymentDetail('payment-detail-refund-status', button.dataset.refundStatus?.replace(/_/g, ' '));
+      setPaymentDetail('payment-detail-reference', button.dataset.transactionReference);
+      const refundReference = button.dataset.refundReference;
+      document.getElementById('payment-refund-reference-row').hidden = !refundReference;
+      setPaymentDetail('payment-detail-refund-reference', refundReference);
+      paymentDetailsDialog.showModal();
+    }));
+    document.querySelectorAll('[data-close-payment-details]').forEach(button => button.addEventListener('click', () => {
+      paymentDetailsDialog.close();
+    }));
   </script>
 </body>
 </html>

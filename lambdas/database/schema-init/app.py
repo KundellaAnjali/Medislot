@@ -556,6 +556,16 @@ def lambda_handler(event, context):
                     "idx_appointments_doctor_created",
                     ("doctor_id", "created_at", "appointment_id"),
                 ),
+                (
+                    "appointments",
+                    "idx_appointments_completion",
+                    (
+                        "status",
+                        "appointment_status",
+                        "slot_start_time",
+                        "appointment_datetime",
+                    ),
+                ),
             )
             for table_name, index_name, columns in appointment_indexes:
                 if ensure_index(cursor, table_name, index_name, columns):

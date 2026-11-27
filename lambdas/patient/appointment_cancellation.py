@@ -45,7 +45,7 @@ class AppointmentCancellationService:
         self.repository = repository or AppointmentRepository()
         self.refund_service = refund_service or RefundService()
 
-    def cancel(self, role, user_id, appointment_id):
+    def cancel(self, role, user_id, appointment_id, single_appointment=False):
         if role not in {"PATIENT", "DOCTOR"}:
             raise CancellationError(403, "Only patients or doctors can cancel appointments.")
         try:
@@ -56,6 +56,7 @@ class AppointmentCancellationService:
                 refund_service=self.refund_service,
                 now=datetime.now(timezone.utc),
                 deactivate_slot=deactivate_slot,
+                single_appointment=single_appointment,
             )
         except RefundServiceError as error:
             logger.exception("Could not calculate appointment refund")

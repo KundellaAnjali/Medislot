@@ -1,7 +1,7 @@
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import boto3
 import pymysql
@@ -228,6 +228,7 @@ class AppointmentRepository:
         refund_service,
         now,
         deactivate_slot=None,
+        single_appointment=False,
     ):
         connection = self.connection_factory()
         try:
@@ -237,7 +238,8 @@ class AppointmentRepository:
                     SELECT appointment_id, patient_id, doctor_id, slot_id,
                            COALESCE(slot_start_time, appointment_datetime)
                                AS slot_start_time,
-                           COALESCE(status, 'BOOKED') AS status
+                           COALESCE(status, 'BOOKED') AS status,
+                           appointment_status
                     FROM appointments
                     WHERE appointment_id = %s
                     FOR UPDATE
@@ -305,33 +307,43 @@ class AppointmentRepository:
                         raise AppointmentRepositoryError(
                             404, "Doctor was not found."
                         )
-                    if deactivate_slot:
+                    if single_appointment and (
+                        selected["status"] != "BOOKED"
+                        or selected["appointment_status"] != "CONFIRMED"
+                    ):
+                        raise AppointmentRepositoryError(
+                            409, "Only a booked appointment can be cancelled individually."
+                        )
+                    if deactivate_slot and not single_appointment:
                         deactivate_slot(
                             int(selected["doctor_id"]),
                             selected["slot_start_time"],
                         )
-                    cursor.execute(
-                        """
-                        SELECT appointment_id, patient_id, doctor_id, slot_id,
-                               COALESCE(slot_start_time, appointment_datetime)
-                                   AS slot_start_time,
-                               COALESCE(status, 'BOOKED') AS status
-                        FROM appointments
-                        WHERE doctor_id = %s
-                          AND slot_id = %s
-                          AND COALESCE(slot_start_time, appointment_datetime) = %s
-                          AND (status = 'BOOKED'
-                               OR appointment_status = 'CONFIRMED')
-                        ORDER BY appointment_id
-                        FOR UPDATE
-                        """,
-                        (
-                            selected["doctor_id"],
-                            selected["slot_id"],
-                            selected["slot_start_time"],
-                        ),
-                    )
-                    targets = cursor.fetchall()
+                    if single_appointment:
+                        targets = [selected]
+                    else:
+                        cursor.execute(
+                            """
+                            SELECT appointment_id, patient_id, doctor_id, slot_id,
+                                   COALESCE(slot_start_time, appointment_datetime)
+                                       AS slot_start_time,
+                                   COALESCE(status, 'BOOKED') AS status
+                            FROM appointments
+                            WHERE doctor_id = %s
+                              AND slot_id = %s
+                              AND COALESCE(slot_start_time, appointment_datetime) = %s
+                              AND (status = 'BOOKED'
+                                   OR appointment_status = 'CONFIRMED')
+                            ORDER BY appointment_id
+                            FOR UPDATE
+                            """,
+                            (
+                                selected["doctor_id"],
+                                selected["slot_id"],
+                                selected["slot_start_time"],
+                            ),
+                        )
+                        targets = cursor.fetchall()
                     if not targets and selected["status"] == "CANCELLED":
                         cursor.execute(
                             """
@@ -742,6 +754,39 @@ class AppointmentRepository:
         finally:
             connection.close()
 
+    def complete_elapsed_appointments(self):
+        connection = self.connection_factory()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE appointments AS a
+                    JOIN consultation_types AS ct
+                      ON ct.consultation_type_id = a.consultation_type_id
+                    SET a.status = 'COMPLETED',
+                        a.appointment_status = 'COMPLETED'
+                    WHERE a.status = 'BOOKED'
+                      AND a.appointment_status = 'CONFIRMED'
+                      AND DATE_ADD(
+                          COALESCE(a.slot_start_time, a.appointment_datetime),
+                          INTERVAL ct.duration_minutes MINUTE
+                      ) <= UTC_TIMESTAMP(6)
+                    """
+                )
+                completed_count = cursor.rowcount
+            connection.commit()
+            logger.info(
+                "Automatically completed elapsed appointments: count=%s",
+                completed_count,
+            )
+            return completed_count
+        except Exception:
+            connection.rollback()
+            logger.exception("Could not automatically complete elapsed appointments")
+            raise
+        finally:
+            connection.close()
+
     def list_patient_refunds(self, user_id, limit=50, offset=0):
         connection = self.connection_factory()
         try:
@@ -784,11 +829,67 @@ class AppointmentRepository:
         finally:
             connection.close()
 
-    def list_appointments(self, role, user_id, limit=50, offset=0):
+    def list_appointments(
+        self,
+        role,
+        user_id,
+        limit=50,
+        offset=0,
+        appointment_date=None,
+        appointment_status=None,
+        search=None,
+    ):
         connection = self.connection_factory()
         try:
             with connection.cursor() as cursor:
                 scope, params = self._appointment_scope(cursor, role, user_id)
+                filters = []
+                filter_params = []
+                if appointment_date:
+                    filters.append(
+                        "DATE(COALESCE(a.slot_start_time, a.appointment_datetime)) = %s"
+                    )
+                    filter_params.append(appointment_date)
+                if appointment_status == "booked":
+                    filters.append(
+                        "COALESCE(a.status, 'BOOKED') = 'BOOKED' "
+                        "AND a.appointment_status = 'CONFIRMED'"
+                    )
+                elif appointment_status == "cancelled":
+                    filters.append(
+                        "(a.status IN ('CANCELLED', 'CANCELED') "
+                        "OR a.appointment_status IN ('CANCELLED', 'CANCELED'))"
+                    )
+                elif appointment_status == "completed":
+                    filters.append(
+                        "(a.status = 'COMPLETED' "
+                        "OR a.appointment_status = 'COMPLETED')"
+                    )
+                elif appointment_status == "no_show":
+                    filters.append(
+                        "(a.status = 'NO_SHOW' "
+                        "OR a.appointment_status = 'NO_SHOW')"
+                    )
+                elif appointment_status == "all":
+                    filters.append(
+                        "(COALESCE(a.status, 'BOOKED') = 'BOOKED' "
+                        "AND a.appointment_status = 'CONFIRMED') "
+                        "OR a.status IN ('CANCELLED', 'CANCELED') "
+                        "OR a.appointment_status IN ('CANCELLED', 'CANCELED') "
+                        "OR a.status IN ('COMPLETED', 'NO_SHOW') "
+                        "OR a.appointment_status IN ('COMPLETED', 'NO_SHOW')"
+                    )
+                if search:
+                    filters.append(
+                        "(CONCAT_WS(' ', patient.first_name, patient.last_name) "
+                        "LIKE %s OR CAST(a.appointment_id AS CHAR) LIKE %s)"
+                    )
+                    search_term = f"%{search}%"
+                    filter_params.extend((search_term, search_term))
+                if filters:
+                    scope += " AND " + " AND ".join(
+                        f"({filter_expression})" for filter_expression in filters
+                    )
                 cursor.execute(
                     f"""
                     SELECT a.appointment_id, a.patient_id, a.doctor_id, a.slot_id,
@@ -800,6 +901,7 @@ class AppointmentRepository:
                            ct.consultation_name AS consultation_type,
                            p.status AS payment_status,
                            p.payment_method,
+                           p.amount AS amount_paid,
                            p.transaction_id,
                            r.status AS refund_status,
                            r.refund_amount,
@@ -807,18 +909,29 @@ class AppointmentRepository:
                            r.refund_percentage,
                            r.refund_transaction_id,
                            r.refunded_at,
-                           ct.duration_minutes, dct.fee,
+                           ct.duration_minutes,
+                           COALESCE(p.amount, dct.fee) AS fee,
                            patient.first_name AS patient_first_name,
                            patient.last_name AS patient_last_name,
                            patient.phone_number AS patient_phone_number,
+                           patient.emergency_contact AS patient_emergency_contact,
                            patient.date_of_birth AS patient_date_of_birth,
                            patient.gender AS patient_gender,
-                           patient_user.email AS patient_email
+                           patient_user.email AS patient_email,
+                           COALESCE(
+                               NULLIF(
+                                   TRIM(CONCAT_WS(' ', doctor.first_name, doctor.last_name)),
+                                   ''
+                               ),
+                               CONCAT('Doctor ', a.doctor_id)
+                           ) AS doctor_name
                     FROM appointments a
                     LEFT JOIN patients patient
                       ON patient.patient_id = a.patient_id
                     LEFT JOIN users patient_user
                       ON patient_user.user_id = patient.user_id
+                    LEFT JOIN doctors doctor
+                      ON doctor.doctor_id = a.doctor_id
                     LEFT JOIN consultation_types ct
                       ON ct.consultation_type_id = a.consultation_type_id
                     LEFT JOIN doctor_consulting_types dct
@@ -832,7 +945,7 @@ class AppointmentRepository:
                     ORDER BY a.created_at DESC, a.appointment_id DESC
                     LIMIT %s OFFSET %s
                     """,
-                    (*params, limit + 1, offset),
+                    (*params, *filter_params, limit + 1, offset),
                 )
                 rows = cursor.fetchall()
                 has_more = len(rows) > limit
@@ -851,8 +964,15 @@ class AppointmentRepository:
                         if slot_start.tzinfo is None:
                             slot_start = slot_start.replace(tzinfo=timezone.utc)
                         item["is_past"] = slot_start <= now
+                        duration_minutes = item.get("duration_minutes")
+                        item["is_ended"] = (
+                            slot_start + timedelta(minutes=duration_minutes) <= now
+                            if duration_minutes is not None
+                            else False
+                        )
                     else:
                         item["is_past"] = False
+                        item["is_ended"] = False
                 return {
                     "appointments": items,
                     "limit": limit,

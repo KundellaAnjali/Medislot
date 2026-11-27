@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+from datetime import date
 
 try:
     from .appointment_repository import (
@@ -79,10 +80,28 @@ def lambda_handler(event, context):
             )
             if not re.fullmatch(r"[1-9][0-9]{0,9}", str(raw_id)):
                 return response(400, {"message": "Invalid appointment_id."})
+            raw_body = event.get("body")
+            try:
+                body = json.loads(raw_body) if raw_body else {}
+            except (TypeError, json.JSONDecodeError):
+                return response(400, {"message": "Request body must be valid JSON."})
+            if not isinstance(body, dict) or set(body) - {"single_appointment"}:
+                return response(400, {"message": "Invalid cancellation request."})
+            single_appointment = body.get("single_appointment", False)
+            if not isinstance(single_appointment, bool):
+                return response(
+                    400, {"message": "single_appointment must be a boolean."}
+                )
+            if single_appointment and role != "DOCTOR":
+                return response(
+                    403,
+                    {"message": "Only doctors can cancel an individual appointment."},
+                )
             result = AppointmentCancellationService().cancel(
                 role,
                 user_id,
                 int(raw_id),
+                single_appointment=single_appointment,
             )
             return response(200, result)
         if method == "POST" and resource == "/appointments/{appointment_id}/no-show":
@@ -100,7 +119,10 @@ def lambda_handler(event, context):
                 user_id,
                 int(raw_id),
             )
-            return response(200, result)
+            return response(
+                200,
+                {"success": True, "status": result["status"]},
+            )
         if method == "GET" and resource == "/patients/refunds":
             if role != "PATIENT":
                 return response(
@@ -114,9 +136,50 @@ def lambda_handler(event, context):
             )
         if method == "GET" and resource == "/appointments":
             limit, offset = parse_pagination(event)
+            params = event.get("queryStringParameters") or {}
+            appointment_date = params.get("appointment_date")
+            appointment_status = params.get("appointment_status")
+            search = params.get("search", "").strip()
+            if appointment_date:
+                try:
+                    parsed_date = date.fromisoformat(appointment_date)
+                except (TypeError, ValueError) as error:
+                    raise AppointmentRepositoryError(
+                        400, "appointment_date must use YYYY-MM-DD format."
+                    ) from error
+                if parsed_date.isoformat() != appointment_date:
+                    raise AppointmentRepositoryError(
+                        400, "appointment_date must use YYYY-MM-DD format."
+                    )
+            if appointment_status not in {
+                None,
+                "all",
+                "booked",
+                "cancelled",
+                "completed",
+                "no_show",
+            }:
+                raise AppointmentRepositoryError(
+                    400,
+                    "appointment_status must be all, booked, cancelled, completed, or no_show.",
+                )
+            if len(search) > 100:
+                raise AppointmentRepositoryError(
+                    400, "search must not exceed 100 characters."
+                )
             return response(
                 200,
-                repository.list_appointments(role, user_id, limit, offset),
+                repository.list_appointments(
+                    role,
+                    user_id,
+                    limit,
+                    offset,
+                    appointment_date=appointment_date if role == "DOCTOR" else None,
+                    appointment_status=(
+                        appointment_status if role == "DOCTOR" else None
+                    ),
+                    search=search if role == "DOCTOR" else None,
+                ),
             )
         if method == "GET" and resource == "/appointments/{appointment_id}":
             raw_id = (event.get("pathParameters") or {}).get(

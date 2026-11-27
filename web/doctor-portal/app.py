@@ -55,7 +55,7 @@ def format_display_datetime(value):
     parsed_datetime = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     if parsed_datetime.tzinfo is None:
         parsed_datetime = parsed_datetime.replace(tzinfo=timezone.utc)
-    return parsed_datetime.astimezone(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
+    return parsed_datetime.astimezone(timezone.utc).strftime("%d %b %Y, %H:%M")
 
 
 def parse_slot_start_time(value):
@@ -276,6 +276,10 @@ def api_request(
     authenticated=True
 ):
     headers = dict(request_headers or {})
+    safe_params = {
+        key: "[REDACTED]" if key in {"search", "name", "email"} else value
+        for key, value in (params or {}).items()
+    }
 
     if authenticated:
         headers["Authorization"] = (
@@ -304,7 +308,7 @@ def api_request(
             path,
             type(error).__name__,
             str(error),
-            params or {},
+            safe_params,
         )
         raise ApiError(
             f"MediSlot API connection failed ({type(error).__name__}: {error})"
@@ -390,7 +394,7 @@ def api_request(
             message,
             result.headers.get("content-type", "unknown"),
             sorted(payload.keys()) if isinstance(payload, dict) else [],
-            params or {},
+            safe_params,
         )
 
         raise ApiError(
@@ -429,7 +433,7 @@ def api_request(
         result.headers.get("content-type", "unknown"),
         response_details,
         result.elapsed.total_seconds() * 1000,
-        params or {},
+        safe_params,
     )
 
     return payload
@@ -622,10 +626,27 @@ def doctor_dashboard():
         request.args.get("appointments_offset", 0, type=int) or 0,
         0,
     )
+    appointments_date = request.args.get("appointments_date", "")
+    appointments_status = request.args.get("appointments_status", "all")
+    if appointments_status not in {
+        "all",
+        "booked",
+        "cancelled",
+        "completed",
+        "no_show",
+    }:
+        appointments_status = "all"
+    appointments_search = request.args.get("appointments_search", "").strip()
     appointments_result = api_request(
         "GET",
         "/appointments",
-        params={"limit": 50, "offset": appointments_offset},
+        params={
+            "limit": 50,
+            "offset": appointments_offset,
+            "appointment_date": appointments_date,
+            "appointment_status": appointments_status,
+            "search": appointments_search,
+        },
     )
     if not isinstance(appointments_result, dict) or not isinstance(
         appointments_result.get("appointments"), list
@@ -648,6 +669,9 @@ def doctor_dashboard():
         appointments_offset=appointments_offset,
         appointments_has_more=bool(appointments_result.get("has_more")),
         appointments_next_offset=appointments_result.get("next_offset"),
+        appointments_date=appointments_date,
+        appointments_status=appointments_status,
+        appointments_search=appointments_search,
     )
 
 
@@ -672,6 +696,28 @@ def patient_dashboard():
         return patient_api_error(appointments_error)
     if appointments_error:
         flash(f"Appointments could not be loaded: {appointments_error}", "error")
+    doctor_search_filters = {
+        field: ""
+        for field in ("name", "hospital", "specialization", "city")
+    }
+    try:
+        doctor_search_results = api_request(
+            "GET",
+            "/doctors/search",
+            params={**doctor_search_filters, "page": 1, "limit": 10},
+        )
+    except ApiError as error:
+        if error.status_code in {401, 403}:
+            return patient_api_error(error)
+        flash(f"Could not load doctors: {error}", "error")
+        doctor_search_results = {
+            "doctors": [],
+            "pagination": {"page": 1, "limit": 10, "total": 0, "total_pages": 0},
+        }
+    if not isinstance(doctor_search_results, dict) or not isinstance(
+        doctor_search_results.get("doctors"), list
+    ):
+        raise ApiError("Doctor search API returned an invalid response.")
     return render_template(
         "patient_dashboard.html",
         profile=profile,
@@ -680,6 +726,8 @@ def patient_dashboard():
         appointments_offset=appointments_offset,
         appointments_has_more=has_more,
         appointments_next_offset=next_offset,
+        doctor_search=doctor_search_results,
+        doctor_search_filters=doctor_search_filters,
         today_display_date=format_display_date(datetime.now(timezone.utc).date()),
     )
 
@@ -955,7 +1003,7 @@ def book_appointment():
                 )
             )
     except ValueError:
-        flash("Choose a valid UTC appointment slot.", "error")
+        flash("Choose a valid appointment slot.", "error")
         return redirect(url_for("patient_dashboard"))
     if not idempotency_key:
         flash("Booking request is missing its idempotency key. Please retry.", "error")
@@ -1070,12 +1118,90 @@ def cancel_patient_appointment(appointment_id):
 @doctor_required
 @with_api_errors
 def cancel_doctor_appointment(appointment_id):
-    api_request("POST", f"/appointments/{appointment_id}/cancel")
+    single_appointment = (
+        request.form.get("cancel_scope") == "single_appointment"
+    )
+    api_request(
+        "POST",
+        f"/appointments/{appointment_id}/cancel",
+        json_body={"single_appointment": True} if single_appointment else None,
+    )
+    if single_appointment:
+        flash(f"Appointment {appointment_id} cancelled.", "success")
+        status_filter = request.form.get("appointments_status", "all")
+        if status_filter not in {
+            "all",
+            "booked",
+            "cancelled",
+            "completed",
+            "no_show",
+        }:
+            status_filter = "all"
+        try:
+            appointments_offset = max(
+                int(request.form.get("appointments_offset", "0")),
+                0,
+            )
+        except ValueError:
+            appointments_offset = 0
+        return redirect(
+            url_for(
+                "doctor_dashboard",
+                view="appointments-view",
+                appointments_offset=appointments_offset,
+                appointments_date=request.form.get("appointments_date", "") or None,
+                appointments_status=status_filter,
+                appointments_search=request.form.get("appointments_search", "") or None,
+            )
+        )
     flash(
         "The slot and all appointments booked for it have been cancelled.",
         "success",
     )
     return redirect_to_doctor_schedule()
+
+@app.post("/doctor/appointments/<int:appointment_id>/no-show")
+@doctor_required
+@with_api_errors
+def mark_doctor_appointment_no_show(appointment_id):
+    result = api_request(
+        "POST",
+        f"/appointments/{appointment_id}/no-show",
+    )
+    if (
+        not isinstance(result, dict)
+        or result.get("success") is not True
+        or result.get("status") != "NO_SHOW"
+    ):
+        raise ApiError("No-show API returned an invalid response.")
+
+    flash(f"Appointment {appointment_id} marked as no-show.", "success")
+    status_filter = request.form.get("appointments_status", "all")
+    if status_filter not in {
+        "all",
+        "booked",
+        "cancelled",
+        "completed",
+        "no_show",
+    }:
+        status_filter = "all"
+    try:
+        appointments_offset = max(
+            int(request.form.get("appointments_offset", "0")),
+            0,
+        )
+    except ValueError:
+        appointments_offset = 0
+    return redirect(
+        url_for(
+            "doctor_dashboard",
+            view="appointments-view",
+            appointments_offset=appointments_offset,
+            appointments_date=request.form.get("appointments_date", "") or None,
+            appointments_status=status_filter,
+            appointments_search=request.form.get("appointments_search", "") or None,
+        )
+    )
 
 
 def redirect_to_doctor_schedule():

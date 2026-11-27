@@ -134,6 +134,44 @@ Resources:
           - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetAId"
           - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetBId"
 
+  AppointmentCompletionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-appointment-completion"
+      Handler: appointment_completion.lambda_handler
+      CodeUri: ../lambdas/patient/
+      Timeout: 30
+      MemorySize: 256
+      Role:
+        Fn::ImportValue: !Sub "${EnvironmentName}-AppointmentLambdaRoleArn"
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetAId"
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+  AppointmentCompletionSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Complete appointments after their consultation duration ends
+      ScheduleExpression: rate(5 minutes)
+      State: ENABLED
+      Targets:
+        - Id: AppointmentCompletionTarget
+          Arn: !GetAtt AppointmentCompletionFunction.Arn
+
+  AppointmentCompletionInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AppointmentCompletionFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt AppointmentCompletionSchedule.Arn
+
   AppointmentEmailNotificationsTable:
     Type: AWS::DynamoDB::Table
     Properties:
