@@ -11,6 +11,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 ENVIRONMENT = os.environ["ENVIRONMENT_NAME"]
+MAX_ACTIVE_APPOINTMENTS_PER_DOCTOR = 3
 ssm = boto3.client("ssm")
 parameter_cache = {}
 
@@ -85,24 +86,17 @@ class AppointmentRepository:
                     SELECT COUNT(*) AS active_count
                     FROM appointments
                     WHERE patient_id = %s
+                      AND doctor_id = %s
+                      AND slot_start_time > UTC_TIMESTAMP(6)
                       AND (status = 'BOOKED' OR appointment_status = 'CONFIRMED')
                     """,
-                    (patient_id,),
+                    (patient_id, doctor_id),
                 )
                 active_count = int(cursor.fetchone()["active_count"])
-                max_active_bookings = int(
-                    get_parameter(
-                        f"/medislot/{ENVIRONMENT}/patient-booking/max-active-bookings"
-                    )
-                )
-                if max_active_bookings < 1:
-                    raise ValueError(
-                        "Maximum active booking limit must be a positive integer."
-                    )
-                if active_count >= max_active_bookings:
+                if active_count >= MAX_ACTIVE_APPOINTMENTS_PER_DOCTOR:
                     raise AppointmentRepositoryError(
                         409,
-                        f"You can have up to {max_active_bookings} active appointments.",
+                        f"You can have up to {MAX_ACTIVE_APPOINTMENTS_PER_DOCTOR} upcoming active appointments with this doctor.",
                     )
 
                 cursor.execute(
@@ -231,8 +225,7 @@ class AppointmentRepository:
         role,
         user_id,
         appointment_id,
-        refund_config,
-        refund_calculator,
+        refund_service,
         now,
         deactivate_slot=None,
     ):
@@ -270,6 +263,15 @@ class AppointmentRepository:
                     if int(actor["patient_id"]) != int(selected["patient_id"]):
                         raise AppointmentRepositoryError(
                             404, "Appointment was not found."
+                        )
+                    appointment_time = selected["slot_start_time"]
+                    if appointment_time is not None and appointment_time.tzinfo is None:
+                        appointment_time = appointment_time.replace(
+                            tzinfo=timezone.utc
+                        )
+                    if appointment_time is not None and appointment_time <= now:
+                        raise AppointmentRepositoryError(
+                            409, "Past appointments cannot be cancelled."
                         )
                     if selected["status"] == "CANCELLED":
                         targets = [selected]
@@ -386,7 +388,8 @@ class AppointmentRepository:
                     if appointment["status"] == "CANCELLED":
                         cursor.execute(
                             """
-                            SELECT refund_amount, refund_percentage, refund_reason
+                            SELECT refund_amount, deduction_amount,
+                                   refund_percentage, refund_reason
                             FROM refunds
                             WHERE appointment_id = %s
                             """,
@@ -430,6 +433,9 @@ class AppointmentRepository:
                                 "refund_amount": str(
                                     existing_refund["refund_amount"]
                                 ),
+                                "deduction_amount": str(
+                                    existing_refund["deduction_amount"]
+                                ),
                                 "refund_percentage": str(percentage),
                                 "refund_reason": existing_refund["refund_reason"],
                                 "refund_tier": tier,
@@ -460,12 +466,11 @@ class AppointmentRepository:
                         appointment_time = appointment_time.replace(
                             tzinfo=now.tzinfo
                         )
-                    refund = refund_calculator(
+                    refund = refund_service.calculate(
                         appointment_time,
+                        now,
                         paid_amount,
-                        refund_config,
                         doctor_cancel=doctor_cancel,
-                        now=now,
                     )
                     cursor.execute(
                         """
@@ -485,15 +490,17 @@ class AppointmentRepository:
                         """
                         INSERT INTO refunds
                             (appointment_id, patient_id, refund_amount,
+                             deduction_amount,
                              refund_percentage, refund_transaction_id,
                              refund_reason, status, created_at, refunded_at)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, UTC_TIMESTAMP(6),
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, UTC_TIMESTAMP(6),
                                 CASE WHEN %s = 'SUCCESS' THEN UTC_TIMESTAMP(6) ELSE NULL END)
                         """,
                         (
                             appointment["appointment_id"],
                             appointment["patient_id"],
                             refund["refund_amount"],
+                            refund["deduction_amount"],
                             refund["refund_percentage"],
                             (
                                 f"REF-{uuid.uuid4().hex.upper()}"
@@ -542,6 +549,7 @@ class AppointmentRepository:
                         "status": "CANCELLED",
                         "slot_start_time": slot_start_time,
                         "refund_amount": str(refund["refund_amount"]),
+                        "deduction_amount": str(refund["deduction_amount"]),
                         "refund_percentage": str(refund["refund_percentage"]),
                         "refund_reason": refund["refund_reason"],
                         "_notification": {
@@ -579,6 +587,129 @@ class AppointmentRepository:
                     {"tier": tier, "count": count}
                     for tier, count in sorted(tier_counts.items())
                 ],
+            }
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def mark_no_show(self, user_id, appointment_id, refund_service, now):
+        connection = self.connection_factory()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT appointment_id, patient_id, doctor_id,
+                           COALESCE(slot_start_time, appointment_datetime)
+                               AS appointment_datetime,
+                           COALESCE(status, 'BOOKED') AS status,
+                           appointment_status
+                    FROM appointments
+                    WHERE appointment_id = %s
+                    FOR UPDATE
+                    """,
+                    (appointment_id,),
+                )
+                appointment = cursor.fetchone()
+                if not appointment:
+                    raise AppointmentRepositoryError(
+                        404, "Appointment was not found."
+                    )
+
+                cursor.execute(
+                    "SELECT doctor_id FROM doctors WHERE user_id = %s",
+                    (user_id,),
+                )
+                doctor = cursor.fetchone()
+                if not doctor:
+                    raise AppointmentRepositoryError(
+                        404, "Doctor profile was not found."
+                    )
+                if int(doctor["doctor_id"]) != int(appointment["doctor_id"]):
+                    raise AppointmentRepositoryError(
+                        404, "Appointment was not found."
+                    )
+                if appointment["status"] != "BOOKED" or (
+                    appointment["appointment_status"] != "CONFIRMED"
+                ):
+                    raise AppointmentRepositoryError(
+                        409, "Only a booked appointment can be marked as a no-show."
+                    )
+
+                appointment_datetime = appointment["appointment_datetime"]
+                if appointment_datetime.tzinfo is None:
+                    appointment_datetime = appointment_datetime.replace(
+                        tzinfo=timezone.utc
+                    )
+                if appointment_datetime > now:
+                    raise AppointmentRepositoryError(
+                        409,
+                        "An appointment cannot be marked as a no-show before it starts.",
+                    )
+
+                cursor.execute(
+                    """
+                    SELECT COALESCE(SUM(amount), 0) AS paid_amount
+                    FROM payments
+                    WHERE appointment_id = %s
+                      AND (status IN ('PAID', 'COMPLETED', 'SUCCESS', 'REFUNDED')
+                           OR (status = 'SIMULATED'
+                               AND payment_method = 'SIMULATED'))
+                    """,
+                    (appointment_id,),
+                )
+                paid_amount = cursor.fetchone()["paid_amount"]
+                refund = refund_service.calculate(
+                    appointment_datetime,
+                    now,
+                    paid_amount,
+                    no_show=True,
+                )
+
+                cursor.execute(
+                    """
+                    UPDATE appointments
+                    SET status = 'NO_SHOW', appointment_status = 'NO_SHOW'
+                    WHERE appointment_id = %s
+                      AND status = 'BOOKED'
+                      AND appointment_status = 'CONFIRMED'
+                    """,
+                    (appointment_id,),
+                )
+                if cursor.rowcount != 1:
+                    raise AppointmentRepositoryError(
+                        409, "Appointment changed while no-show was being recorded."
+                    )
+
+                cursor.execute(
+                    """
+                    INSERT INTO refunds
+                        (appointment_id, patient_id, refund_amount,
+                         deduction_amount, refund_percentage,
+                         refund_transaction_id, refund_reason, status,
+                         created_at, refunded_at)
+                    VALUES (%s, %s, %s, %s, %s, NULL, %s, 'NOT_REQUIRED',
+                            UTC_TIMESTAMP(6), NULL)
+                    """,
+                    (
+                        appointment_id,
+                        appointment["patient_id"],
+                        refund["refund_amount"],
+                        refund["deduction_amount"],
+                        refund["refund_percentage"],
+                        refund["refund_reason"],
+                    ),
+                )
+
+            connection.commit()
+            return {
+                "appointment_id": appointment_id,
+                "status": "NO_SHOW",
+                "refund_amount": refund["refund_amount"],
+                "deduction_amount": refund["deduction_amount"],
+                "refund_percentage": refund["refund_percentage"],
+                "refund_reason": refund["refund_reason"],
             }
         except Exception:
             connection.rollback()
@@ -627,7 +758,7 @@ class AppointmentRepository:
                 cursor.execute(
                     """
                     SELECT refund_id, appointment_id, patient_id, refund_amount,
-                           refund_percentage, refund_transaction_id,
+                           deduction_amount, refund_percentage, refund_transaction_id,
                            refund_reason, status, created_at, refunded_at,
                            CASE
                                WHEN refund_percentage = 100 THEN 'FULL'
@@ -672,6 +803,8 @@ class AppointmentRepository:
                            p.transaction_id,
                            r.status AS refund_status,
                            r.refund_amount,
+                           r.deduction_amount,
+                           r.refund_percentage,
                            r.refund_transaction_id,
                            r.refunded_at,
                            ct.duration_minutes, dct.fee,
@@ -704,6 +837,22 @@ class AppointmentRepository:
                 rows = cursor.fetchall()
                 has_more = len(rows) > limit
                 items = rows[:limit]
+                now = datetime.now(timezone.utc)
+                for item in items:
+                    slot_start = item.get("slot_start_time")
+                    if isinstance(slot_start, str):
+                        try:
+                            slot_start = datetime.fromisoformat(
+                                slot_start.replace("Z", "+00:00")
+                            )
+                        except ValueError:
+                            slot_start = None
+                    if slot_start is not None:
+                        if slot_start.tzinfo is None:
+                            slot_start = slot_start.replace(tzinfo=timezone.utc)
+                        item["is_past"] = slot_start <= now
+                    else:
+                        item["is_past"] = False
                 return {
                     "appointments": items,
                     "limit": limit,
@@ -733,6 +882,8 @@ class AppointmentRepository:
                            p.transaction_id,
                            r.status AS refund_status,
                            r.refund_amount,
+                           r.deduction_amount,
+                           r.refund_percentage,
                            r.refund_transaction_id,
                            r.refunded_at,
                            ct.duration_minutes, dct.fee

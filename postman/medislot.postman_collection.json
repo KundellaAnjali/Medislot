@@ -377,6 +377,15 @@
           "response": []
         },
         {
+          "name": "Mark appointment as no-show (doctor)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/appointments/{{appointmentId}}/no-show",
+            "description": "Only the assigned doctor can mark a confirmed appointment as NO_SHOW, and only after its scheduled start. The action records a 0% refund and 100% deduction."
+          },
+          "response": []
+        },
+        {
           "name": "List my refunds",
           "request": {
             "method": "GET",

@@ -25,7 +25,7 @@ EventBridge delivery is at-least-once; consumers should deduplicate each event b
 
 ## Refund boundaries
 
-Refund settings are read from `/medislot/{environment}/FULL_REFUND_HOURS`, `/PARTIAL_REFUND_HOURS`, and `/PARTIAL_REFUND_PERCENT`. At exactly 24 hours, the partial tier applies; full refund requires strictly more than 24 hours. At exactly 12 hours, the partial tier still applies; no refund applies strictly below 12 hours. Doctor-initiated slot cancellations override the time windows and use the full tier.
+`RefundService` reads thresholds and percentages from `/medislot/{environment}/REFUND_*` SSM parameters. More than 48 hours before the appointment returns 100%; exactly 48 hours returns 75%. More than 24 through exactly 48 hours returns 75%; exactly 24 through exactly 6 hours returns 50%; less than 6 hours returns 0%. Doctor cancellation uses its configured percentage regardless of timing. The doctor-only `POST /appointments/{id}/no-show` action is allowed after the appointment starts and records a zero refund and full deduction. Refund and deduction amounts are stored in the MySQL refund ledger; no payment-provider transfer occurs.
 
 The ledger records calculated refund liability from successful payment amounts. There is no payment-provider integration in the configured services, so this implementation does not initiate a card/bank transfer; connect the ledger transaction to a payment processor before treating the amount as externally refunded.
  

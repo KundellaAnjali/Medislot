@@ -307,29 +307,71 @@ Resources:
     Properties:
       Name: !Sub "/medislot/${EnvironmentName}/patient-booking/max-active-bookings"
       Type: String
-      Value: "5"
-      Description: Maximum number of active appointments a patient may hold
+      Value: "3"
+      Description: Maximum number of upcoming active appointments per patient per doctor
 
-  FullRefundHoursParameter:
+  Refund48HourThresholdParameter:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: !Sub "/medislot/${EnvironmentName}/FULL_REFUND_HOURS"
+      Name: !Sub "/medislot/${EnvironmentName}/REFUND_48_HOUR_THRESHOLD"
+      Type: String
+      Value: "48"
+
+  Refund24HourThresholdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/REFUND_24_HOUR_THRESHOLD"
       Type: String
       Value: "24"
 
-  PartialRefundHoursParameter:
+  Refund6HourThresholdParameter:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: !Sub "/medislot/${EnvironmentName}/PARTIAL_REFUND_HOURS"
+      Name: !Sub "/medislot/${EnvironmentName}/REFUND_6_HOUR_THRESHOLD"
       Type: String
-      Value: "12"
+      Value: "6"
 
-  PartialRefundPercentParameter:
+  RefundMoreThan48HoursPercentParameter:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: !Sub "/medislot/${EnvironmentName}/PARTIAL_REFUND_PERCENT"
+      Name: !Sub "/medislot/${EnvironmentName}/REFUND_MORE_THAN_48_HOURS_PERCENT"
+      Type: String
+      Value: "100"
+
+  Refund24To48HoursPercentParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/REFUND_24_TO_48_HOURS_PERCENT"
+      Type: String
+      Value: "75"
+
+  Refund6To24HoursPercentParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/REFUND_6_TO_24_HOURS_PERCENT"
       Type: String
       Value: "50"
+
+  RefundLessThan6HoursPercentParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/REFUND_LESS_THAN_6_HOURS_PERCENT"
+      Type: String
+      Value: "0"
+
+  RefundDoctorCancellationPercentParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/REFUND_DOCTOR_CANCELLATION_PERCENT"
+      Type: String
+      Value: "100"
+
+  RefundNoShowPercentParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/REFUND_NO_SHOW_PERCENT"
+      Type: String
+      Value: "0"
 
 Outputs:
 

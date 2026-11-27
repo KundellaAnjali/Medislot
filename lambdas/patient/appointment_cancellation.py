@@ -2,7 +2,6 @@ import json
 import logging
 import os
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, DecimalException, ROUND_HALF_UP
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
@@ -12,27 +11,26 @@ try:
         AppointmentRepository,
         AppointmentRepositoryError,
     )
+    from .refund_service import RefundService, RefundServiceError
 except ImportError:
     from appointment_repository import (
         AppointmentRepository,
         AppointmentRepositoryError,
     )
+    from refund_service import RefundService, RefundServiceError
 
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
-ENVIRONMENT = os.environ["ENVIRONMENT_NAME"]
 SLOTS_TABLE_NAME = os.environ["SLOTS_TABLE_NAME"]
 IDEMPOTENCY_TABLE_NAME = os.environ["IDEMPOTENCY_TABLE_NAME"]
 EVENT_BUS_NAME = os.environ.get("EVENT_BUS_NAME", "default")
-ssm = boto3.client("ssm")
 ddb = boto3.resource("dynamodb")
 ddb_client = boto3.client("dynamodb")
 eventbridge = boto3.client("events")
 slots_table = ddb.Table(SLOTS_TABLE_NAME)
 IDEMPOTENCY_TTL_DAYS = 90
 cloudwatch = boto3.client("cloudwatch")
-parameter_cache = {}
 SLOT_DEACTIVATION_RETRIES = 5
 
 
@@ -42,109 +40,28 @@ class CancellationError(Exception):
         self.status_code = status_code
 
 
-def get_refund_configuration():
-    try:
-        config = {
-            "full_refund_hours": int(
-                get_parameter_value("FULL_REFUND_HOURS")
-            ),
-            "partial_refund_hours": int(
-                get_parameter_value("PARTIAL_REFUND_HOURS")
-            ),
-            "partial_refund_percent": Decimal(
-                get_parameter_value("PARTIAL_REFUND_PERCENT")
-            ),
-        }
-    except (
-        ClientError,
-        DecimalException,
-        KeyError,
-        TypeError,
-        ValueError,
-    ) as error:
-        logger.exception("Invalid appointment refund configuration in SSM")
-        raise CancellationError(
-            503, "Refund processing is temporarily unavailable."
-        ) from error
-    if (
-        config["full_refund_hours"] <= config["partial_refund_hours"]
-        or config["partial_refund_hours"] < 0
-        or config["partial_refund_percent"] < 0
-        or config["partial_refund_percent"] > 100
-    ):
-        raise CancellationError(
-            503, "Refund processing is temporarily unavailable."
-        )
-    return config
-
-
-
-def get_parameter_value(name):
-    if name not in parameter_cache:
-        result = ssm.get_parameter(
-            Name=f"/medislot/{ENVIRONMENT}/{name}"
-        )
-        parameter_cache[name] = result["Parameter"]["Value"]
-    return parameter_cache[name]
-
-
-def calculate_refund(appointment_time, paid_amount, config, doctor_cancel=False, now=None):
-    if doctor_cancel:
-        percentage = Decimal("100")
-        tier = "FULL"
-        reason = "DOCTOR_SLOT_CANCELLATION"
-    else:
-        current_time = now or datetime.now(timezone.utc)
-        if appointment_time.tzinfo is None:
-            appointment_time = appointment_time.replace(tzinfo=timezone.utc)
-        time_until = (
-            appointment_time.astimezone(timezone.utc)
-            - current_time.astimezone(timezone.utc)
-        )
-        if time_until > timedelta(hours=config["full_refund_hours"]):
-            percentage = Decimal("100")
-            tier = "FULL"
-            reason = "PATIENT_CANCELLATION_FULL_REFUND"
-        elif time_until >= timedelta(
-            hours=config["partial_refund_hours"]
-        ):
-            percentage = config["partial_refund_percent"]
-            tier = "PARTIAL"
-            reason = "PATIENT_CANCELLATION_PARTIAL_REFUND"
-        else:
-            percentage = Decimal("0")
-            tier = "NONE"
-            reason = "PATIENT_CANCELLATION_NO_REFUND"
-
-    amount = (
-        Decimal(str(paid_amount)) * percentage / Decimal("100")
-    ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    return {
-        "refund_amount": amount,
-        "refund_percentage": percentage,
-        "refund_tier": tier,
-        "refund_reason": reason,
-    }
-
-
 class AppointmentCancellationService:
-    def __init__(self, repository=None):
+    def __init__(self, repository=None, refund_service=None):
         self.repository = repository or AppointmentRepository()
+        self.refund_service = refund_service or RefundService()
 
     def cancel(self, role, user_id, appointment_id):
         if role not in {"PATIENT", "DOCTOR"}:
             raise CancellationError(403, "Only patients or doctors can cancel appointments.")
-        config = get_refund_configuration()
         try:
             result = self.repository.cancel_appointments(
                 role=role,
                 user_id=user_id,
                 appointment_id=appointment_id,
-                refund_config=config,
-                refund_calculator=calculate_refund,
+                refund_service=self.refund_service,
                 now=datetime.now(timezone.utc),
                 deactivate_slot=deactivate_slot,
             )
+        except RefundServiceError as error:
+            logger.exception("Could not calculate appointment refund")
+            raise CancellationError(
+                503, "Refund processing is temporarily unavailable."
+            ) from error
         except AppointmentRepositoryError as error:
             raise CancellationError(error.status_code, str(error)) from error
         cancelled_appointments = result.get("cancelled_appointments", [])
@@ -203,6 +120,24 @@ class AppointmentCancellationService:
                     tier_count["tier"],
                 )
         return result
+
+    def mark_no_show(self, role, user_id, appointment_id):
+        if role != "DOCTOR":
+            raise CancellationError(403, "Only the assigned doctor can mark a no-show.")
+        try:
+            return self.repository.mark_no_show(
+                user_id=user_id,
+                appointment_id=appointment_id,
+                refund_service=self.refund_service,
+                now=datetime.now(timezone.utc),
+            )
+        except RefundServiceError as error:
+            logger.exception("Could not calculate no-show refund")
+            raise CancellationError(
+                503, "Refund processing is temporarily unavailable."
+            ) from error
+        except AppointmentRepositoryError as error:
+            raise CancellationError(error.status_code, str(error)) from error
 
 
 def release_cancelled_seat(cancellation):

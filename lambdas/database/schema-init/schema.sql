@@ -329,6 +329,9 @@ CREATE TABLE IF NOT EXISTS refunds (
     refund_amount DECIMAL(10,2)
         NOT NULL,
 
+    deduction_amount DECIMAL(10,2)
+        NOT NULL DEFAULT 0,
+
     refund_transaction_id VARCHAR(255)
         NULL,
 

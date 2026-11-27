@@ -1348,11 +1348,10 @@ def lambda_handler(event, context):
     for metric_name, value, unit in metric_data:
         publish_metric(metric_name, value, unit)
     logger.info(
-        "Doctor API request completed: method=%s path=%s status=%s duration_ms=%.2f request_id=%s",
+        "Doctor API request completed: method=%s path=%s status=%s duration_ms=%.2f",
         event.get("httpMethod", "GET"),
         (event.get("pathParameters") or {}).get("proxy", "/me"),
         status_code,
         duration_ms,
-        getattr(context, "aws_request_id", "unknown"),
     )
     return result

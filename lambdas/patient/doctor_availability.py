@@ -162,7 +162,6 @@ def consultation_names_by_id(consultation_type_ids):
 
 
 def lambda_handler(event, context):
-    request_id = getattr(context, "aws_request_id", "unknown")
     publish_metric("DoctorAvailabilityRequests", 1)
 
     authorizer = event.get("requestContext", {}).get("authorizer", {})
@@ -202,10 +201,9 @@ def lambda_handler(event, context):
         publish_metric("DoctorAvailabilitySuccesses", 1)
         publish_metric("DoctorAvailabilitySlotsReturned", len(slots))
         logger.info(
-            "Doctor availability retrieved: doctor_id=%s slots=%s request_id=%s",
+            "Doctor availability retrieved: doctor_id=%s slots=%s",
             doctor_id,
             len(slots),
-            request_id,
         )
         return response(
             200,
@@ -219,8 +217,7 @@ def lambda_handler(event, context):
     except Exception:
         publish_metric("DoctorAvailabilityErrors", 1)
         logger.exception(
-            "Doctor availability query failed: doctor_id=%s request_id=%s",
+            "Doctor availability query failed: doctor_id=%s",
             doctor_id,
-            request_id,
         )
         return response(500, {"message": "Could not load doctor availability."})

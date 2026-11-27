@@ -57,9 +57,15 @@
           {% endif %}
         {% endfor %}
         <div class="metric-grid patient-metric-grid">
-          <article class="metric-panel"><span class="metric-label">Appointment records</span><strong>{{ appointments|length }}</strong><small>On this page</small></article>
-          <article class="metric-panel"><span class="metric-label">Booked appointments</span><strong>{{ active_bookings.count }}</strong><small>Manage or review</small></article>
-          <article class="metric-panel"><span class="metric-label">Profile</span><strong>{{ 'Complete' if profile and profile.get('profile_filled') else 'In progress' }}</strong><small>{{ 'Your details are saved' if profile and profile.get('profile_filled') else 'Add details for smoother care' }}</small></article>
+          <button class="metric-panel metric-action" type="button" data-patient-go-view="patient-appointments-view" aria-label="Review appointment history">
+            <span class="metric-label">Appointment records</span><strong>{{ appointments|length }}</strong><small>On this page <span aria-hidden="true">&#8594;</span></small>
+          </button>
+          <button class="metric-panel metric-action" type="button" data-patient-go-view="patient-appointments-view" aria-label="Manage booked appointments">
+            <span class="metric-label">Booked appointments</span><strong>{{ active_bookings.count }}</strong><small>Manage or review <span aria-hidden="true">&#8594;</span></small>
+          </button>
+          <button class="metric-panel metric-action" type="button" data-patient-go-view="patient-profile-view" aria-label="View and update your profile">
+            <span class="metric-label">Profile</span><strong>{{ 'Complete' if profile and profile.get('profile_filled') else 'In progress' }}</strong><small>{{ 'Your details are saved' if profile and profile.get('profile_filled') else 'Add details for smoother care' }} <span aria-hidden="true">&#8594;</span></small>
+          </button>
         </div>
         <section class="dashboard-panel patient-overview-panel">
           <div class="panel-heading"><div><p class="eyebrow">Your care</p><h2>Stay on top of your health</h2></div></div>
@@ -98,14 +104,17 @@
             <option value="cancelled">Cancelled</option>
             <option value="completed">Completed</option>
           </select>
+          <button class="button secondary" type="button" id="clear-appointment-filters">Clear filters</button>
         </div>
         <p class="schedule-filter-count" id="patient-appointment-count" aria-live="polite"></p>
         <div class="patient-appointment-list">
           {% for appointment in appointments %}
             {% set active = appointment.status == 'BOOKED' and appointment.appointment_status == 'CONFIRMED' %}
-            {% set appointment_status = 'Booked' if active else appointment.status|replace('_', ' ')|title %}
-            {% set appointment_badge = 'status-booked' if active else ('status-cancelled' if appointment.status in ['CANCELLED', 'CANCELED'] else ('status-completed' if appointment.status == 'COMPLETED' else 'status-pending')) %}
-            <article class="patient-appointment-card" data-appointment-status="{{ 'booked' if active else 'cancelled' if appointment.status in ['CANCELLED', 'CANCELED'] else 'completed' if appointment.status == 'COMPLETED' else 'pending' }}" data-appointment-search="doctor {{ appointment.doctor_id }} {{ appointment.appointment_id }}">
+            {% set upcoming_active = active and not appointment.is_past %}
+            {% set past_booked = active and appointment.is_past %}
+            {% set appointment_status = 'Completed' if past_booked or appointment.status == 'COMPLETED' else 'Booked' if upcoming_active else appointment.status|replace('_', ' ')|title %}
+            {% set appointment_badge = 'status-completed' if past_booked or appointment.status == 'COMPLETED' else 'status-booked' if upcoming_active else ('status-cancelled' if appointment.status in ['CANCELLED', 'CANCELED'] else 'status-pending') %}
+            <article class="patient-appointment-card" data-appointment-status="{{ 'completed' if past_booked or appointment.status == 'COMPLETED' else 'booked' if upcoming_active else 'cancelled' if appointment.status in ['CANCELLED', 'CANCELED'] else 'pending' }}" data-appointment-search="doctor {{ appointment.doctor_id }} {{ appointment.appointment_id }}">
               <div class="patient-appointment-details">
                 <div class="appointment-card-heading">
                   <div><span class="schedule-field-label">Booking reference</span><h3>#{{ appointment.appointment_id }}</h3></div>
@@ -125,7 +134,7 @@
                   <p><strong>Refund</strong><span>No refund applicable</span></p>
                 {% endif %}
               </div>
-              {% if active %}
+              {% if upcoming_active %}
                 <form method="post" action="{{ url_for('cancel_patient_appointment', appointment_id=appointment.appointment_id) }}" class="patient-cancel-form" data-patient-cancel-form data-appointment-id="{{ appointment.appointment_id }}" data-doctor-name="Doctor {{ appointment.doctor_id }}" data-appointment-time="{{ appointment.slot_start_time }}">
                   <button class="button secondary danger-text" type="button" data-open-cancel-dialog>Cancel appointment</button>
                 </form>
@@ -133,7 +142,7 @@
             </article>
           {% endfor %}
         </div>
-        <div class="schedule-empty-state patient-empty-state patient-filter-empty" id="patient-appointment-empty" hidden><span class="schedule-empty-icon" aria-hidden="true">&#9776;</span><h2>No appointments found</h2><p>Try changing your search or status filter.</p><button class="button secondary" type="button" id="clear-appointment-filters">Clear filters</button></div>
+        <div class="schedule-empty-state patient-empty-state patient-filter-empty" id="patient-appointment-empty" hidden><span class="schedule-empty-icon" aria-hidden="true">&#9776;</span><h2>No appointments found</h2><p>Try changing your search or status filter.</p></div>
         {% if appointments_offset or appointments_has_more %}
           <nav class="appointment-pagination" aria-label="Appointment pages">
             {% if appointments_offset %}
@@ -375,8 +384,8 @@
     appointmentSearch?.addEventListener('input', filterPatientAppointments);
     appointmentStatusFilter?.addEventListener('change', filterPatientAppointments);
     document.getElementById('clear-appointment-filters')?.addEventListener('click', () => {
-      appointmentSearch.value = '';
-      appointmentStatusFilter.value = 'all';
+      if (appointmentSearch) appointmentSearch.value = '';
+      if (appointmentStatusFilter) appointmentStatusFilter.value = 'all';
       filterPatientAppointments();
     });
     filterPatientAppointments();

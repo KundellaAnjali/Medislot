@@ -102,17 +102,13 @@ def lambda_handler(event, context):
     if doctor_id is None:
         return response(400, {"message": "doctor_id must be a positive integer."})
 
-    request_id = getattr(context, "aws_request_id", "unknown")
     connection = None
     try:
         connection = get_connection()
         with connection.cursor() as cursor:
             profile = get_public_profile(cursor, doctor_id)
             if not profile:
-                logger.info(
-                    "Public doctor profile not found: request_id=%s",
-                    request_id,
-                )
+                logger.info("Public doctor profile not found")
                 return response(404, {"message": "Doctor profile not found."})
 
             profile["verification_status"] = bool(
@@ -123,13 +119,10 @@ def lambda_handler(event, context):
                 doctor_id,
             )
 
-        logger.info("Public doctor profile retrieved: request_id=%s", request_id)
+        logger.info("Public doctor profile retrieved")
         return response(200, {"profile": profile})
     except pymysql.MySQLError:
-        logger.exception(
-            "Public doctor profile database request failed: request_id=%s",
-            request_id,
-        )
+        logger.exception("Public doctor profile database request failed")
         return response(500, {"message": "Could not load doctor profile right now."})
     finally:
         if connection:

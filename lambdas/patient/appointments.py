@@ -85,6 +85,22 @@ def lambda_handler(event, context):
                 int(raw_id),
             )
             return response(200, result)
+        if method == "POST" and resource == "/appointments/{appointment_id}/no-show":
+            if role != "DOCTOR":
+                return response(
+                    403, {"message": "Only the assigned doctor can mark a no-show."}
+                )
+            raw_id = (event.get("pathParameters") or {}).get(
+                "appointment_id", ""
+            )
+            if not re.fullmatch(r"[1-9][0-9]{0,9}", str(raw_id)):
+                return response(400, {"message": "Invalid appointment_id."})
+            result = AppointmentCancellationService().mark_no_show(
+                role,
+                user_id,
+                int(raw_id),
+            )
+            return response(200, result)
         if method == "GET" and resource == "/patients/refunds":
             if role != "PATIENT":
                 return response(
@@ -120,9 +136,5 @@ def lambda_handler(event, context):
     except CancellationError as error:
         return response(error.status_code, {"message": str(error)})
     except Exception:
-        logger.exception(
-            "Appointment query failed: role=%s request_id=%s",
-            role,
-            getattr(context, "aws_request_id", "unknown"),
-        )
+        logger.exception("Appointment query failed: role=%s", role)
         return response(500, {"message": "Could not retrieve appointments."})

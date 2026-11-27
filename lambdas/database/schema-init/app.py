@@ -261,6 +261,32 @@ def migrate_refunds(cursor):
         cursor.execute(
             "ALTER TABLE refunds ADD COLUMN appointment_id INT NULL"
         )
+        columns.add("appointment_id")
+    if "deduction_amount" not in columns:
+        cursor.execute(
+            "ALTER TABLE refunds ADD COLUMN deduction_amount DECIMAL(10,2) NULL"
+        )
+        cursor.execute(
+            """
+            UPDATE refunds r
+            LEFT JOIN (
+                SELECT appointment_id, COALESCE(SUM(amount), 0) AS paid_amount
+                FROM payments
+                GROUP BY appointment_id
+            ) p ON p.appointment_id = r.appointment_id
+            SET r.deduction_amount = GREATEST(
+                COALESCE(p.paid_amount, 0) - r.refund_amount,
+                0
+            )
+            """
+        )
+        cursor.execute(
+            """
+            ALTER TABLE refunds
+            MODIFY deduction_amount DECIMAL(10,2) NOT NULL DEFAULT 0
+            """
+        )
+        columns.add("deduction_amount")
     if "patient_id" not in columns:
         cursor.execute("ALTER TABLE refunds ADD COLUMN patient_id INT NULL")
     if "refund_reason" not in columns:

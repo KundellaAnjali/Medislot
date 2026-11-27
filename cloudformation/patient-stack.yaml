@@ -347,6 +347,14 @@ Resources:
       ParentId: !Ref AppointmentIdResource
       PathPart: cancel
 
+  AppointmentNoShowResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ParentId: !Ref AppointmentIdResource
+      PathPart: no-show
+
   PatientRefundsResource:
     Type: AWS::ApiGateway::Resource
     Properties:
@@ -494,6 +502,20 @@ Resources:
         IntegrationHttpMethod: POST
         Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AppointmentsFunction.Arn}/invocations"
 
+  AppointmentNoShowMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ResourceId: !Ref AppointmentNoShowResource
+      HttpMethod: POST
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref PatientApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AppointmentsFunction.Arn}/invocations"
+
   PatientRefundsGetMethod:
     Type: AWS::ApiGateway::Method
     Properties:
@@ -589,6 +611,18 @@ Resources:
       SourceArn:
         Fn::Sub:
           - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*/POST/appointments/*/cancel"
+          - ApiId:
+              Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+
+  AppointmentNoShowInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AppointmentsFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub:
+          - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*/POST/appointments/*/no-show"
           - ApiId:
               Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
 

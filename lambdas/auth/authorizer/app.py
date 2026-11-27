@@ -117,11 +117,7 @@ def lambda_handler(event, context):
             raise InvalidTokenError(
                 "Access token session is no longer active"
             )
-        logger.info(
-            "Authorization allowed: role=%s request_id=%s",
-            decoded_token["role"],
-            getattr(context, "aws_request_id", "unknown"),
-        )
+        logger.info("Authorization allowed: role=%s", decoded_token["role"])
         return generate_policy(
             decoded_token["sub"],
             "Allow",

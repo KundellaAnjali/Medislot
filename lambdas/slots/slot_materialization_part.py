@@ -362,11 +362,10 @@ def materialize_handler(event, context):
         publish_metric("SlotMaterializationDoctorDates", processed_dates)
         publish_metric("SlotMaterializationDurationMs", duration_ms, "Milliseconds")
         logger.info(
-            "Slot materialization completed: doctor_dates=%s created_slots=%s duration_ms=%.2f request_id=%s",
+            "Slot materialization completed: doctor_dates=%s created_slots=%s duration_ms=%.2f",
             processed_dates,
             created_count,
             duration_ms,
-            getattr(context, "aws_request_id", "unknown"),
         )
         return {
             "statusCode": 200,

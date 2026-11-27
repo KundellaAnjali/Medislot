@@ -199,40 +199,71 @@ def refresh_access_token():
             },
             timeout=15,
         )
-    except requests.RequestException:
+    except requests.RequestException as error:
         app.logger.exception(
-            "Failed to refresh access token"
+            "MediSlot API request failed: "
+            "method=POST path=auth/refresh outcome=FAILED "
+            "failure_type=%s failure_reason=%s",
+            type(error).__name__,
+            str(error),
         )
         raise ApiError("Session refresh is temporarily unavailable. Please try again.", 503)
 
     if result.status_code in {401, 403}:
         app.logger.warning(
-            "Refresh token was rejected: status=%s",
+            "MediSlot API request completed: "
+            "method=POST path=auth/refresh outcome=FAILED "
+            "status=%s failure_reason=Refresh token was rejected",
             result.status_code,
         )
         session.clear()
         raise ApiError("Your session has expired. Please sign in again.", 401)
     if not result.ok:
         app.logger.error(
-            "Refresh endpoint failed: status=%s",
+            "MediSlot API request completed: "
+            "method=POST path=auth/refresh outcome=FAILED "
+            "status=%s failure_reason=Refresh endpoint returned an unsuccessful response "
+            "response=%s",
             result.status_code,
+            result.text[:300],
         )
         raise ApiError("Session refresh is temporarily unavailable. Please try again.", 503)
 
     try:
         payload = result.json()
     except ValueError as error:
-        app.logger.error("Refresh endpoint returned invalid JSON")
+        app.logger.error(
+            "MediSlot API request completed: "
+            "method=POST path=auth/refresh outcome=FAILED "
+            "status=%s failure_reason=Refresh endpoint returned invalid JSON "
+            "content_type=%s",
+            result.status_code,
+            result.headers.get("content-type", "unknown"),
+        )
         raise ApiError("Session refresh returned an invalid response.", 503) from error
 
     access_token = payload.get("access_token") if isinstance(payload, dict) else None
     if not isinstance(access_token, str) or not access_token.strip():
-        app.logger.error("Refresh endpoint response did not contain an access token")
+        app.logger.error(
+            "MediSlot API request completed: "
+            "method=POST path=auth/refresh outcome=FAILED "
+            "status=%s failure_reason=Refresh endpoint did not return an access token "
+            "response_keys=%s",
+            result.status_code,
+            sorted(payload.keys()) if isinstance(payload, dict) else [],
+        )
         raise ApiError("Session refresh returned an invalid response.", 503)
 
     session["access_token"] = access_token
     session.modified = True
-    app.logger.info("Access token refreshed successfully")
+    app.logger.info(
+        "MediSlot API request completed: "
+        "method=POST path=auth/refresh outcome=SUCCESS "
+        "status=%s response_keys=%s elapsed_ms=%.2f",
+        result.status_code,
+        sorted(payload.keys()) if isinstance(payload, dict) else [],
+        result.elapsed.total_seconds() * 1000,
+    )
     return True
 
 def api_request(
@@ -265,9 +296,15 @@ def api_request(
         )
     except requests.RequestException as error:
         app.logger.exception(
-            "MediSlot API request failed: method=%s path=%s",
+            "MediSlot API request failed: "
+            "method=%s path=%s outcome=FAILED "
+            "failure_type=%s failure_reason=%s "
+            "query_params=%s",
             method,
             path,
+            type(error).__name__,
+            str(error),
+            params or {},
         )
         raise ApiError(
             f"MediSlot API connection failed ({type(error).__name__}: {error})"
@@ -304,7 +341,13 @@ def api_request(
                 )
             except requests.RequestException as error:
                 app.logger.exception(
-                    "Retry request failed after token refresh"
+                    "MediSlot API retry failed: "
+                    "method=%s path=%s outcome=FAILED "
+                    "failure_type=%s failure_reason=%s",
+                    method,
+                    path,
+                    type(error).__name__,
+                    str(error),
                 )
                 raise ApiError(
                     f"MediSlot API connection failed "
@@ -317,11 +360,6 @@ def api_request(
         payload = {}
 
     if not result.ok:
-        request_id = (
-            result.headers.get("x-amzn-requestid")
-            or result.headers.get("x-amz-apigw-id")
-            or "not provided"
-        )
         message = None
         if isinstance(payload, dict):
             message = (
@@ -338,17 +376,21 @@ def api_request(
                 response_detail = f", response={response_text[:300]}"
             message = (
                 f"API returned HTTP {result.status_code} without an error message "
-                f"(content-type={content_type}, request_id={request_id}"
-                f"{response_detail})"
+                f"(content-type={content_type}{response_detail})"
             )
         app.logger.warning(
             "MediSlot API returned an error: "
-            "method=%s path=%s status=%s request_id=%s message=%s",
+            "method=%s path=%s outcome=FAILED "
+            "status=%s failure_reason=%s "
+            "response_content_type=%s response_keys=%s "
+            "query_params=%s",
             method,
             path,
             result.status_code,
-            request_id,
             message,
+            result.headers.get("content-type", "unknown"),
+            sorted(payload.keys()) if isinstance(payload, dict) else [],
+            params or {},
         )
 
         raise ApiError(
@@ -356,12 +398,38 @@ def api_request(
             result.status_code,
         )
 
+    if isinstance(payload, list):
+        response_details = f"response_type=list response_count={len(payload)}"
+    elif isinstance(payload, dict):
+        response_details = (
+            f"response_type=object response_keys={sorted(payload.keys())}"
+        )
+        for key in (
+            "appointment_id",
+            "patient_id",
+            "doctor_id",
+            "slot_id",
+            "status",
+            "payment_status",
+            "message",
+        ):
+            if key in payload:
+                response_details += f" {key}={payload[key]}"
+    else:
+        response_details = f"response_type={type(payload).__name__}"
+
     app.logger.info(
         "MediSlot API request completed: "
-        "method=%s path=%s status=%s",
+        "method=%s path=%s outcome=SUCCESS "
+        "status=%s content_type=%s %s "
+        "elapsed_ms=%.2f query_params=%s",
         method,
         path,
         result.status_code,
+        result.headers.get("content-type", "unknown"),
+        response_details,
+        result.elapsed.total_seconds() * 1000,
+        params or {},
     )
 
     return payload
@@ -538,6 +606,15 @@ def doctor_dashboard():
             schedule = {"slots": [], "date": schedule_date}
         else:
             raise
+    today_utc = datetime.now(timezone.utc).date().isoformat()
+    next_schedule_slots = schedule.get("slots", [])
+    if schedule.get("date") == today_utc:
+        now_utc = datetime.now(timezone.utc)
+        next_schedule_slots = [
+            slot
+            for slot in next_schedule_slots
+            if parse_slot_start_time(slot["start_time"]) > now_utc
+        ]
     schedule_filter = request.args.get("status", "all")
     if schedule_filter not in {"all", "booked", "blocked", "open"}:
         schedule_filter = "all"
@@ -564,6 +641,7 @@ def doctor_dashboard():
         patterns=availability,
         blackouts=blackouts,
         schedule=schedule,
+        next_schedule_slots=next_schedule_slots,
         schedule_display_date=format_display_date(schedule["date"]),
         schedule_filter=schedule_filter,
         appointments=appointments_result["appointments"],

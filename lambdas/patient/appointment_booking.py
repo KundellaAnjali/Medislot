@@ -340,7 +340,6 @@ def get_idempotency_key(event):
 
 
 def lambda_handler(event, context):
-    request_id = getattr(context, "aws_request_id", "unknown")
     authorizer = event.get("requestContext", {}).get("authorizer", {})
     if not authorizer.get("userId"):
         publish_metric("FailedBookings")
@@ -386,26 +385,24 @@ def lambda_handler(event, context):
             publish_metric("FailedBookings")
             logger.info(
                 "Test payment failed: patient_user_id=%s doctor_id=%s "
-                "appointment_id=%s transaction_id=%s request_id=%s",
+                "appointment_id=%s transaction_id=%s",
                 user_id,
                 doctor_id,
                 result["appointment_id"],
                 result["transaction_id"],
-                request_id,
             )
             return response(402, result)
         publish_metric("SuccessfulBookings")
         logger.info(
             "Appointment booked: patient_user_id=%s doctor_id=%s "
             "appointment_id=%s payment_method=%s transaction_id=%s "
-            "created=%s request_id=%s",
+            "created=%s",
             user_id,
             doctor_id,
             result["appointment_id"],
             result["payment_method"],
             result["transaction_id"],
             created,
-            request_id,
         )
         return response(201, result)
     except BookingError as error:
@@ -413,5 +410,5 @@ def lambda_handler(event, context):
         return response(error.status_code, {"message": str(error)})
     except Exception:
         publish_metric("FailedBookings")
-        logger.exception("Appointment booking failed: request_id=%s", request_id)
+        logger.exception("Appointment booking failed")
         return response(500, {"message": "Could not book this appointment."})

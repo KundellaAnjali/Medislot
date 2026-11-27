@@ -57,20 +57,28 @@
           <span class="welcome-decoration" aria-hidden="true"></span>
         </section>
         <div class="metric-grid">
-          <article class="metric-panel"><span class="metric-label">Consultation types</span><strong>{{ consultations|selectattr('is_active')|list|length }}</strong><small>Active services</small></article>
-          <article class="metric-panel"><span class="metric-label">Weekly availability</span><strong>{{ patterns|length }}</strong><small>Configured patterns</small></article>
-          <article class="metric-panel"><span class="metric-label">Slots on {{ schedule_display_date }}</span><strong>{{ schedule.slots|length }}</strong><small>All times shown in UTC</small></article>
-          <article class="metric-panel"><span class="metric-label">Practice location</span><strong class="metric-location">{{ profile.hospital_name or 'Not set' }}</strong><small>{{ profile.city or 'Add a city' }}</small></article>
+          <button class="metric-panel metric-action" type="button" data-go-view="consulting-view" aria-label="Manage active consultation types">
+            <span class="metric-label">Consultation types</span><strong>{{ consultations|selectattr('is_active')|list|length }}</strong><small>Active services <span aria-hidden="true">&#8594;</span></small>
+          </button>
+          <button class="metric-panel metric-action" type="button" data-go-view="availability-view" aria-label="Manage weekly availability">
+            <span class="metric-label">Weekly availability</span><strong>{{ patterns|length }}</strong><small>Configured patterns <span aria-hidden="true">&#8594;</span></small>
+          </button>
+          <button class="metric-panel metric-action" type="button" data-go-view="schedule-view" aria-label="Open today's schedule">
+            <span class="metric-label">Slots on {{ schedule_display_date }}</span><strong>{{ schedule.slots|length }}</strong><small>All times shown in UTC <span aria-hidden="true">&#8594;</span></small>
+          </button>
+          <button class="metric-panel metric-action" type="button" data-go-view="profile-view-tab" aria-label="View professional profile">
+            <span class="metric-label">Practice location</span><strong class="metric-location">{{ profile.hospital_name or 'Not set' }}</strong><small>{{ profile.city or 'Add a city' }} <span aria-hidden="true">&#8594;</span></small>
+          </button>
         </div>
         <section class="dashboard-panel">
           <div class="panel-heading"><div><p class="eyebrow">Today</p><h2>Next on your schedule</h2></div><button class="text-button" type="button" data-go-view="schedule-view">Open schedule</button></div>
-          {% if schedule.slots %}
+          {% if next_schedule_slots %}
             <div class="schedule-list">
-              {% for slot in schedule.slots[:4] %}
+              {% for slot in next_schedule_slots[:4] %}
                 <article class="schedule-row"><time class="slot-time">{{ slot.start_time[11:16] }} UTC</time><div class="slot-main"><strong>{{ slot.consultation_name or 'Consultation' }}</strong><span>{{ slot.appointments|length }} of {{ slot.capacity }} seats booked</span></div><div class="slot-patients">{% for appointment in slot.appointments %}<span>{{ appointment.first_name|title }} {{ appointment.last_name|title }}</span>{% else %}<span class="muted">No patients booked</span>{% endfor %}</div><span class="slot-state">{{ 'Blocked' if slot.status == 0 else ('Booked' if slot.appointments else 'Available') }}</span></article>
               {% endfor %}
             </div>
-          {% else %}<div class="empty-state compact-empty"><span class="empty-symbol">&#9711;</span><p>No slots on this date</p></div>{% endif %}
+          {% else %}<div class="empty-state compact-empty"><span class="empty-symbol">&#9711;</span><p>No upcoming slots on this date</p></div>{% endif %}
         </section>
         <section class="dashboard-panel profile-summary-panel">
           <div class="panel-heading"><div><p class="eyebrow">Profile</p><h2>Professional details</h2></div><button class="text-button" type="button" data-go-view="profile-view-tab">View profile</button></div>
@@ -227,6 +235,9 @@
             <div><dt>Patient</dt><dd id="detail-patient-name"></dd></div>
             <div><dt>Patient ID</dt><dd id="detail-patient-id"></dd></div>
             <div><dt>Patient phone</dt><dd id="detail-patient-phone"></dd></div>
+            <div><dt>Patient email</dt><dd id="detail-patient-email"></dd></div>
+            <div><dt>Date of birth</dt><dd id="detail-patient-dob"></dd></div>
+            <div><dt>Gender</dt><dd id="detail-patient-gender"></dd></div>
             <div><dt>Booking reference</dt><dd id="detail-appointment-id"></dd></div>
             <div><dt>Booked on</dt><dd id="detail-booked-at"></dd></div>
             <div><dt>Slot time (UTC)</dt><dd id="detail-slot-time"></dd></div>
@@ -268,6 +279,7 @@
                 <option value="cancelled">Cancelled</option>
                 <option value="completed">Completed</option>
               </select>
+              <button class="button secondary" type="button" id="clear-doctor-appointment-filters">Clear filters</button>
             </div>
             <p class="schedule-filter-count" id="doctor-appointment-count" aria-live="polite"></p>
             <div class="patient-appointment-list">
@@ -285,7 +297,21 @@
                       <div><span class="schedule-field-label">Booking reference</span><h3>#{{ appointment.appointment_id }}</h3></div>
                       <span class="status-badge {{ 'status-booked' if is_booked else 'status-cancelled' if is_cancelled else 'status-completed' if is_completed else 'status-pending' }}">{{ status_label }}</span>
                     </div>
-                    <p><strong>Patient</strong><button class="patient-name-link" type="button" title="Patient details&#10;Patient ID: {{ appointment.patient_id }}&#10;Phone: {{ appointment.patient_phone_number or 'Not provided' }}&#10;Email: {{ appointment.patient_email or 'Not provided' }}&#10;Date of birth: {{ appointment.patient_date_of_birth or 'Not provided' }}&#10;Gender: {{ appointment.patient_gender or 'Not provided' }}">{{ appointment.patient_first_name|default('Patient', true)|title }} {{ appointment.patient_last_name|default('', true)|title }}</button></p>
+                    <p><strong>Patient</strong><button class="patient-name-link" type="button"
+                      data-open-appointment-details
+                      data-patient-name="{{ appointment.patient_first_name|default('Patient', true)|title }} {{ appointment.patient_last_name|default('', true)|title }}"
+                      data-patient-id="{{ appointment.patient_id }}"
+                      data-patient-phone="{{ appointment.patient_phone_number or '' }}"
+                      data-patient-email="{{ appointment.patient_email or '' }}"
+                      data-patient-dob="{{ appointment.patient_date_of_birth or '' }}"
+                      data-patient-gender="{{ appointment.patient_gender or '' }}"
+                      data-appointment-id="{{ appointment.appointment_id }}"
+                      data-booked-at="{{ appointment.created_at or '' }}"
+                      data-slot-time="{{ appointment.slot_start_time }}"
+                      data-consultation="{{ appointment.consultation_type or 'Consultation' }}"
+                      data-consultation-fee="{{ appointment.fee if appointment.fee is not none else 'Not available' }}"
+                      data-consultation-duration="{{ appointment.duration_minutes if appointment.duration_minutes is not none else '' }}"
+                      data-appointment-status="{{ status_label }}">{{ appointment.patient_first_name|default('Patient', true)|title }} {{ appointment.patient_last_name|default('', true)|title }}</button></p>
                     <p><strong>Patient ID</strong><span>{{ appointment.patient_id }}</span></p>
                     {% if is_cancelled %}<p><strong>Cancelled by</strong><span>{{ appointment.cancelled_by|title if appointment.cancelled_by else 'Not recorded' }}</span></p>{% endif %}
                     <p><strong>Date and time</strong><time class="patient-appointment-time" datetime="{{ appointment.slot_start_time }}">{{ appointment.slot_start_time }}</time><span class="patient-utc-label">UTC</span></p>
@@ -429,6 +455,11 @@
     };
     doctorAppointmentSearch?.addEventListener('input', filterDoctorAppointments);
     doctorAppointmentStatus?.addEventListener('change', filterDoctorAppointments);
+    document.getElementById('clear-doctor-appointment-filters')?.addEventListener('click', () => {
+      if (doctorAppointmentSearch) doctorAppointmentSearch.value = '';
+      if (doctorAppointmentStatus) doctorAppointmentStatus.value = 'all';
+      filterDoctorAppointments();
+    });
     filterDoctorAppointments();
 
     const scheduleFilter = document.getElementById('schedule-status-filter');
@@ -525,6 +556,9 @@
       document.getElementById('detail-patient-name').textContent = button.dataset.patientName;
       document.getElementById('detail-patient-id').textContent = button.dataset.patientId;
       document.getElementById('detail-patient-phone').textContent = button.dataset.patientPhone || 'Not provided';
+      document.getElementById('detail-patient-email').textContent = button.dataset.patientEmail || 'Not provided';
+      document.getElementById('detail-patient-dob').textContent = button.dataset.patientDob || 'Not provided';
+      document.getElementById('detail-patient-gender').textContent = button.dataset.patientGender || 'Not provided';
       document.getElementById('detail-appointment-id').textContent = button.dataset.appointmentId;
       document.getElementById('detail-booked-at').textContent = displayDateTime(button.dataset.bookedAt);
       document.getElementById('detail-slot-time').textContent = displayDateTime(button.dataset.slotTime);
