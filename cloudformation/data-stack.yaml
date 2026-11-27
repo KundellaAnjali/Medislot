@@ -81,8 +81,6 @@ Resources:
       AttributeDefinitions:
         - AttributeName: session_id
           AttributeType: S
-        - AttributeName: user_id
-          AttributeType: N
         - AttributeName: refresh_token_hash
           AttributeType: S
         - AttributeName: jti
@@ -93,13 +91,6 @@ Resources:
           KeyType: HASH
 
       GlobalSecondaryIndexes:
-        - IndexName: UserIdIndex
-          KeySchema:
-            - AttributeName: user_id
-              KeyType: HASH
-          Projection:
-            ProjectionType: ALL
-
         - IndexName: RefreshTokenHashIndex
           KeySchema:
             - AttributeName: refresh_token_hash
@@ -202,51 +193,21 @@ Resources:
   SlotsTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: !Sub "${EnvironmentName}-slots"
+      TableName: !Sub "${EnvironmentName}-slots-v2"
 
       BillingMode: PAY_PER_REQUEST
 
       AttributeDefinitions:
-        - AttributeName: slot_id
-          AttributeType: N
         - AttributeName: doctor_id
           AttributeType: N
-        - AttributeName: start_time
+        - AttributeName: slot_start_time
           AttributeType: S
-        - AttributeName: status
-          AttributeType: N
 
       KeySchema:
-        - AttributeName: slot_id
+        - AttributeName: doctor_id
           KeyType: HASH
-
-      GlobalSecondaryIndexes:
-        - IndexName: DoctorIdIndex
-          KeySchema:
-            - AttributeName: doctor_id
-              KeyType: HASH
-          Projection:
-            ProjectionType: ALL
-
-        - IndexName: DoctorStartIndex
-          KeySchema:
-            - AttributeName: doctor_id
-              KeyType: HASH
-            - AttributeName: start_time
-              KeyType: RANGE
-          Projection:
-            ProjectionType: ALL
-
-        - IndexName: StatusIndex
-          KeySchema:
-            - AttributeName: status
-              KeyType: HASH
-          Projection:
-            ProjectionType: ALL
-
-      TimeToLiveSpecification:
-        AttributeName: expires_at
-        Enabled: true
+        - AttributeName: slot_start_time
+          KeyType: RANGE
 
   NotificationsTable:
     Type: AWS::DynamoDB::Table
@@ -340,6 +301,77 @@ Resources:
       Type: String
       Value: "30"
       Description: Rolling slot materialization window in days
+
+  MaxActiveBookingsParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/patient-booking/max-active-bookings"
+      Type: String
+      Value: "3"
+      Description: Maximum number of upcoming active appointments per patient per doctor
+
+  Refund48HourThresholdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/REFUND_48_HOUR_THRESHOLD"
+      Type: String
+      Value: "48"
+
+  Refund24HourThresholdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/REFUND_24_HOUR_THRESHOLD"
+      Type: String
+      Value: "24"
+
+  Refund6HourThresholdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/REFUND_6_HOUR_THRESHOLD"
+      Type: String
+      Value: "6"
+
+  RefundMoreThan48HoursPercentParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/REFUND_MORE_THAN_48_HOURS_PERCENT"
+      Type: String
+      Value: "100"
+
+  Refund24To48HoursPercentParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/REFUND_24_TO_48_HOURS_PERCENT"
+      Type: String
+      Value: "75"
+
+  Refund6To24HoursPercentParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/REFUND_6_TO_24_HOURS_PERCENT"
+      Type: String
+      Value: "50"
+
+  RefundLessThan6HoursPercentParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/REFUND_LESS_THAN_6_HOURS_PERCENT"
+      Type: String
+      Value: "0"
+
+  RefundDoctorCancellationPercentParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/REFUND_DOCTOR_CANCELLATION_PERCENT"
+      Type: String
+      Value: "100"
+
+  RefundNoShowPercentParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/REFUND_NO_SHOW_PERCENT"
+      Type: String
+      Value: "0"
 
 Outputs:
 

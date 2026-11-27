@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Doctor dashboard | MediSlot</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script src="{{ url_for('static', filename='notifications.js') }}" defer></script>
 </head>
 <body class="doctor-app">
   <aside class="doctor-sidebar">
@@ -15,6 +16,7 @@
       <button class="sidebar-link" type="button" data-view-target="availability-view"><span class="nav-icon">&#9711;</span>Availability</button>
       <button class="sidebar-link" type="button" data-view-target="blackout-view"><span class="nav-icon">&#9632;</span>Blackout</button>
       <button class="sidebar-link" type="button" data-view-target="schedule-view"><span class="nav-icon">&#9776;</span>Schedule</button>
+      <button class="sidebar-link" type="button" data-view-target="appointments-view"><span class="nav-icon">&#9776;</span>Appointments</button>
       <button class="sidebar-link" type="button" data-view-target="consulting-view"><span class="nav-icon">&#10010;</span>Consulting Type</button>
       <button class="sidebar-link" type="button" data-view-target="profile-view-tab"><span class="nav-icon">&#9679;</span>Profile Details</button>
     </nav>
@@ -28,7 +30,7 @@
 
   <main class="doctor-main">
     <header class="main-header">
-      <div><p class="eyebrow">MediSlot / Doctor workspace</p><p class="header-date">{{ schedule.date }} <span>UTC</span></p></div>
+      <div><p class="eyebrow">MediSlot / Doctor workspace</p><p class="header-date">{{ schedule_display_date }}</p></div>
       <div class="header-actions">
         <span class="status-pill {{ 'verified' if profile.is_verified else 'pending' }}"><span></span>{{ 'Verified' if profile.is_verified else 'Profile incomplete' }}</span>
         <span class="header-avatar">{{ (profile.first_name or 'D')[:1] }}{{ (profile.last_name or '')[:1] }}</span>
@@ -36,27 +38,47 @@
     </header>
     <div class="main-content">
       {% with messages = get_flashed_messages(with_categories=true) %}
-        {% for category, message in messages %}<p class="notice {{ category }}">{{ message }}</p>{% endfor %}
+        {% for category, message in messages %}<p class="notice {{ category }}" data-auto-dismiss>{{ message }}</p>{% endfor %}
       {% endwith %}
       {% if not profile.is_verified %}<p class="notice verification-notice">Complete your contact, licence, experience, qualification, specialization, hospital details and profile photo to unlock availability and consultation settings.</p>{% endif %}
 
       <section class="dashboard-view" id="dashboard-view" data-view>
-        <div class="view-heading"><div><p class="eyebrow">Overview</p><h1>Good day, {{ profile.first_name or 'Doctor' }}</h1><p class="view-subtitle">Here is your practice at a glance.</p></div><button class="button secondary" type="button" data-go-view="schedule-view">View schedule <span aria-hidden="true">&#8594;</span></button></div>
+        <section class="doctor-welcome">
+          <div class="doctor-welcome-copy">
+            <p class="eyebrow">Your practice at a glance</p>
+            <h1>Good day, Dr. {{ profile.first_name or 'Doctor' }}</h1>
+            <p>Manage your appointments, availability and patient care from one workspace.</p>
+          </div>
+          <div class="doctor-welcome-actions">
+            <span class="doctor-date-chip"><span aria-hidden="true">&#9719;</span>{{ schedule_display_date }}</span>
+            <button class="button welcome-primary" type="button" data-go-view="schedule-view">View today's schedule <span aria-hidden="true">&#8594;</span></button>
+            <button class="button welcome-secondary" type="button" data-go-view="availability-view">Manage availability</button>
+          </div>
+          <span class="welcome-decoration" aria-hidden="true"></span>
+        </section>
         <div class="metric-grid">
-          <article class="metric-panel"><span class="metric-label">Consultation types</span><strong>{{ consultations|selectattr('is_active')|list|length }}</strong><small>Active services</small></article>
-          <article class="metric-panel"><span class="metric-label">Weekly availability</span><strong>{{ patterns|length }}</strong><small>Configured patterns</small></article>
-          <article class="metric-panel"><span class="metric-label">Slots on {{ schedule.date }}</span><strong>{{ schedule.slots|length }}</strong><small>UTC schedule</small></article>
-          <article class="metric-panel"><span class="metric-label">Practice location</span><strong class="metric-location">{{ profile.hospital_name or 'Not set' }}</strong><small>{{ profile.city or 'Add a city' }}</small></article>
+          <button class="metric-panel metric-action" type="button" data-go-view="consulting-view" aria-label="Manage active consultation types">
+            <span class="metric-label">Consultation types</span><strong>{{ consultations|selectattr('is_active')|list|length }}</strong><small>Active services <span aria-hidden="true">&#8594;</span></small>
+          </button>
+          <button class="metric-panel metric-action" type="button" data-go-view="availability-view" aria-label="Manage weekly availability">
+            <span class="metric-label">Weekly availability</span><strong>{{ patterns|length }}</strong><small>Configured patterns <span aria-hidden="true">&#8594;</span></small>
+          </button>
+          <button class="metric-panel metric-action" type="button" data-go-view="schedule-view" aria-label="Open today's schedule">
+            <span class="metric-label">Slots on {{ schedule_display_date }}</span><strong>{{ schedule.slots|length }}</strong><small>View today's schedule <span aria-hidden="true">&#8594;</span></small>
+          </button>
+          <button class="metric-panel metric-action" type="button" data-go-view="profile-view-tab" aria-label="View professional profile">
+            <span class="metric-label">Practice location</span><strong class="metric-location">{{ profile.hospital_name or 'Not set' }}</strong><small>{{ profile.city or 'Add a city' }} <span aria-hidden="true">&#8594;</span></small>
+          </button>
         </div>
         <section class="dashboard-panel">
           <div class="panel-heading"><div><p class="eyebrow">Today</p><h2>Next on your schedule</h2></div><button class="text-button" type="button" data-go-view="schedule-view">Open schedule</button></div>
-          {% if schedule.slots %}
+          {% if next_schedule_slots %}
             <div class="schedule-list">
-              {% for slot in schedule.slots[:4] %}
-                <article class="schedule-row"><time class="slot-time">{{ slot.start_time[11:16] }}</time><div class="slot-main"><strong>{{ slot.consultation_name or 'Consultation' }}</strong><span>{{ slot.appointments|length }} of {{ slot.capacity }} seats booked</span></div><div class="slot-patients">{% for appointment in slot.appointments %}<span>{{ appointment.first_name }} {{ appointment.last_name }}</span>{% else %}<span class="muted">No patients booked</span>{% endfor %}</div><span class="slot-state">{{ 'Blocked' if slot.status == 0 else ('Booked' if slot.appointments else 'Open') }}</span></article>
+              {% for slot in next_schedule_slots[:4] %}
+                <article class="schedule-row"><time class="slot-time">{{ slot.start_time[11:16] }}</time><div class="slot-main"><strong>{{ slot.consultation_name or 'Consultation' }}</strong><span>{{ slot.appointments|length }} of {{ slot.capacity }} seats booked</span></div><div class="slot-patients">{% for appointment in slot.appointments %}<span>{{ appointment.first_name|title }} {{ appointment.last_name|title }}</span>{% else %}<span class="muted">No patients booked</span>{% endfor %}</div><span class="slot-state">{{ 'Blocked' if slot.status == 0 else ('Booked' if slot.appointments else 'Available') }}</span></article>
               {% endfor %}
             </div>
-          {% else %}<div class="empty-state compact-empty"><span class="empty-symbol">&#9711;</span><p>No slots on this date</p></div>{% endif %}
+          {% else %}<div class="empty-state compact-empty"><span class="empty-symbol">&#9711;</span><p>No upcoming slots on this date</p></div>{% endif %}
         </section>
         <section class="dashboard-panel profile-summary-panel">
           <div class="panel-heading"><div><p class="eyebrow">Profile</p><h2>Professional details</h2></div><button class="text-button" type="button" data-go-view="profile-view-tab">View profile</button></div>
@@ -69,77 +91,434 @@
       </section>
 
       <section class="dashboard-view" id="availability-view" data-view hidden>
-        <div class="view-heading"><div><p class="eyebrow">Recurring weekly</p><h1>Availability</h1><p class="view-subtitle">Set the consultation hours that generate bookable slots.</p></div></div>
+        <div class="view-heading"><div><p class="eyebrow">Recurring weekly</p><h1>Availability</h1><p class="view-subtitle">Set the consultation hours that generate bookable slots.</p></div>{% if profile.is_verified %}<button class="button primary" type="button" id="add-pattern">+ Add availability</button>{% endif %}</div>
         <section class="dashboard-panel">
           <form method="post" action="{{ url_for('save_availability') }}" id="availability-form">
             <fieldset class="configuration-controls" {{ 'disabled' if not profile.is_verified else '' }}>
               <div class="pattern-list" id="pattern-list">
                 {% for pattern in patterns %}
-                  <div class="pattern-row"><select name="consultation_type_id" aria-label="Consultation type" required>{% for consultation in consultations if consultation.is_active %}<option value="{{ consultation.consultation_type_id }}" {{ 'selected' if consultation.consultation_type_id == pattern.consultation_type_id else '' }}>{{ consultation.consultation_name }}</option>{% endfor %}</select><select name="day_of_week" aria-label="Weekday" required>{% for day in ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY'] %}<option value="{{ day }}" {{ 'selected' if day == pattern.day_of_week else '' }}>{{ day.title() }}</option>{% endfor %}</select><input name="start_time" type="time" aria-label="Start time" value="{{ pattern.start_time|string|truncate(5, True, '') }}" required><input name="end_time" type="time" aria-label="End time" value="{{ pattern.end_time|string|truncate(5, True, '') }}" required><button class="remove-row" type="button" title="Remove availability pattern" aria-label="Remove availability pattern">&times;</button></div>
+                  <div class="pattern-row saved-pattern" data-saved="true" data-editing="false">
+                    <select name="consultation_type_id" aria-label="Consultation type" required disabled>{% for consultation in consultations if consultation.is_active %}<option value="{{ consultation.consultation_type_id }}" {{ 'selected' if consultation.consultation_type_id == pattern.consultation_type_id else '' }}>{{ consultation.consultation_name }}</option>{% endfor %}</select>
+                    <select name="day_of_week" aria-label="Weekday" required disabled>{% for day in ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY'] %}<option value="{{ day }}" {{ 'selected' if day == pattern.day_of_week else '' }}>{{ day.title() }}</option>{% endfor %}</select>
+                    <input name="start_time" type="time" aria-label="Start time" value="{{ pattern.start_time|string|truncate(5, True, '') }}" required disabled>
+                    <input name="end_time" type="time" aria-label="End time" value="{{ pattern.end_time|string|truncate(5, True, '') }}" required disabled>
+                    <div class="pattern-row-actions">
+                      <button class="button secondary pattern-action" type="button" data-pattern-action="edit">Edit</button>
+                      <button class="button secondary danger-text pattern-action" type="button" data-pattern-action="delete">Delete</button>
+                    </div>
+                  </div>
                 {% endfor %}
               </div>
-              <div class="form-actions"><button class="button secondary" type="button" id="add-pattern">+ Add availability</button><button class="button primary" type="submit">Save availability</button></div>
             </fieldset>
           </form>
         </section>
       </section>
 
       <section class="dashboard-view" id="blackout-view" data-view hidden>
-        <div class="view-heading"><div><p class="eyebrow">Time away</p><h1>Blackout days</h1><p class="view-subtitle">Block a UTC date and time range from new bookings.</p></div></div>
-        <section class="dashboard-panel">
+        <div class="view-heading blackout-page-heading">
+          <div><p class="eyebrow">Availability controls</p><h1>Blackout days</h1><p class="view-subtitle">Protect time away from your practice by blocking periods from new bookings.</p></div>
+          <span class="blackout-summary-chip"><strong>{{ blackouts|length }}</strong> {{ 'window' if blackouts|length == 1 else 'windows' }} configured</span>
+        </div>
+        <section class="dashboard-panel blackout-create-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">Plan time away</p><h2>Create a blackout window</h2><p class="panel-description">Choose when the block begins and ends. Appointments cannot be booked during this period.</p></div>
+          </div>
           {% if profile.is_verified %}
-            <form class="blackout-form" method="post" action="{{ url_for('add_blackout') }}"><label for="blackout-start">Starts (UTC)</label><input id="blackout-start" name="start_datetime" type="datetime-local" min="{{ schedule.date }}T00:00" required><label for="blackout-end">Ends (UTC)</label><input id="blackout-end" name="end_datetime" type="datetime-local" min="{{ schedule.date }}T00:00" required><button class="button primary" type="submit">Add blackout</button></form>
+            <form class="blackout-form" method="post" action="{{ url_for('add_blackout') }}" id="blackout-form">
+              <label for="blackout-start">Starts<input id="blackout-start" name="start_datetime" type="datetime-local" min="{{ schedule.date }}T00:00" required></label>
+              <label for="blackout-end">Ends<input id="blackout-end" name="end_datetime" type="datetime-local" min="{{ schedule.date }}T00:00" required></label>
+              <button class="button primary" type="submit"><span aria-hidden="true">+</span> Add blackout</button>
+            </form>
+            <p class="form-hint" id="blackout-form-hint" aria-live="polite">The end time must be after the start time.</p>
+          {% else %}
+            <p class="notice verification-notice">Complete your doctor profile verification to manage blackout windows.</p>
           {% endif %}
-          {% if blackouts %}<ul class="blackout-list">{% for blackout in blackouts %}<li><span>{{ blackout.start_display }} – {{ blackout.end_display }}</span>{% if profile.is_verified %}<form method="post" action="{{ url_for('delete_blackout', blackout_id=blackout.blackout_id) }}"><button class="text-button danger-text" type="submit">Remove</button></form>{% endif %}</li>{% endfor %}</ul>{% else %}<div class="empty-state compact-empty"><p>No blackout windows</p></div>{% endif %}
+        </section>
+        <section class="dashboard-panel blackout-list-panel">
+          <div class="panel-heading">
+            <div><p class="eyebrow">Your calendar</p><h2>Scheduled time away</h2><p class="panel-description">Review or remove existing blackout windows.</p></div>
+            {% if blackouts %}<span class="count-label">{{ blackouts|length }} total</span>{% endif %}
+          </div>
+          {% if blackouts %}
+            <ul class="blackout-list">
+              {% for blackout in blackouts %}
+                <li class="blackout-card">
+                  <span class="blackout-card-icon" aria-hidden="true">&#9719;</span>
+                  <div class="blackout-card-details"><strong>{{ blackout.start_display }}</strong><span>Through {{ blackout.end_display }}</span></div>
+                  {% if profile.is_verified %}
+                    <form method="post" action="{{ url_for('delete_blackout', blackout_id=blackout.blackout_id) }}" data-confirm-message="Remove this blackout window? This may allow new bookings during that time.">
+                      <button class="button secondary danger-text" type="submit">Remove window</button>
+                    </form>
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <div class="blackout-empty-state"><span class="blackout-empty-icon" aria-hidden="true">&#9719;</span><div><strong>No blackout windows yet</strong><p>When you need time away, add a window above. Your regular availability will stay unchanged.</p></div></div>
+          {% endif %}
         </section>
       </section>
 
-      <section class="dashboard-view" id="schedule-view" data-view hidden>
-        <div class="view-heading"><div><p class="eyebrow">Appointments</p><h1>Schedule</h1><p class="view-subtitle">Booked patient appointments and open slots, shown in UTC.</p></div><form class="date-picker" method="get" action="{{ url_for('doctor_dashboard') }}"><label for="schedule-date">Date</label><input id="schedule-date" type="date" name="date" value="{{ schedule.date }}"><button class="button secondary" type="submit">View day</button></form></div>
+      <section class="dashboard-view" id="schedule-view" data-view data-timezone="UTC" hidden>
+        <div class="view-heading schedule-view-heading">
+          <div><p class="eyebrow">Appointments</p><h1>Schedule</h1><p class="view-subtitle">Schedule for {{ schedule_display_date }}.</p></div>
+          <form class="date-picker schedule-controls" method="get" action="{{ url_for('doctor_dashboard') }}">
+            <input type="hidden" name="view" value="schedule-view">
+            <label for="schedule-date">Date</label><input id="schedule-date" type="date" name="date" value="{{ schedule.date }}">
+            <label for="schedule-status-filter">Status</label><select id="schedule-status-filter" name="status"><option value="all" {{ 'selected' if schedule_filter == 'all' else '' }}>All statuses</option><option value="booked" {{ 'selected' if schedule_filter == 'booked' else '' }}>Booked</option><option value="blocked" {{ 'selected' if schedule_filter == 'blocked' else '' }}>Blocked</option><option value="open" {{ 'selected' if schedule_filter == 'open' else '' }}>Available</option></select>
+            <button class="button secondary" type="submit">View day</button>
+          </form>
+        </div>
         <section class="dashboard-panel">
-          {% if schedule.slots %}<div class="schedule-list">{% for slot in schedule.slots %}<article class="schedule-row"><time class="slot-time">{{ slot.start_time[11:16] }}</time><div class="slot-main"><strong>{{ slot.consultation_name or 'Consultation' }}</strong><span>{{ slot.appointments|length }} of {{ slot.capacity }} seats booked</span></div><div class="slot-patients">{% for appointment in slot.appointments %}<span>{{ appointment.first_name }} {{ appointment.last_name }}</span>{% else %}<span class="muted">No patients booked</span>{% endfor %}</div><span class="slot-state">{{ 'Blocked' if slot.status == 0 else ('Booked' if slot.appointments else 'Open') }}</span></article>{% endfor %}</div>{% else %}<div class="empty-state"><span class="empty-symbol">&#9711;</span><p>No slots on this date</p></div>{% endif %}
+          {% if schedule.slots %}
+            <div class="schedule-toolbar">
+              <label class="schedule-search-label" for="patient-search">Search patient</label>
+              <input id="patient-search" type="search" placeholder="Search patient name or ID" autocomplete="off">
+              <button class="button secondary" type="button" id="select-visible-slots">Select visible</button>
+              <button class="button secondary danger-text" type="button" id="bulk-cancel-slots" disabled>Cancel selected slots</button>
+            </div>
+            <p class="schedule-filter-count" id="schedule-filter-count" aria-live="polite"></p>
+            <div class="schedule-list" id="schedule-list">
+              {% for slot in schedule.slots %}
+                {% set slot_filter = 'blocked' if slot.status == 0 else ('booked' if slot.appointments else 'open') %}
+                {% set booked_count = slot.booked_count|int %}
+                {% set available_count = [slot.capacity|int - booked_count, 0]|max %}
+                <article class="schedule-row schedule-card" data-slot-status="{{ slot_filter }}" data-slot-time="{{ slot.start_time }}" data-consultation="{{ slot.consultation_name or 'Consultation' }}" data-consultation-fee="{{ slot.consultation_fee if slot.consultation_fee is not none else '' }}" data-consultation-duration="{{ slot.duration_minutes if slot.duration_minutes is not none else '' }}" data-capacity="{{ booked_count }} of {{ slot.capacity }} booked; {{ available_count }} available">
+                  {% if slot_filter == 'booked' %}
+                    <label class="slot-select-label"><input class="slot-select" type="checkbox" value="{{ slot.appointments[0].appointment_id }}" aria-label="Select slot at {{ slot.start_time[11:16] }}"></label>
+                  {% else %}
+                    <span class="slot-select-spacer" aria-hidden="true"></span>
+                  {% endif %}
+                  <div class="schedule-card-time"><span class="schedule-field-label">Slot time</span><time datetime="{{ slot.start_time }}">{{ slot.start_time[11:16] }}</time><span class="schedule-date">{{ schedule_display_date }}</span></div>
+                  <div class="schedule-card-type"><span class="schedule-field-label">Consultation type</span><strong>{{ slot.consultation_name or 'Consultation' }}</strong><span class="schedule-type-meta">{% if slot.consultation_fee is not none %}Fee {{ '%.2f'|format(slot.consultation_fee|float) }}{% else %}Fee unavailable{% endif %} · {% if slot.duration_minutes is not none %}{{ slot.duration_minutes }} min{% else %}Duration unavailable{% endif %}</span></div>
+                  <div class="schedule-card-patients"><span class="schedule-field-label">Patient name</span>
+                    {% for appointment in slot.appointments %}
+                      {% set appointment_status = appointment.appointment_status|default('CONFIRMED')|upper %}
+                      {% set badge_class = 'status-booked' if appointment_status == 'CONFIRMED' else ('status-pending' if appointment_status == 'PENDING' else ('status-cancelled' if appointment_status == 'CANCELLED' else ('status-no-show' if appointment_status == 'NO_SHOW' else 'status-completed'))) %}
+                      <div class="schedule-patient">
+                        <button class="patient-name-link" type="button"
+                          data-open-appointment-details
+                          data-patient-name="{{ appointment.first_name|title }} {{ appointment.last_name|title }}"
+                          data-patient-id="{{ appointment.patient_id }}"
+                          data-patient-phone="{{ appointment.phone_number or '' }}"
+                          data-appointment-id="{{ appointment.appointment_id }}"
+                          data-booked-at="{{ appointment.created_at or '' }}"
+                          data-slot-time="{{ slot.start_time }}"
+                          data-consultation="{{ slot.consultation_name or 'Consultation' }}"
+                          data-consultation-fee="{{ slot.consultation_fee if slot.consultation_fee is not none else 'Not available' }}"
+                          data-consultation-duration="{{ slot.duration_minutes if slot.duration_minutes is not none else 'Not available' }}"
+                          data-appointment-status="{{ 'Booked' if appointment_status == 'CONFIRMED' else appointment_status|replace('_', ' ')|title }}">{{ appointment.first_name|title }} {{ appointment.last_name|title }}</button>
+                        <span class="schedule-id">Patient ID {{ appointment.patient_id }} | Booking #{{ appointment.appointment_id }}</span>
+                        <span class="status-badge {{ badge_class }}">{{ 'Booked' if appointment_status == 'CONFIRMED' else appointment_status|replace('_', ' ')|title }}</span>
+                      </div>
+                    {% else %}
+                      <span class="muted">No patient assigned</span>
+                    {% endfor %}
+                  </div>
+                  <div class="schedule-card-capacity"><span class="schedule-field-label">Capacity booked / available</span><strong>{{ booked_count }} / {{ slot.capacity }}</strong><span>{{ available_count }} available</span></div>
+                  <div class="schedule-card-actions">
+                    <span class="schedule-field-label">Actions</span>
+                    {% if slot.appointments %}
+                      <button class="button secondary manage-booking" type="button" data-open-appointment-details
+                        data-patient-name="{{ slot.appointments[0].first_name|title }} {{ slot.appointments[0].last_name|title }}"
+                        data-patient-id="{{ slot.appointments[0].patient_id }}"
+                        data-patient-phone="{{ slot.appointments[0].phone_number or '' }}"
+                        data-appointment-id="{{ slot.appointments[0].appointment_id }}"
+                        data-booked-at="{{ slot.appointments[0].created_at or '' }}"
+                        data-slot-time="{{ slot.start_time }}"
+                        data-consultation="{{ slot.consultation_name or 'Consultation' }}"
+                        data-consultation-fee="{{ slot.consultation_fee if slot.consultation_fee is not none else 'Not available' }}"
+                        data-consultation-duration="{{ slot.duration_minutes if slot.duration_minutes is not none else 'Not available' }}"
+                        data-appointment-status="Booked">Manage Booking</button>
+                      <form class="slot-cancel-form" method="post" action="{{ url_for('cancel_doctor_appointment', appointment_id=slot.appointments[0].appointment_id) }}" data-appointment-cancel>
+                        <input type="hidden" name="schedule_date" value="{{ schedule.date }}">
+                        <input type="hidden" name="status_filter" value="{{ schedule_filter }}">
+                        <button class="button danger-button" type="button" data-confirm-slot>Cancel Slot</button>
+                      </form>
+                    {% else %}
+                      <span class="status-badge {{ 'status-blocked' if slot_filter == 'blocked' else 'status-available' }}">{{ 'Blocked' if slot_filter == 'blocked' else 'Available' }}</span>
+                    {% endif %}
+                  </div>
+                </article>
+              {% endfor %}
+            </div>
+            <nav class="schedule-pagination" aria-label="Schedule pages">
+              <button class="button secondary" type="button" id="schedule-previous" disabled>Previous</button>
+              <span id="schedule-page-label" aria-live="polite"></span>
+              <button class="button secondary" type="button" id="schedule-next">Next</button>
+            </nav>
+            <form id="bulk-cancel-form" method="post" action="{{ url_for('bulk_cancel_doctor_appointments') }}" hidden>
+              <input type="hidden" name="schedule_date" value="{{ schedule.date }}">
+              <input type="hidden" name="status_filter" value="{{ schedule_filter }}">
+            </form>
+            <div class="schedule-empty-state schedule-filter-empty" id="schedule-filter-empty" hidden>
+              <span class="schedule-empty-icon" aria-hidden="true">&#9829;</span>
+              <h2>No appointments found</h2>
+              <p>Try changing your search or schedule filters.</p>
+            </div>
+          {% else %}
+            <div class="schedule-empty-state">
+              <span class="schedule-empty-icon" aria-hidden="true">&#9829;</span>
+              <h2>No appointments found</h2>
+              <p>There are no appointments or available slots for {{ schedule_display_date }}.</p>
+            </div>
+          {% endif %}
         </section>
+        <dialog class="schedule-dialog appointment-details-drawer" id="appointment-details-dialog" aria-labelledby="appointment-details-title">
+          <div class="schedule-dialog-header"><div><p class="eyebrow">Appointment details</p><h2 id="appointment-details-title">Manage Booking</h2></div><button class="icon-button" type="button" data-close-dialog aria-label="Close appointment details">&times;</button></div>
+          <dl class="appointment-detail-list">
+            <div><dt>Patient</dt><dd id="detail-patient-name"></dd></div>
+            <div><dt>Patient ID</dt><dd id="detail-patient-id"></dd></div>
+            <div><dt>Patient phone</dt><dd id="detail-patient-phone"></dd></div>
+            <div><dt>Patient email</dt><dd id="detail-patient-email"></dd></div>
+            <div><dt>Date of birth</dt><dd id="detail-patient-dob"></dd></div>
+            <div><dt>Gender</dt><dd id="detail-patient-gender"></dd></div>
+            <div><dt>Booking reference</dt><dd id="detail-appointment-id"></dd></div>
+            <div><dt>Booked on</dt><dd id="detail-booked-at"></dd></div>
+            <div><dt>Slot time</dt><dd id="detail-slot-time"></dd></div>
+            <div><dt>Consultation type</dt><dd id="detail-consultation"></dd></div>
+            <div><dt>Fee</dt><dd id="detail-consultation-fee"></dd></div>
+            <div><dt>Duration</dt><dd id="detail-consultation-duration"></dd></div>
+            <div><dt>Status</dt><dd id="detail-status"></dd></div>
+          </dl>
+          <button class="button secondary" type="button" data-close-dialog>Close</button>
+        </dialog>
+        <dialog class="schedule-dialog cancel-confirm-dialog" id="cancel-slot-dialog" aria-labelledby="cancel-slot-title">
+          <div class="schedule-dialog-header"><div><p class="eyebrow">Please confirm</p><h2 id="cancel-slot-title">Cancel this slot?</h2></div><button class="icon-button" type="button" data-cancel-dialog aria-label="Close cancellation dialog">&times;</button></div>
+          <p class="cancel-warning">This will cancel the slot and every appointment booked for it. A full refund record will be saved for each affected patient.</p>
+          <div class="cancel-slot-summary"><strong id="cancel-patient-summary"></strong><span id="cancel-slot-summary"></span></div>
+          <div class="schedule-dialog-actions"><button class="button secondary" type="button" data-cancel-dialog>Keep appointment</button><button class="button danger-button" type="button" id="confirm-slot-cancellation">Confirm cancellation</button></div>
+        </dialog>
+        <dialog class="schedule-dialog cancel-confirm-dialog" id="bulk-cancel-dialog" aria-labelledby="bulk-cancel-title">
+          <div class="schedule-dialog-header"><div><p class="eyebrow">Bulk slot action</p><h2 id="bulk-cancel-title">Cancel selected slots?</h2></div><button class="icon-button" type="button" data-cancel-dialog aria-label="Close bulk cancellation dialog">&times;</button></div>
+          <p class="cancel-warning">Every appointment for each selected slot will be cancelled. A full refund record will be saved for each affected patient.</p>
+          <div class="cancel-slot-summary" id="bulk-cancel-summary"></div>
+          <p><strong id="bulk-cancel-count"></strong></p>
+          <div class="schedule-dialog-actions"><button class="button secondary" type="button" data-cancel-dialog>Keep appointments</button><button class="button danger-button" type="button" id="confirm-bulk-cancellation">Confirm cancellation</button></div>
+        </dialog>
+      </section>
+
+      <section class="dashboard-view" id="appointments-view" data-view hidden>
+        <div class="view-heading"><div><p class="eyebrow">Booking history</p><h1>Appointments</h1><p class="view-subtitle">Review booked and cancelled appointments.</p></div></div>
+        <section class="dashboard-panel patient-appointments">
+          <div class="panel-heading"><div><p class="eyebrow">Patient bookings</p><h2>All appointments</h2></div></div>
+            <form class="patient-appointment-toolbar" id="doctor-appointment-filter-form" method="get" action="{{ url_for('doctor_dashboard') }}">
+              <input type="hidden" name="view" value="appointments-view">
+              <input type="hidden" name="appointments_offset" id="doctor-appointments-offset" value="{{ appointments_offset }}">
+              <input type="hidden" name="appointments_search" id="doctor-appointments-submitted-search" value="{{ appointments_search }}">
+              <div class="doctor-appointment-search-group">
+                <label for="doctor-appointment-search">Search appointments</label>
+                <div><input id="doctor-appointment-search" type="search" maxlength="100" placeholder="Search patient name or booking reference" autocomplete="off" value="{{ appointments_search }}">
+                  <button class="button secondary" type="button" id="search-doctor-appointments">Search</button></div>
+              </div>
+              <label class="doctor-appointment-date-filter" for="doctor-appointments-date">Date
+                <input id="doctor-appointments-date" name="appointments_date" type="date" value="{{ appointments_date }}">
+              </label>
+              <label class="doctor-appointment-status-filter" for="doctor-appointment-status-filter">Status
+                <select id="doctor-appointment-status-filter" name="appointments_status">
+                  <option value="all" {{ 'selected' if appointments_status == 'all' else '' }}>All statuses</option>
+                  <option value="booked" {{ 'selected' if appointments_status == 'booked' else '' }}>Booked</option>
+                  <option value="cancelled" {{ 'selected' if appointments_status == 'cancelled' else '' }}>Cancelled</option>
+                  <option value="completed" {{ 'selected' if appointments_status == 'completed' else '' }}>Completed</option>
+                  <option value="no_show" {{ 'selected' if appointments_status == 'no_show' else '' }}>No Show</option>
+                </select>
+              </label>
+              <button class="button secondary" type="button" id="clear-doctor-appointment-filters">Clear filters</button>
+            </form>
+            <p class="schedule-filter-count" id="doctor-appointment-count" aria-live="polite"></p>
+            <div class="patient-appointment-list">
+              {% for appointment in appointments %}
+                {% set appointment_status = appointment.status|default('BOOKED')|upper %}
+                {% set booking_status = appointment.appointment_status|default('')|upper %}
+                {% set is_cancelled = appointment_status in ['CANCELLED', 'CANCELED'] or booking_status in ['CANCELLED', 'CANCELED'] %}
+                {% set is_completed = appointment_status == 'COMPLETED' or booking_status == 'COMPLETED' %}
+                {% set is_no_show = appointment_status == 'NO_SHOW' or booking_status == 'NO_SHOW' %}
+                {% set is_booked = not is_cancelled and not is_completed and not is_no_show and appointment_status == 'BOOKED' and booking_status == 'CONFIRMED' %}
+                {% set status_label = 'Cancelled' if is_cancelled else 'Completed' if is_completed else 'No Show' if is_no_show else 'Booked' %}
+                {% set status_filter_value = 'cancelled' if is_cancelled else 'completed' if is_completed else 'no_show' if is_no_show else 'booked' %}
+                {% set status_class = 'status-cancelled' if is_cancelled else 'status-completed' if is_completed else 'status-no-show' if is_no_show else 'status-booked' %}
+                {% if is_booked or is_cancelled or is_completed or is_no_show %}
+                  <article class="patient-appointment-card doctor-appointment-card" data-doctor-appointment-status="{{ status_filter_value }}" data-doctor-appointment-search="{{ appointment.patient_first_name or '' }} {{ appointment.patient_last_name or '' }} #{{ appointment.appointment_id }}" data-appointment-date="{{ appointment.slot_start_time|string|truncate(10, True, '') }}">
+                    <div class="doctor-appointment-card-main">
+                      <div class="doctor-appointment-card-heading">
+                        <div><span class="schedule-field-label">Booking reference</span><h3>#{{ appointment.appointment_id }}</h3></div>
+                        <span class="status-badge {{ status_class }}">{{ status_label }}</span>
+                      </div>
+                      <div class="doctor-appointment-card-fields">
+                        <div class="doctor-appointment-field patient-tooltip-wrap">
+                          <span class="schedule-field-label">Patient</span>
+                          <button class="patient-name-link patient-tooltip-trigger" type="button" aria-expanded="false">
+                            {{ appointment.patient_first_name|default('Patient', true)|title }} {{ appointment.patient_last_name|default('', true)|title }}
+                          </button>
+                          <div class="patient-details-tooltip" role="tooltip" hidden>
+                            <strong>{{ appointment.patient_first_name|default('Patient', true)|title }} {{ appointment.patient_last_name|default('', true)|title }}</strong>
+                            <span>Gender: {{ appointment.patient_gender or 'Not provided' }}</span>
+                            <span>Contact Number: {{ appointment.patient_phone_number or 'Not provided' }}</span>
+                            <span>Emergency Contact Number: {{ appointment.patient_emergency_contact or 'Not provided' }}</span>
+                          </div>
+                        </div>
+                        <div class="doctor-appointment-field">
+                          <span class="schedule-field-label">Date &amp; time</span>
+                          <time class="patient-appointment-time" datetime="{{ appointment.slot_start_time }}">{{ appointment.slot_start_time }}</time>
+                        </div>
+                        <div class="doctor-appointment-field">
+                          <span class="schedule-field-label">Consultation type</span>
+                          <span>{{ appointment.consultation_type or 'Not available' }}</span>
+                        </div>
+                        <div class="doctor-appointment-field">
+                          <span class="schedule-field-label">Duration</span>
+                          <span>{% if appointment.duration_minutes is not none %}{{ appointment.duration_minutes }} minutes{% else %}Not available{% endif %}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="doctor-appointment-card-actions">
+                      <button class="button secondary" type="button" data-open-doctor-payment
+                        data-is-cancelled="{{ 'true' if is_cancelled else 'false' }}"
+                        data-payment-method="{{ appointment.payment_method or '' }}"
+                        data-amount-paid="{{ appointment.amount_paid if appointment.amount_paid is not none else '' }}"
+                        data-fee="{{ appointment.fee if appointment.fee is not none else '' }}"
+                        data-payment-status="{{ appointment.payment_status or '' }}"
+                        data-refund-status="{{ appointment.refund_status or '' }}"
+                        data-refund-amount="{{ appointment.refund_amount if appointment.refund_amount is not none else '' }}"
+                        data-transaction-id="{{ appointment.transaction_id or '' }}">View Payment Details</button>
+                      {% if is_booked %}
+                        <form method="post" action="{{ url_for('mark_doctor_appointment_no_show', appointment_id=appointment.appointment_id) }}" class="doctor-appointment-no-show-form" data-doctor-appointment-no-show-form>
+                          <input type="hidden" name="appointments_date" value="{{ appointments_date }}">
+                          <input type="hidden" name="appointments_status" value="{{ appointments_status }}">
+                          <input type="hidden" name="appointments_search" value="{{ appointments_search }}">
+                          <input type="hidden" name="appointments_offset" value="{{ appointments_offset }}">
+                          <button class="button secondary" type="button" data-open-doctor-no-show>Mark No Show</button>
+                        </form>
+                        <form method="post" action="{{ url_for('cancel_doctor_appointment', appointment_id=appointment.appointment_id) }}" class="doctor-appointment-cancel-form" data-doctor-appointment-cancel-form>
+                          <input type="hidden" name="cancel_scope" value="single_appointment">
+                          <input type="hidden" name="appointments_date" value="{{ appointments_date }}">
+                          <input type="hidden" name="appointments_status" value="{{ appointments_status }}">
+                          <input type="hidden" name="appointments_search" value="{{ appointments_search }}">
+                          <input type="hidden" name="appointments_offset" value="{{ appointments_offset }}">
+                          <button class="button danger-button" type="button" data-open-doctor-cancel>Cancel Appointment</button>
+                        </form>
+                      {% endif %}
+                    </div>
+                  </article>
+                {% endif %}
+              {% endfor %}
+            </div>
+            <div class="schedule-empty-state patient-empty-state" id="doctor-appointment-empty" hidden><span class="schedule-empty-icon" aria-hidden="true">&#9776;</span><h2>No appointments found</h2><p>No appointments match these filters.</p></div>
+          {% if appointments_offset or appointments_has_more %}
+            <nav class="appointment-pagination" aria-label="Appointment pages">
+              {% if appointments_offset %}
+                <a class="button secondary" href="{{ url_for('doctor_dashboard', appointments_offset=[appointments_offset - 50, 0]|max, view='appointments-view', date=schedule.date, status=schedule_filter, appointments_date=appointments_date, appointments_status=appointments_status, appointments_search=appointments_search) }}">Previous appointments</a>
+              {% endif %}
+              {% if appointments_has_more and appointments_next_offset is not none %}
+                <a class="button secondary" href="{{ url_for('doctor_dashboard', appointments_offset=appointments_next_offset, view='appointments-view', date=schedule.date, status=schedule_filter, appointments_date=appointments_date, appointments_status=appointments_status, appointments_search=appointments_search) }}">More appointments</a>
+              {% endif %}
+            </nav>
+          {% endif %}
+        </section>
+        <dialog class="schedule-dialog doctor-payment-dialog" id="doctor-payment-dialog" aria-labelledby="doctor-payment-title">
+          <div class="schedule-dialog-header">
+            <div><p class="eyebrow">Appointment billing</p><h2 id="doctor-payment-title">Payment Details</h2></div>
+            <button class="icon-button" type="button" data-close-doctor-payment aria-label="Close payment details">&times;</button>
+          </div>
+          <dl class="appointment-detail-list">
+            <div><dt>Payment Method</dt><dd id="doctor-payment-method"></dd></div>
+            <div id="doctor-payment-paid-row"><dt>Amount Paid</dt><dd id="doctor-payment-paid"></dd></div>
+            <div id="doctor-payment-fee-row" hidden><dt>Fee</dt><dd id="doctor-payment-fee"></dd></div>
+            <div><dt>Payment Status</dt><dd id="doctor-payment-status"></dd></div>
+            <div id="doctor-payment-refund-status-row" hidden><dt>Refund Status</dt><dd id="doctor-payment-refund-status"></dd></div>
+            <div id="doctor-payment-refund-amount-row" hidden><dt>Refund Amount</dt><dd id="doctor-payment-refund-amount"></dd></div>
+            <div><dt>Transaction ID</dt><dd id="doctor-payment-transaction"></dd></div>
+          </dl>
+          <div class="schedule-dialog-actions"><button class="button secondary" type="button" data-close-doctor-payment>Close</button></div>
+        </dialog>
+        <dialog class="schedule-dialog cancel-confirm-dialog" id="doctor-appointment-cancel-dialog" aria-labelledby="doctor-appointment-cancel-title">
+          <div class="schedule-dialog-header">
+            <div><p class="eyebrow">Please confirm</p><h2 id="doctor-appointment-cancel-title">Cancel appointment?</h2></div>
+            <button class="icon-button" type="button" data-close-doctor-cancel aria-label="Close cancellation dialog">&times;</button>
+          </div>
+          <p class="cancel-warning">Are you sure you want to cancel this appointment?</p>
+          <div class="schedule-dialog-actions">
+            <button class="button secondary" type="button" data-close-doctor-cancel>Close</button>
+            <button class="button danger-button" type="button" id="confirm-doctor-appointment-cancel">Confirm</button>
+          </div>
+        </dialog>
+        <dialog class="schedule-dialog cancel-confirm-dialog" id="doctor-appointment-no-show-dialog" aria-labelledby="doctor-appointment-no-show-title">
+          <div class="schedule-dialog-header">
+            <div><p class="eyebrow">Please confirm</p><h2 id="doctor-appointment-no-show-title">Mark Patient as No Show?</h2></div>
+            <button class="icon-button" type="button" data-close-doctor-no-show aria-label="Close no-show confirmation">&times;</button>
+          </div>
+          <p class="cancel-warning">This indicates the patient did not attend the scheduled consultation.</p>
+          <div class="schedule-dialog-actions">
+            <button class="button secondary" type="button" data-close-doctor-no-show>Close</button>
+            <button class="button danger-button" type="button" id="confirm-doctor-appointment-no-show">Confirm</button>
+          </div>
+        </dialog>
       </section>
 
       <section class="dashboard-view" id="consulting-view" data-view hidden>
-        <div class="view-heading"><div><p class="eyebrow">Services and fees</p><h1>Consulting Type</h1><p class="view-subtitle">Add a service, then manage active consultation types below.</p></div></div>
-        <section class="dashboard-panel">
-          <form class="consultation-form" method="post" action="{{ url_for('create_consultation_type') }}"><fieldset class="configuration-controls" {{ 'disabled' if not profile.is_verified else '' }}><select name="consultation_name" id="consultation-name" required><option value="">Choose an available consultation</option>{% for type_name in available_consultation_types %}<option value="{{ type_name }}">{{ type_name }}</option>{% endfor %}</select><input name="fee" type="number" min="0" step="0.01" placeholder="Fee" aria-label="Fee" required><input name="capacity" id="consultation-capacity" type="number" min="1" max="10" value="1" aria-label="Capacity" required><input name="duration_minutes" id="consultation-duration" type="hidden" value="15"><button class="button primary" type="submit">Add type</button></fieldset></form>
+        <div class="view-heading consulting-page-heading">
+          <div><p class="eyebrow">Services and fees</p><h1>Consulting types</h1><p class="view-subtitle">Configure the services patients can book with you.</p></div>
+          <div class="consulting-summary-chips"><span><strong>{{ consultations|selectattr('is_active')|list|length }}</strong> active</span><span><strong>{{ consultations|length }}</strong> total</span></div>
+        </div>
+        <section class="dashboard-panel consultation-create-panel">
+          <div class="panel-heading"><div><p class="eyebrow">Build your service menu</p><h2>Add a consultation type</h2><p class="panel-description">Choose a service and set its fee and booking capacity.</p></div></div>
+          <form class="consultation-form" method="post" action="{{ url_for('create_consultation_type') }}">
+            <fieldset class="configuration-controls consultation-create-fields" {{ 'disabled' if not profile.is_verified else '' }}>
+              <label for="consultation-name">Consultation type
+                <select name="consultation_name" id="consultation-name" required><option value="">Choose a service</option>{% for type_name in available_consultation_types %}<option value="{{ type_name }}">{{ type_name }}</option>{% endfor %}</select>
+              </label>
+              <label for="consultation-fee">Fee
+                <span class="consultation-input-prefix"><span aria-hidden="true">₹</span><input id="consultation-fee" name="fee" type="number" min="0" step="0.01" placeholder="0.00" required></span>
+              </label>
+              <label for="consultation-capacity">Patients per slot
+                <input name="capacity" id="consultation-capacity" type="number" min="1" max="10" value="1" required>
+              </label>
+              <input name="duration_minutes" id="consultation-duration" type="hidden" value="15">
+              <button class="button primary consultation-add-button" type="submit">Add consultation</button>
+            </fieldset>
+          </form>
+          {% if not profile.is_verified %}<p class="form-hint">Complete your profile verification to add or edit consultation types.</p>{% endif %}
         </section>
-        <section class="dashboard-panel">
-          <div class="panel-heading"><div><p class="eyebrow">Current menu</p><h2>Active consultation types</h2></div><span class="count-label">{{ consultations|selectattr('is_active')|list|length }} active</span></div>
+        <section class="dashboard-panel consultation-menu-panel">
+          <div class="panel-heading"><div><p class="eyebrow">Your services</p><h2>Consultation menu</h2><p class="panel-description">Update fees and capacity, or remove a service from your menu.</p></div><span class="count-label">{{ consultations|selectattr('is_active')|list|length }} active</span></div>
           <ul class="consultation-list">
             {% for consultation in consultations %}
-              <li class="{{ 'inactive-consultation' if not consultation.is_active else '' }}">
+              <li class="consultation-card {{ 'inactive-consultation' if not consultation.is_active else '' }}">
                 <div class="consultation-line">
-                  <span><strong>{{ consultation.consultation_name }}</strong><small>{{ consultation.duration_minutes }} min / capacity {{ consultation.capacity }} / {{ 'Active' if consultation.is_active else 'Deactivated' }}</small></span>
-                  <b>{{ '%.2f'|format(consultation.fee|float) }}</b>
-                  {% if consultation.is_active and profile.is_verified %}
-                    <button class="text-button consultation-edit-toggle" type="button" data-target="consultation-edit-{{ consultation.consultation_type_id }}">Edit</button>
+                  <span class="consultation-card-icon" aria-hidden="true">&#10003;</span>
+                  <div class="consultation-card-details"><strong>{{ consultation.consultation_name }}</strong><small>{{ consultation.duration_minutes }} min consultation · {{ consultation.capacity }} {{ 'patient' if consultation.capacity == 1 else 'patients' }} per slot</small></div>
+                  <div class="consultation-card-price"><strong>₹{{ '%.2f'|format(consultation.fee|float) }}</strong><span>per consultation</span></div>
+                  <span class="consultation-status {{ 'is-active' if consultation.is_active else 'is-inactive' }}">{{ 'Active' if consultation.is_active else 'Inactive' }}</span>
+                  {% if consultation.is_active and profile.is_verified %}<button class="button secondary consultation-edit-toggle" type="button" data-target="consultation-edit-{{ consultation.consultation_type_id }}" aria-expanded="false">Edit</button>{% endif %}
+                  {% if profile.is_verified %}
+                    <form class="delete-form" method="post" action="{{ url_for('delete_consultation_type', consultation_id=consultation.consultation_type_id) }}" data-confirm-message="Remove {{ consultation.consultation_name }} from your consultation menu?">
+                      <button class="text-button danger-text" type="submit">Remove</button>
+                    </form>
                   {% endif %}
                 </div>
                 {% if consultation.is_active and profile.is_verified %}
                   <form class="consultation-edit" id="consultation-edit-{{ consultation.consultation_type_id }}" method="post" action="{{ url_for('update_consultation_type', consultation_id=consultation.consultation_type_id) }}" hidden>
-                    <select name="consultation_name" class="consultation-name-edit" required>
-                      {% for type_name in ['Quick Consult','Standard Consult','Detailed Consult','Health Camp Session'] %}
-                        <option value="{{ type_name }}" {{ 'selected' if type_name == consultation.consultation_name else '' }}>{{ type_name }}</option>
-                      {% endfor %}
-                    </select>
-                    <input name="fee" type="number" min="0" step="0.01" value="{{ consultation.fee }}" aria-label="Fee" required>
-                    <input name="capacity" type="number" min="{{ 2 if consultation.consultation_name == 'Health Camp Session' else 1 }}" max="{{ 10 if consultation.consultation_name == 'Health Camp Session' else 1 }}" value="{{ consultation.capacity }}" aria-label="Capacity" required>
+                    <label>Consultation type
+                      <select name="consultation_name" class="consultation-name-edit" required>
+                        {% for type_name in ['Quick Consult','Standard Consult','Detailed Consult','Health Camp Session'] %}
+                          <option value="{{ type_name }}" {{ 'selected' if type_name == consultation.consultation_name else '' }}>{{ type_name }}</option>
+                        {% endfor %}
+                      </select>
+                    </label>
+                    <label>Fee
+                      <span class="consultation-input-prefix"><span aria-hidden="true">₹</span><input name="fee" type="number" min="0" step="0.01" value="{{ consultation.fee }}" required></span>
+                    </label>
+                    <label>Patients per slot
+                      <input name="capacity" type="number" min="{{ 2 if consultation.consultation_name == 'Health Camp Session' else 1 }}" max="{{ 10 if consultation.consultation_name == 'Health Camp Session' else 1 }}" value="{{ consultation.capacity }}" required>
+                    </label>
                     <input name="duration_minutes" type="hidden" value="{{ consultation.duration_minutes }}">
                     <button class="button secondary" type="submit">Save changes</button>
-                    <button class="button secondary consultation-edit-cancel" type="button" data-target="consultation-edit-{{ consultation.consultation_type_id }}">Cancel</button>
-                  </form>
-                {% endif %}
-                {% if profile.is_verified %}
-                  <form class="delete-form" method="post" action="{{ url_for('delete_consultation_type', consultation_id=consultation.consultation_type_id) }}">
-                    <button class="text-button danger-text" type="submit">Delete</button>
+                    <button class="button secondary consultation-edit-cancel" type="button" data-target="consultation-edit-{{ consultation.consultation_type_id }}" aria-expanded="true">Cancel</button>
                   </form>
                 {% endif %}
               </li>
             {% else %}
-              <li class="muted">No consultation types added</li>
+              <li class="consultation-empty-state"><span class="blackout-empty-icon" aria-hidden="true">&#10003;</span><div><strong>No consultation types yet</strong><p>Add a service above to let patients book an appointment with you.</p></div></li>
             {% endfor %}
           </ul>
         </section>
@@ -160,7 +539,16 @@
     const views = [...document.querySelectorAll('[data-view]')];
     const navLinks = [...document.querySelectorAll('[data-view-target]')];
     const activateView = (id, updateUrl = false) => {
-      views.forEach(view => { view.hidden = view.id !== id; });
+      views.forEach(view => {
+        const active = view.id === id;
+        view.hidden = !active;
+        if (active) {
+          view.classList.remove('view-enter');
+          requestAnimationFrame(() => view.classList.add('view-enter'));
+        } else {
+          view.classList.remove('view-enter');
+        }
+      });
       navLinks.forEach(link => {
         const active = link.dataset.viewTarget === id;
         link.classList.toggle('is-active', active);
@@ -178,6 +566,301 @@
     const requestedView = new URLSearchParams(window.location.search).get('view');
     activateView(views.some(view => view.id === requestedView) ? requestedView : 'dashboard-view');
 
+    const doctorAppointmentCards = [...document.querySelectorAll('[data-doctor-appointment-status]')];
+    const doctorAppointmentSearch = document.getElementById('doctor-appointment-search');
+    const doctorAppointmentsDate = document.getElementById('doctor-appointments-date');
+    const doctorAppointmentStatus = document.getElementById('doctor-appointment-status-filter');
+    const doctorAppointmentCount = document.getElementById('doctor-appointment-count');
+    const doctorAppointmentEmpty = document.getElementById('doctor-appointment-empty');
+    const doctorAppointmentFilterForm = document.getElementById('doctor-appointment-filter-form');
+    const doctorAppointmentSubmittedSearch = document.getElementById('doctor-appointments-submitted-search');
+    const doctorAppointmentOffset = document.getElementById('doctor-appointments-offset');
+    let submittedDoctorAppointmentSearch = doctorAppointmentSearch?.value.trim() || '';
+    const filterDoctorAppointments = () => {
+      const search = submittedDoctorAppointmentSearch.toLocaleLowerCase();
+      const status = doctorAppointmentStatus?.value || 'all';
+      const date = doctorAppointmentsDate?.value || '';
+      let visibleCount = 0;
+      doctorAppointmentCards.forEach(card => {
+        const matchesSearch = !search || card.dataset.doctorAppointmentSearch.toLocaleLowerCase().includes(search);
+        const matchesStatus = status === 'all' || card.dataset.doctorAppointmentStatus === status;
+        const matchesDate = !date || card.dataset.appointmentDate === date;
+        card.hidden = !matchesSearch || !matchesStatus || !matchesDate;
+        if (!card.hidden) visibleCount += 1;
+      });
+      if (doctorAppointmentCount) {
+        doctorAppointmentCount.textContent = `${visibleCount} ${visibleCount === 1 ? 'appointment' : 'appointments'} shown`;
+      }
+      if (doctorAppointmentEmpty) doctorAppointmentEmpty.hidden = visibleCount > 0;
+    };
+    const submitDoctorAppointmentSearch = () => {
+      submittedDoctorAppointmentSearch = (doctorAppointmentSearch?.value || '').trim();
+      doctorAppointmentSubmittedSearch.value = submittedDoctorAppointmentSearch;
+      doctorAppointmentOffset.value = '0';
+      doctorAppointmentFilterForm.requestSubmit();
+    };
+    document.getElementById('search-doctor-appointments')?.addEventListener('click', submitDoctorAppointmentSearch);
+    doctorAppointmentSearch?.addEventListener('keydown', event => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        submitDoctorAppointmentSearch();
+      }
+    });
+    const submitDoctorAppointmentFilters = () => {
+      doctorAppointmentOffset.value = '0';
+      doctorAppointmentFilterForm.requestSubmit();
+    };
+    doctorAppointmentStatus?.addEventListener('change', submitDoctorAppointmentFilters);
+    doctorAppointmentsDate?.addEventListener('change', submitDoctorAppointmentFilters);
+    document.getElementById('clear-doctor-appointment-filters')?.addEventListener('click', () => {
+      if (doctorAppointmentSearch) doctorAppointmentSearch.value = '';
+      if (doctorAppointmentsDate) doctorAppointmentsDate.value = '';
+      if (doctorAppointmentStatus) doctorAppointmentStatus.value = 'all';
+      submittedDoctorAppointmentSearch = '';
+      doctorAppointmentSubmittedSearch.value = '';
+      doctorAppointmentOffset.value = '0';
+      doctorAppointmentFilterForm.requestSubmit();
+    });
+    filterDoctorAppointments();
+
+    const scheduleFilter = document.getElementById('schedule-status-filter');
+    const scheduleRows = [...document.querySelectorAll('#schedule-list [data-slot-status]')];
+    const scheduleCount = document.getElementById('schedule-filter-count');
+    const patientSearch = document.getElementById('patient-search');
+    const schedulePageSize = 8;
+    let schedulePage = 0;
+    const selectedSlotIds = new Set();
+    const selectedSlotCount = document.getElementById('bulk-cancel-slots');
+    const schedulePaginationLabel = document.getElementById('schedule-page-label');
+    const previousSchedulePage = document.getElementById('schedule-previous');
+    const nextSchedulePage = document.getElementById('schedule-next');
+    const emptyFilteredSchedule = document.getElementById('schedule-filter-empty');
+    const filterSchedule = () => {
+      const selected = scheduleFilter?.value || 'all';
+      const search = (patientSearch?.value || '').trim().toLocaleLowerCase();
+      document.querySelectorAll('.slot-cancel-form [name="status_filter"], #bulk-cancel-form [name="status_filter"]').forEach(input => {
+        input.value = selected;
+      });
+      const matchingRows = [];
+      scheduleRows.forEach(row => {
+        const statusMatches = selected === 'all' || row.dataset.slotStatus === selected;
+        const searchMatches = !search || row.querySelector('.schedule-card-patients')?.textContent.toLocaleLowerCase().includes(search);
+        if (statusMatches && searchMatches) matchingRows.push(row);
+      });
+
+      const pageCount = Math.max(1, Math.ceil(matchingRows.length / schedulePageSize));
+      schedulePage = Math.min(schedulePage, pageCount - 1);
+      const pageStart = schedulePage * schedulePageSize;
+      const currentPageRows = new Set(matchingRows.slice(pageStart, pageStart + schedulePageSize));
+      scheduleRows.forEach(row => {
+        row.hidden = !currentPageRows.has(row);
+        const checkbox = row.querySelector('.slot-select');
+        if (checkbox) checkbox.checked = selectedSlotIds.has(checkbox.value);
+      });
+      if (scheduleCount) {
+        scheduleCount.textContent = `${matchingRows.length} ${matchingRows.length === 1 ? 'slot' : 'slots'} found`;
+      }
+      if (schedulePaginationLabel) {
+        schedulePaginationLabel.textContent = `Page ${schedulePage + 1} of ${pageCount}`;
+        previousSchedulePage.disabled = schedulePage === 0;
+        nextSchedulePage.disabled = schedulePage >= pageCount - 1;
+      }
+      if (emptyFilteredSchedule) emptyFilteredSchedule.hidden = matchingRows.length > 0;
+      if (selectedSlotCount) {
+        selectedSlotCount.disabled = selectedSlotIds.size === 0;
+        selectedSlotCount.textContent = selectedSlotIds.size
+          ? `Cancel selected slots (${selectedSlotIds.size})`
+          : 'Cancel selected slots';
+      }
+    };
+    scheduleFilter?.addEventListener('change', () => { schedulePage = 0; filterSchedule(); });
+    patientSearch?.addEventListener('input', () => { schedulePage = 0; filterSchedule(); });
+    previousSchedulePage?.addEventListener('click', () => { schedulePage -= 1; filterSchedule(); });
+    nextSchedulePage?.addEventListener('click', () => { schedulePage += 1; filterSchedule(); });
+    document.getElementById('select-visible-slots')?.addEventListener('click', () => {
+      const visibleCheckboxes = scheduleRows.filter(row => !row.hidden).map(row => row.querySelector('.slot-select')).filter(Boolean);
+      const shouldSelect = visibleCheckboxes.some(checkbox => !selectedSlotIds.has(checkbox.value));
+      visibleCheckboxes.forEach(checkbox => {
+        if (shouldSelect) {
+          if (selectedSlotIds.size < 50) selectedSlotIds.add(checkbox.value);
+        } else {
+          selectedSlotIds.delete(checkbox.value);
+        }
+      });
+      filterSchedule();
+    });
+    document.getElementById('schedule-list')?.addEventListener('change', event => {
+      const checkbox = event.target.closest('.slot-select');
+      if (!checkbox) return;
+      if (checkbox.checked && selectedSlotIds.size >= 50) checkbox.checked = false;
+      else if (checkbox.checked) selectedSlotIds.add(checkbox.value);
+      else selectedSlotIds.delete(checkbox.value);
+      filterSchedule();
+    });
+
+    filterSchedule();
+
+    const detailsDialog = document.getElementById('appointment-details-dialog');
+    const cancellationDialog = document.getElementById('cancel-slot-dialog');
+    const bulkCancellationDialog = document.getElementById('bulk-cancel-dialog');
+    let activeCancellationForm = null;
+    const displayDateTime = value => {
+      if (!value) return 'Not available';
+      const normalized = value.endsWith('Z') ? value : `${value.replace(' ', 'T')}Z`;
+      const parsed = new Date(normalized);
+      return Number.isNaN(parsed.getTime()) ? value : new Intl.DateTimeFormat('en-GB', {
+        day: '2-digit', month: 'short', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
+      }).format(parsed);
+    };
+    document.querySelectorAll('[data-open-appointment-details]').forEach(button => button.addEventListener('click', () => {
+      document.getElementById('detail-patient-name').textContent = button.dataset.patientName;
+      document.getElementById('detail-patient-id').textContent = button.dataset.patientId;
+      document.getElementById('detail-patient-phone').textContent = button.dataset.patientPhone || 'Not provided';
+      document.getElementById('detail-patient-email').textContent = button.dataset.patientEmail || 'Not provided';
+      document.getElementById('detail-patient-dob').textContent = button.dataset.patientDob || 'Not provided';
+      document.getElementById('detail-patient-gender').textContent = button.dataset.patientGender || 'Not provided';
+      document.getElementById('detail-appointment-id').textContent = button.dataset.appointmentId;
+      document.getElementById('detail-booked-at').textContent = displayDateTime(button.dataset.bookedAt);
+      document.getElementById('detail-slot-time').textContent = displayDateTime(button.dataset.slotTime);
+      document.getElementById('detail-consultation').textContent = button.dataset.consultation;
+      document.getElementById('detail-consultation-fee').textContent = button.dataset.consultationFee || 'Not available';
+      const duration = button.dataset.consultationDuration;
+      document.getElementById('detail-consultation-duration').textContent = duration ? `${duration} minutes` : 'Not available';
+      document.getElementById('detail-status').textContent = button.dataset.appointmentStatus;
+      detailsDialog.showModal();
+    }));
+    document.querySelectorAll('[data-close-dialog]').forEach(button => button.addEventListener('click', () => detailsDialog.close()));
+    document.querySelectorAll('[data-cancel-dialog]').forEach(button => button.addEventListener('click', () => {
+      if (cancellationDialog.open) cancellationDialog.close();
+      if (bulkCancellationDialog.open) bulkCancellationDialog.close();
+    }));
+    document.querySelectorAll('.patient-tooltip-wrap').forEach(wrapper => {
+      const trigger = wrapper.querySelector('.patient-tooltip-trigger');
+      const tooltip = wrapper.querySelector('.patient-details-tooltip');
+      const supportsHover = window.matchMedia('(hover: hover)').matches;
+      const setTooltipOpen = open => {
+        tooltip.hidden = !open;
+        trigger.setAttribute('aria-expanded', String(open));
+      };
+      if (supportsHover) {
+        wrapper.addEventListener('pointerenter', () => setTooltipOpen(true));
+        wrapper.addEventListener('pointerleave', () => setTooltipOpen(false));
+      }
+      trigger.addEventListener('focus', event => {
+        if (supportsHover || event.target.matches(':focus-visible')) setTooltipOpen(true);
+      });
+      trigger.addEventListener('blur', event => {
+        if (!wrapper.contains(event.relatedTarget)) setTooltipOpen(false);
+      });
+      trigger.addEventListener('click', () => {
+        setTooltipOpen(
+          supportsHover || trigger.matches(':focus-visible') || tooltip.hidden
+        );
+      });
+      trigger.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+          setTooltipOpen(false);
+          trigger.blur();
+        }
+      });
+    });
+    document.addEventListener('click', event => {
+      if (event.target.closest('.patient-tooltip-wrap')) return;
+      document.querySelectorAll('.patient-tooltip-wrap').forEach(wrapper => {
+        wrapper.querySelector('.patient-details-tooltip').hidden = true;
+        wrapper.querySelector('.patient-tooltip-trigger').setAttribute('aria-expanded', 'false');
+      });
+    });
+    const doctorPaymentDialog = document.getElementById('doctor-payment-dialog');
+    const paymentText = value => value
+      ? value.replace(/_/g, ' ').replace(/\b\w/g, character => character.toUpperCase())
+      : 'Not available';
+    const paymentAmount = value => {
+      const amount = Number(value);
+      return value && Number.isFinite(amount) ? `₹${amount.toFixed(2)}` : 'Not available';
+    };
+    document.querySelectorAll('[data-open-doctor-payment]').forEach(button => button.addEventListener('click', () => {
+      const isCancelled = button.dataset.isCancelled === 'true';
+      document.getElementById('doctor-payment-method').textContent = paymentText(button.dataset.paymentMethod);
+      document.getElementById('doctor-payment-paid').textContent = paymentAmount(button.dataset.amountPaid);
+      document.getElementById('doctor-payment-fee').textContent = paymentAmount(button.dataset.fee);
+      document.getElementById('doctor-payment-status').textContent = paymentText(button.dataset.paymentStatus);
+      document.getElementById('doctor-payment-refund-status').textContent = paymentText(button.dataset.refundStatus);
+      document.getElementById('doctor-payment-refund-amount').textContent = paymentAmount(button.dataset.refundAmount);
+      document.getElementById('doctor-payment-transaction').textContent = button.dataset.transactionId || 'Not available';
+      document.getElementById('doctor-payment-paid-row').hidden = isCancelled;
+      document.getElementById('doctor-payment-fee-row').hidden = !isCancelled;
+      document.getElementById('doctor-payment-refund-status-row').hidden = !isCancelled;
+      document.getElementById('doctor-payment-refund-amount-row').hidden = !isCancelled;
+      doctorPaymentDialog.showModal();
+    }));
+    document.querySelectorAll('[data-close-doctor-payment]').forEach(button => button.addEventListener('click', () => doctorPaymentDialog.close()));
+
+    const doctorAppointmentCancelDialog = document.getElementById('doctor-appointment-cancel-dialog');
+    let activeDoctorAppointmentCancelForm = null;
+    document.querySelectorAll('[data-open-doctor-cancel]').forEach(button => button.addEventListener('click', () => {
+      activeDoctorAppointmentCancelForm = button.closest('[data-doctor-appointment-cancel-form]');
+      doctorAppointmentCancelDialog.showModal();
+    }));
+    document.querySelectorAll('[data-close-doctor-cancel]').forEach(button => button.addEventListener('click', () => {
+      doctorAppointmentCancelDialog.close();
+    }));
+    document.getElementById('confirm-doctor-appointment-cancel')?.addEventListener('click', () => {
+      if (!activeDoctorAppointmentCancelForm) return;
+      activeDoctorAppointmentCancelForm.elements.appointments_date.value = doctorAppointmentsDate?.value || '';
+      activeDoctorAppointmentCancelForm.elements.appointments_status.value = doctorAppointmentStatus?.value || 'all';
+      activeDoctorAppointmentCancelForm.elements.appointments_search.value = submittedDoctorAppointmentSearch;
+      activeDoctorAppointmentCancelForm.elements.appointments_offset.value = doctorAppointmentOffset?.value || '0';
+      activeDoctorAppointmentCancelForm.requestSubmit();
+    });
+    const doctorAppointmentNoShowDialog = document.getElementById('doctor-appointment-no-show-dialog');
+    let activeDoctorAppointmentNoShowForm = null;
+    document.querySelectorAll('[data-open-doctor-no-show]').forEach(button => button.addEventListener('click', () => {
+      activeDoctorAppointmentNoShowForm = button.closest('[data-doctor-appointment-no-show-form]');
+      doctorAppointmentNoShowDialog.showModal();
+    }));
+    document.querySelectorAll('[data-close-doctor-no-show]').forEach(button => button.addEventListener('click', () => {
+      doctorAppointmentNoShowDialog.close();
+    }));
+    document.getElementById('confirm-doctor-appointment-no-show')?.addEventListener('click', () => {
+      if (!activeDoctorAppointmentNoShowForm) return;
+      activeDoctorAppointmentNoShowForm.elements.appointments_date.value = doctorAppointmentsDate?.value || '';
+      activeDoctorAppointmentNoShowForm.elements.appointments_status.value = doctorAppointmentStatus?.value || 'all';
+      activeDoctorAppointmentNoShowForm.elements.appointments_search.value = submittedDoctorAppointmentSearch;
+      activeDoctorAppointmentNoShowForm.elements.appointments_offset.value = doctorAppointmentOffset?.value || '0';
+      activeDoctorAppointmentNoShowForm.requestSubmit();
+    });
+    document.querySelectorAll('[data-confirm-slot]').forEach(button => button.addEventListener('click', () => {
+      activeCancellationForm = button.closest('form');
+      const slot = button.closest('.schedule-card');
+      document.getElementById('cancel-patient-summary').textContent = [...slot.querySelectorAll('.patient-name-link')]
+        .map(patient => patient.textContent.trim()).join(', ');
+      document.getElementById('cancel-slot-summary').textContent = `${displayDateTime(slot.dataset.slotTime)} · ${slot.dataset.consultation}`;
+      cancellationDialog.showModal();
+    }));
+    document.getElementById('confirm-slot-cancellation')?.addEventListener('click', () => activeCancellationForm?.requestSubmit());
+    document.getElementById('bulk-cancel-slots')?.addEventListener('click', () => {
+      document.getElementById('bulk-cancel-count').textContent = `${selectedSlotIds.size} slot(s) selected`;
+      const selectedSlots = scheduleRows.filter(row => row.querySelector('.slot-select') && selectedSlotIds.has(row.querySelector('.slot-select').value));
+      document.getElementById('bulk-cancel-summary').textContent = selectedSlots.map(slot => {
+        const patientNames = [...slot.querySelectorAll('.patient-name-link')].map(patient => patient.textContent.trim()).join(', ');
+        return `${patientNames || 'No patient assigned'} — ${displayDateTime(slot.dataset.slotTime)}`;
+      }).join('; ');
+      bulkCancellationDialog.showModal();
+    });
+    document.getElementById('confirm-bulk-cancellation')?.addEventListener('click', () => {
+      const form = document.getElementById('bulk-cancel-form');
+      selectedSlotIds.forEach(id => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'appointment_id';
+        input.value = id;
+        form.appendChild(input);
+      });
+      form.requestSubmit();
+    });
+
     const profileView = document.getElementById('profile-view');
     const profileForm = document.getElementById('profile-form');
     document.getElementById('edit-profile')?.addEventListener('click', () => { profileView.hidden = true; profileForm.hidden = false; });
@@ -185,7 +868,37 @@
     document.querySelectorAll('.consultation-edit-toggle, .consultation-edit-cancel').forEach(button => button.addEventListener('click', () => {
       const form = document.getElementById(button.dataset.target);
       form.hidden = !form.hidden;
+      const toggle = document.querySelector(`.consultation-edit-toggle[data-target="${button.dataset.target}"]`);
+      if (toggle) {
+        toggle.setAttribute('aria-expanded', String(!form.hidden));
+        toggle.textContent = form.hidden ? 'Edit' : 'Close editor';
+      }
     }));
+    document.querySelectorAll('form[data-confirm-message]').forEach(form => form.addEventListener('submit', event => {
+      if (!window.confirm(form.dataset.confirmMessage)) event.preventDefault();
+    }));
+
+    const blackoutForm = document.getElementById('blackout-form');
+    const blackoutStart = document.getElementById('blackout-start');
+    const blackoutEnd = document.getElementById('blackout-end');
+    const blackoutHint = document.getElementById('blackout-form-hint');
+    blackoutStart?.addEventListener('change', () => {
+      blackoutEnd.min = blackoutStart.value || blackoutEnd.min;
+      if (blackoutEnd.value && blackoutEnd.value <= blackoutStart.value) {
+        blackoutEnd.value = '';
+      }
+      blackoutHint.textContent = blackoutStart.value
+        ? 'Choose an end time after the selected start.'
+        : 'The end time must be after the start time.';
+    });
+    blackoutForm?.addEventListener('submit', event => {
+      if (blackoutStart.value && blackoutEnd.value && blackoutEnd.value <= blackoutStart.value) {
+        event.preventDefault();
+        blackoutEnd.setCustomValidity('Choose an end time after the start time.');
+        blackoutEnd.reportValidity();
+      }
+    });
+    blackoutEnd?.addEventListener('input', () => blackoutEnd.setCustomValidity(''));
 
     const patternList = document.getElementById('pattern-list');
     const weekdays = ['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY'];
@@ -193,10 +906,36 @@
     document.getElementById('add-pattern')?.addEventListener('click', () => {
       const row = document.createElement('div');
       row.className = 'pattern-row';
-      row.innerHTML = `<select name="consultation_type_id" aria-label="Consultation type" required>${activeConsultations.map(item => `<option value="${item.consultation_type_id}">${escapeHtml(item.consultation_name)}</option>`).join('')}</select><select name="day_of_week" aria-label="Weekday" required>${weekdays.map(day => `<option value="${day}">${day[0] + day.slice(1).toLowerCase()}</option>`).join('')}</select><input name="start_time" type="time" aria-label="Start time" required><input name="end_time" type="time" aria-label="End time" required><button class="remove-row" type="button" title="Remove availability pattern" aria-label="Remove availability pattern">&times;</button>`;
+      row.dataset.saved = 'false';
+      row.dataset.editing = 'true';
+      row.innerHTML = `<select name="consultation_type_id" aria-label="Consultation type" required>${activeConsultations.map(item => `<option value="${item.consultation_type_id}">${escapeHtml(item.consultation_name)}</option>`).join('')}</select><select name="day_of_week" aria-label="Weekday" required>${weekdays.map(day => `<option value="${day}">${day[0] + day.slice(1).toLowerCase()}</option>`).join('')}</select><input name="start_time" type="time" aria-label="Start time" required><input name="end_time" type="time" aria-label="End time" required><div class="pattern-row-actions"><button class="button primary pattern-action" type="button" data-pattern-action="edit">Save</button><button class="button secondary danger-text pattern-action" type="button" data-pattern-action="delete">Delete</button></div>`;
       patternList.appendChild(row);
     });
-    patternList?.addEventListener('click', event => { if (event.target.closest('.remove-row')) event.target.closest('.pattern-row').remove(); });
+    const availabilityForm = document.getElementById('availability-form');
+    patternList?.addEventListener('click', event => {
+      const button = event.target.closest('[data-pattern-action]');
+      if (!button) return;
+      const row = button.closest('.pattern-row');
+      if (button.dataset.patternAction === 'delete') {
+        const isSaved = row.dataset.saved === 'true';
+        if (isSaved && !window.confirm('Delete this availability? It can only be removed when no appointments are booked during its time.')) return;
+        row.remove();
+        if (isSaved) availabilityForm.requestSubmit();
+        return;
+      }
+      if (row.dataset.editing !== 'true') {
+        row.dataset.editing = 'true';
+        row.querySelectorAll('select, input').forEach(field => { field.disabled = false; });
+        button.textContent = 'Save';
+        button.classList.remove('secondary');
+        button.classList.add('primary');
+        return;
+      }
+      availabilityForm.requestSubmit();
+    });
+    availabilityForm?.addEventListener('submit', () => {
+      patternList.querySelectorAll('select, input').forEach(field => { field.disabled = false; });
+    });
 
     const durations = {'Quick Consult':15,'Standard Consult':30,'Detailed Consult':60,'Health Camp Session':60};
     const configureCapacity = (form, typeName) => {

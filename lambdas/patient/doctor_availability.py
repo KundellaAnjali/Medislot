@@ -5,21 +5,47 @@ import re
 from datetime import date, datetime, time, timezone
 
 import boto3
-from boto3.dynamodb.conditions import Key
+import pymysql
+from slot_queries import query_slots_in_range
 
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 METRIC_NAMESPACE = "MediSlot/Patient"
+ENVIRONMENT = os.environ["ENVIRONMENT_NAME"]
 
 dynamodb = boto3.resource("dynamodb")
 cloudwatch = boto3.client("cloudwatch")
+ssm = boto3.client("ssm")
 slots_table = dynamodb.Table(os.environ["SLOTS_TABLE_NAME"])
+parameter_cache = {}
 
 
 class AvailabilityValidationError(Exception):
     pass
+
+
+def get_parameter(name, decrypt=False):
+    if name not in parameter_cache:
+        result = ssm.get_parameter(Name=name, WithDecryption=decrypt)
+        parameter_cache[name] = result["Parameter"]["Value"]
+    return parameter_cache[name]
+
+
+def get_connection():
+    return pymysql.connect(
+        host=get_parameter(f"/medislot/{ENVIRONMENT}/rds-host"),
+        port=int(get_parameter(f"/medislot/{ENVIRONMENT}/rds-port")),
+        user=get_parameter(f"/medislot/{ENVIRONMENT}/rds-user"),
+        password=get_parameter(
+            f"/medislot/{ENVIRONMENT}/rds-password",
+            decrypt=True,
+        ),
+        database=get_parameter(f"/medislot/{ENVIRONMENT}/rds-database"),
+        cursorclass=pymysql.cursors.DictCursor,
+        autocommit=False,
+    )
 
 
 def publish_metric(metric_name, value, unit="Count"):
@@ -78,55 +104,64 @@ def get_slots(doctor_id, start_date, end_date):
         end_date, time.max.replace(microsecond=0), tzinfo=timezone.utc
     ).isoformat(timespec="seconds").replace("+00:00", "Z")
     now = datetime.now(timezone.utc)
-    now_timestamp = int(now.timestamp())
     slots = []
-    query = {
-        "IndexName": "DoctorStartIndex",
-        "KeyConditionExpression": Key("doctor_id").eq(doctor_id)
-        & Key("start_time").between(start_time, end_time),
-    }
-
-    while True:
-        result = slots_table.query(**query)
-        for slot in result.get("Items", []):
-            slot_start = datetime.fromisoformat(
-                slot["start_time"].replace("Z", "+00:00")
-            )
-            if slot_start <= now:
-                continue
-            if int(slot.get("status", 1)) != 1:
-                continue
-            if (
-                slot.get("expires_at") is not None
-                and int(slot["expires_at"]) <= now_timestamp
-            ):
-                continue
-
-            capacity = int(slot["capacity"])
-            booked_count = int(slot.get("booked_count", 0))
-            slots.append(
-                {
-                    "slot_id": int(slot["slot_id"]),
-                    "start_time": slot["start_time"],
-                    "end_time": slot["end_time"],
-                    "consultation_type": slot.get("consultation_name", ""),
-                    "capacity": capacity,
-                    "booked_count": booked_count,
-                    "available_seats": capacity - booked_count,
-                }
-            )
-
-        last_key = result.get("LastEvaluatedKey")
-        if not last_key:
-            break
-        query["ExclusiveStartKey"] = last_key
+    for slot in query_slots_in_range(
+        slots_table,
+        doctor_id,
+        start_time,
+        end_time,
+    ):
+        slot_start = datetime.fromisoformat(
+            slot["slot_start_time"].replace("Z", "+00:00")
+        )
+        if slot_start <= now:
+            continue
+        if int(slot.get("status", 1)) != 1:
+            continue
+        capacity = int(slot["capacity"])
+        booked_count = int(slot.get("booked_count", 0))
+        slots.append(
+            {
+                "slot_id": int(slot["slot_id"]),
+                "doctor_id": int(slot["doctor_id"]),
+                "consultation_type_id": int(slot["consultation_type_id"]),
+                "start_time": slot["slot_start_time"],
+                "end_time": slot["slot_end_time"],
+                "capacity": capacity,
+                "booked_count": booked_count,
+                "available_seats": capacity - booked_count,
+                "is_full": booked_count >= capacity,
+            }
+        )
 
     slots.sort(key=lambda slot: slot["start_time"])
     return slots
 
 
+def consultation_names_by_id(consultation_type_ids):
+    if not consultation_type_ids:
+        return {}
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            placeholders = ",".join(["%s"] * len(consultation_type_ids))
+            cursor.execute(
+                f"""
+                SELECT consultation_type_id, consultation_name
+                FROM consultation_types
+                WHERE consultation_type_id IN ({placeholders})
+                """,
+                tuple(consultation_type_ids),
+            )
+            return {
+                int(row["consultation_type_id"]): row["consultation_name"]
+                for row in cursor.fetchall()
+            }
+    finally:
+        connection.close()
+
+
 def lambda_handler(event, context):
-    request_id = getattr(context, "aws_request_id", "unknown")
     publish_metric("DoctorAvailabilityRequests", 1)
 
     authorizer = event.get("requestContext", {}).get("authorizer", {})
@@ -155,13 +190,20 @@ def lambda_handler(event, context):
 
     try:
         slots = get_slots(doctor_id, start_date, end_date)
+        consultation_names = consultation_names_by_id(
+            {slot["consultation_type_id"] for slot in slots}
+        )
+        for slot in slots:
+            slot["consultation_type"] = consultation_names.get(
+                slot["consultation_type_id"],
+                "Consultation",
+            )
         publish_metric("DoctorAvailabilitySuccesses", 1)
         publish_metric("DoctorAvailabilitySlotsReturned", len(slots))
         logger.info(
-            "Doctor availability retrieved: doctor_id=%s slots=%s request_id=%s",
+            "Doctor availability retrieved: doctor_id=%s slots=%s",
             doctor_id,
             len(slots),
-            request_id,
         )
         return response(
             200,
@@ -175,8 +217,7 @@ def lambda_handler(event, context):
     except Exception:
         publish_metric("DoctorAvailabilityErrors", 1)
         logger.exception(
-            "Doctor availability query failed: doctor_id=%s request_id=%s",
+            "Doctor availability query failed: doctor_id=%s",
             doctor_id,
-            request_id,
         )
         return response(500, {"message": "Could not load doctor availability."})

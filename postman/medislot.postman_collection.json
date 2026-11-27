@@ -1,0 +1,695 @@
+{
+  "info": {
+    "_postman_id": "11a83919-2a56-45b0-96a1-6ba171e1249b",
+    "name": "MediSlot API",
+    "description": "Postman collection for the HTTP endpoints defined in the MediSlot CloudFormation stacks. Set baseUrl to the deployed API Gateway URL, without a trailing slash. Authentication requests save the returned access and refresh tokens as collection variables.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://YOUR_API_ID.execute-api.YOUR_REGION.amazonaws.com/YOUR_STAGE",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "doctorId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "appointmentId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "consultationTypeId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "blackoutId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "photoUploadUrl",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "photoKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "idempotencyKey",
+      "value": "postman-booking-0001",
+      "type": "string"
+    },
+    {
+      "key": "slotStartTime",
+      "value": "2027-01-15T09:00:00Z",
+      "type": "string"
+    },
+    {
+      "key": "startDate",
+      "value": "2027-01-15",
+      "type": "string"
+    },
+    {
+      "key": "endDate",
+      "value": "2027-01-15",
+      "type": "string"
+    },
+    {
+      "key": "date",
+      "value": "2027-01-15",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "description": "Registration and token/session operations. Update sample credentials before sending.",
+      "auth": {
+        "type": "noauth"
+      },
+      "item": [
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"patient@example.com\",\n  \"password\": \"ReplaceWithPass123\",\n  \"role\": \"PATIENT\",\n  \"first_name\": \"Pat\",\n  \"last_name\": \"Example\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/register",
+            "description": "Password must be at least 10 characters and contain a letter and a number. role must be PATIENT or DOCTOR."
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.access_token) pm.collectionVariables.set('accessToken', data.access_token);",
+                  "  if (data.refresh_token) pm.collectionVariables.set('refreshToken', data.refresh_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"patient@example.com\",\n  \"password\": \"ReplaceWithPass123\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/login"
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh access token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.access_token) pm.collectionVariables.set('accessToken', data.access_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/refresh"
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refreshToken}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/auth/logout"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Patient",
+      "description": "Patient profile, doctor discovery, availability, bookings, and refunds. Authenticate as a PATIENT.",
+      "item": [
+        {
+          "name": "Get my profile",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/patients/me"
+          },
+          "response": []
+        },
+        {
+          "name": "Update my profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Pat\",\n  \"last_name\": \"Example\",\n  \"phone_number\": \"+15551234567\",\n  \"date_of_birth\": \"1990-01-15\",\n  \"gender\": \"\",\n  \"emergency_contact\": \"+15557654321\",\n  \"emergency_contact_name\": \"Emergency Contact\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/patients/me"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete my profile",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/patients/me",
+            "description": "Clears the authenticated patient's profile fields; it does not delete the user account."
+          },
+          "response": []
+        },
+        {
+          "name": "Search doctors",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/doctors/search?name=&hospital=&specialization=&city=&page=1&limit=10",
+            "description": "Optional filters: name, hospital, specialization, city. page starts at 1; limit is 1-100."
+          },
+          "response": []
+        },
+        {
+          "name": "Get public doctor profile",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/doctors/{{doctorId}}/profile",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get doctor availability",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/doctors/{{doctorId}}/availability?start_date={{startDate}}&end_date={{endDate}}",
+            "description": "This patient endpoint requires a PATIENT access token. Both date parameters must use YYYY-MM-DD format; end_date must be on or after start_date. Run Get my schedule for a day first to copy its doctor ID and date into these collection variables, then log in as a patient before sending this request."
+          },
+          "response": []
+        },
+        {
+          "name": "Book appointment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}",
+                "description": "Required: 8-255 ASCII characters with no whitespace. Use a new value for a distinct booking."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"doctor_id\": {{doctorId}},\n  \"slot_start_time\": \"{{slotStartTime}}\",\n  \"payment_method\": \"UPI\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/appointments/book",
+            "description": "Use a future UTC ISO-8601 slot_start_time returned by Get doctor availability. payment_method may be CREDIT_CARD, DEBIT_CARD, UPI, NET_BANKING, WALLET, or CASH. This is a test-only payment simulation; no money moves."
+          },
+          "response": []
+        },
+        {
+          "name": "Simulate failed payment (test only)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "postman-failed-payment-0001",
+                "description": "Use a new key for each failed payment test."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"doctor_id\": {{doctorId}},\n  \"slot_start_time\": \"{{slotStartTime}}\",\n  \"payment_method\": \"CREDIT_CARD\",\n  \"test_payment_outcome\": \"FAILED\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/appointments/book",
+            "description": "Creates a failed payment record, records the appointment as cancelled, and releases the reserved slot. The API responds with HTTP 402. No real payment is attempted."
+          },
+          "response": []
+        },
+        {
+          "name": "List my appointments",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/appointments?limit=50&offset=0",
+            "description": "limit is 1-100 and offset is 0-100000."
+          },
+          "response": []
+        },
+        {
+          "name": "Get appointment",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/appointments/{{appointmentId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel appointment",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/appointments/{{appointmentId}}/cancel",
+            "description": "Cancellation may trigger a refund based on the configured refund policy."
+          },
+          "response": []
+        },
+        {
+          "name": "Mark appointment as no-show (doctor)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/appointments/{{appointmentId}}/no-show",
+            "description": "Only the assigned doctor can mark a confirmed appointment as NO_SHOW, and only after its scheduled start. The action records a 0% refund and 100% deduction."
+          },
+          "response": []
+        },
+        {
+          "name": "List my refunds",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/patients/refunds?limit=50&offset=0",
+            "description": "limit is 1-100 and offset is 0-100000."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Doctor",
+      "description": "Doctor self-service profile, consultation types, availability, blackouts, and schedule. Authenticate as a DOCTOR. Availability/blackout/consultation mutations may require a completed and verified profile.",
+      "item": [
+        {
+          "name": "Get my profile",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/doctors/me"
+          },
+          "response": []
+        },
+        {
+          "name": "Update my profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Doc\",\n  \"last_name\": \"Example\",\n  \"phone_number\": \"+15551234567\",\n  \"license_number\": \"LICENSE-123\",\n  \"experience_years\": 5,\n  \"qualification\": \"MD\",\n  \"languages\": \"English\",\n  \"hospital_name\": \"Example Hospital\",\n  \"city\": \"Example City\",\n  \"address\": \"123 Main Street\",\n  \"hospital_phone\": \"+15557654321\",\n  \"specializations\": [\"Cardiology\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/doctors/me"
+          },
+          "response": []
+        },
+        {
+          "name": "Request profile photo upload URL",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.upload_url) pm.collectionVariables.set('photoUploadUrl', data.upload_url);",
+                  "  if (data.key) pm.collectionVariables.set('photoKey', data.key);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content_type\": \"image/jpeg\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/doctors/me/photo",
+            "description": "Allowed content_type values: image/jpeg, image/png, image/webp. Use the returned upload_url in a separate PUT request to upload the image bytes, then call Confirm profile photo upload."
+          },
+          "response": []
+        },
+        {
+          "name": "Upload profile photo to S3",
+          "request": {
+            "method": "PUT",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "image/jpeg",
+                "description": "Must match the content_type used when requesting the upload URL."
+              }
+            ],
+            "body": {
+              "mode": "file",
+              "file": {
+                "src": ""
+              }
+            },
+            "url": "{{photoUploadUrl}}",
+            "description": "Choose the local image file under Body > file. Run Request profile photo upload URL first; the returned URL is saved automatically."
+          },
+          "response": []
+        },
+        {
+          "name": "Confirm profile photo upload",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key\": \"{{photoKey}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/doctors/me/photo/confirm",
+            "description": "Upload the file to the presigned URL first. Image must be JPEG, PNG, or WebP and no larger than 5 MB."
+          },
+          "response": []
+        },
+        {
+          "name": "List my consultation types",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/doctors/me/consultation-types"
+          },
+          "response": []
+        },
+        {
+          "name": "Create consultation type",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consultation_name\": \"Standard Consult\",\n  \"duration_minutes\": 30,\n  \"capacity\": 1,\n  \"fee\": 75.00\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/doctors/me/consultation-types",
+            "description": "Names: Quick Consult (15 min), Standard Consult (30 min), Detailed Consult (60 min), or Health Camp Session (60 min, capacity 2-10). Fee is non-negative with up to 2 decimal places."
+          },
+          "response": []
+        },
+        {
+          "name": "Update consultation type",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consultation_name\": \"Standard Consult\",\n  \"duration_minutes\": 30,\n  \"capacity\": 1,\n  \"fee\": 80.00\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/doctors/me/consultation-types/{{consultationTypeId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete consultation type",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/doctors/me/consultation-types/{{consultationTypeId}}",
+            "description": "Deletion is rejected while this type has availability patterns or generated slots."
+          },
+          "response": []
+        },
+        {
+          "name": "Get my availability patterns",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/doctors/me/availability"
+          },
+          "response": []
+        },
+        {
+          "name": "Replace my availability patterns",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"patterns\": [\n    {\n      \"consultation_type_id\": {{consultationTypeId}},\n      \"day_of_week\": \"MONDAY\",\n      \"start_time\": \"09:00\",\n      \"end_time\": \"12:00\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/doctors/me/availability",
+            "description": "This replaces the complete set of weekly patterns. Use weekday names and HH:MM times; the consultation type must belong to this doctor."
+          },
+          "response": []
+        },
+        {
+          "name": "List my blackout dates",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/doctors/me/blackouts"
+          },
+          "response": []
+        },
+        {
+          "name": "Add blackout dates",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"start_date\": \"{{startDate}}\",\n  \"end_date\": \"{{endDate}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/doctors/me/blackouts",
+            "description": "Provide either start_datetime/end_datetime as UTC ISO-8601 timestamps, or start_date/end_date as YYYY-MM-DD dates."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete blackout date",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/doctors/me/blackouts/{{blackoutId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "Get my schedule for a day",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  const slots = Array.isArray(data.slots) ? data.slots : [];",
+                  "  const doctorSlot = slots.find(slot => slot && slot.doctor_id);",
+                  "  const doctorId = doctorSlot && doctorSlot.doctor_id;",
+                  "  const date = data.date;",
+                  "  if (doctorId) pm.collectionVariables.set('doctorId', String(doctorId));",
+                  "  if (date) {",
+                  "    pm.collectionVariables.set('startDate', date);",
+                  "    pm.collectionVariables.set('endDate', date);",
+                  "  }",
+                  "  if (doctorId && date) {",
+                  "    console.log(`Patient availability variables set for doctor ${doctorId} on ${date}. Log in as a patient before requesting availability.`);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/doctors/me/schedule?date={{date}}",
+            "description": "Requires a DOCTOR access token. date is required and must be YYYY-MM-DD. On success, the test script copies the schedule doctor ID and date to doctorId, startDate, and endDate for the patient availability request."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

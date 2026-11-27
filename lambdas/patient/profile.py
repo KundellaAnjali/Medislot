@@ -179,16 +179,12 @@ def lambda_handler(event, context):
     authorizer = event.get("requestContext", {}).get("authorizer", {})
     user_id = authorizer.get("userId")
     if not user_id:
-        logger.warning(
-            "Patient profile request missing identity: request_id=%s",
-            getattr(context, "aws_request_id", "unknown"),
-        )
+        logger.warning("Patient profile request missing identity")
         return response(401, {"message": "Authentication is required."})
     if authorizer.get("role") != "PATIENT":
         logger.warning(
-            "Patient profile access denied: role=%s request_id=%s",
+            "Patient profile access denied: role=%s",
             authorizer.get("role", "unknown"),
-            getattr(context, "aws_request_id", "unknown"),
         )
         return response(
             403,
@@ -209,10 +205,9 @@ def lambda_handler(event, context):
         return response(405, {"message": "Method not allowed."})
 
     logger.info(
-        "Patient profile request: operation=%s user_id=%s request_id=%s",
+        "Patient profile request: operation=%s user_id=%s",
         operation,
         user_id,
-        getattr(context, "aws_request_id", "unknown"),
     )
     try:
         body = parse_body(event) if method in {"POST", "PUT", "DELETE"} else {}
@@ -289,9 +284,8 @@ def lambda_handler(event, context):
                     connection.commit()
                     saved_profile = get_profile(cursor, user_id)
                     logger.info(
-                        "Patient profile updated: user_id=%s request_id=%s",
+                        "Patient profile updated: user_id=%s",
                         user_id,
-                        getattr(context, "aws_request_id", "unknown"),
                     )
                     return response(200, {"profile": saved_profile})
 
@@ -312,9 +306,8 @@ def lambda_handler(event, context):
                 )
                 connection.commit()
                 logger.info(
-                    "Patient profile cleared: user_id=%s request_id=%s",
+                    "Patient profile cleared: user_id=%s",
                     user_id,
-                    getattr(context, "aws_request_id", "unknown"),
                 )
                 return response(200, {"message": "Patient profile cleared."})
         finally:
@@ -333,8 +326,7 @@ def lambda_handler(event, context):
         return response(500, {"message": "Could not save the patient profile."})
     except pymysql.MySQLError:
         logger.exception(
-            "Patient profile database operation failed: user_id=%s request_id=%s",
+            "Patient profile database operation failed: user_id=%s",
             user_id,
-            getattr(context, "aws_request_id", "unknown"),
         )
         return response(500, {"message": "Could not complete the profile request."})

@@ -64,6 +64,16 @@ Resources:
           - Fn::ImportValue:
               !Sub "${EnvironmentName}-PrivateSubnetBId"
 
+  SharedSlotQueryLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: !Sub "${EnvironmentName}-shared-slot-query"
+      Description: Shared DynamoDB slot range query used by doctor and patient APIs
+      ContentUri: ../lambdas/shared-slot-query/
+      CompatibleRuntimes:
+        - python3.12
+      RetentionPolicy: Retain
+
   RegisterUserFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -274,6 +284,12 @@ Outputs:
     Value: !Sub "https://${ServerlessApi}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentName}"
     Export:
       Name: !Sub "${EnvironmentName}-MedislotApiUrl"
+
+  SharedSlotQueryLayerArn:
+    Description: Shared slot-query Lambda layer ARN
+    Value: !Ref SharedSlotQueryLayer
+    Export:
+      Name: !Sub "${EnvironmentName}-SharedSlotQueryLayerArn"
 
   SchemaInitFunctionArn:
     Description: Schema Initialization Lambda ARN

@@ -8,8 +8,9 @@ Parameters:
   WebAppArtifactKey:
     Type: String
     Default: doctor-portal/doctor-portal.zip
-  PortalKeyName:
+  KeyPairName:
     Type: AWS::EC2::KeyPair::KeyName
+    Default: kkey
 
 Globals:
   Function:
@@ -27,10 +28,12 @@ Resources:
       CodeUri: ../lambdas/doctor/
       Role:
         Fn::ImportValue: !Sub "${EnvironmentName}-DoctorLambdaRoleArn"
+      Layers:
+        - Fn::ImportValue: !Sub "${EnvironmentName}-SharedSlotQueryLayerArn"
       Environment:
         Variables:
           ENVIRONMENT_NAME: !Ref EnvironmentName
-          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots"
+          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots-v2"
           PHOTO_BUCKET_NAME:
             Fn::ImportValue: !Sub "${EnvironmentName}-AssetsBucket"
       VpcConfig:
@@ -53,7 +56,7 @@ Resources:
       Environment:
         Variables:
           ENVIRONMENT_NAME: !Ref EnvironmentName
-          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots"
+          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots-v2"
           PHOTO_BUCKET_NAME:
             Fn::ImportValue: !Sub "${EnvironmentName}-AssetsBucket"
       VpcConfig:
@@ -195,9 +198,9 @@ Resources:
   DoctorPortalInstance:
     Type: AWS::EC2::Instance
     Properties:
+      KeyName: !Ref KeyPairName
       ImageId: !Sub "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}"
       InstanceType: t3.micro
-      KeyName: !Ref PortalKeyName
       IamInstanceProfile:
         Fn::ImportValue: !Sub "${EnvironmentName}-DoctorPortalInstanceProfileName"
       SubnetId:
@@ -244,6 +247,7 @@ Resources:
               User=ec2-user
               WorkingDirectory=/opt/medislot/doctor-portal
               Environment=MEDISLOT_API_BASE_URL=${ApiUrl}
+              Environment=SESSION_FILE_DIR=/var/lib/medislot/sessions
               ExecStart=/bin/bash -c 'export FLASK_SECRET_KEY="$(cat /etc/medislot/flask-secret)"; exec /opt/medislot/venv/bin/gunicorn --workers 2 --bind 127.0.0.1:8000 app:app'
               Restart=always
 

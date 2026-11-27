@@ -54,7 +54,7 @@ def contains_pattern(value):
 
 
 def build_filters(filters):
-    clauses = []
+    clauses = ["d.is_verified = TRUE"]
     values = []
 
     if filters["name"]:
@@ -184,17 +184,13 @@ def lambda_handler(event, context):
         finally:
             connection.close()
         logger.info(
-            "Doctor search completed: user_id=%s page=%s limit=%s total=%s request_id=%s",
+            "Doctor search completed: user_id=%s page=%s limit=%s total=%s",
             authorizer["userId"],
             page,
             limit,
             results["pagination"]["total"],
-            getattr(context, "aws_request_id", "unknown"),
         )
         return response(200, results)
     except pymysql.MySQLError:
-        logger.exception(
-            "Doctor search database request failed: request_id=%s",
-            getattr(context, "aws_request_id", "unknown"),
-        )
+        logger.exception("Doctor search database request failed")
         return response(500, {"message": "Could not search doctors right now."})

@@ -1,8 +1,9 @@
 import json
 import logging
 import os
+import uuid
 from time import perf_counter
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from urllib.parse import urljoin
 
@@ -26,7 +27,10 @@ logging.basicConfig(
 app.config.update(
     SECRET_KEY=os.environ["FLASK_SECRET_KEY"],
     SESSION_TYPE="filesystem",
-    SESSION_FILE_DIR="/tmp/flask_session",
+    SESSION_FILE_DIR=os.environ.get(
+        "SESSION_FILE_DIR",
+        os.path.join(app.instance_path, "sessions"),
+    ),
     SESSION_PERMANENT=False,
     SESSION_USE_SIGNER=True,
     SESSION_COOKIE_HTTPONLY=True,
@@ -35,6 +39,41 @@ app.config.update(
 Session(app)
 
 API_BASE_URL = os.environ["MEDISLOT_API_BASE_URL"].rstrip("/") + "/"
+
+
+def format_display_date(value):
+    if isinstance(value, datetime):
+        parsed_date = value.date()
+    elif isinstance(value, date):
+        parsed_date = value
+    else:
+        parsed_date = date.fromisoformat(str(value)[:10])
+    return parsed_date.strftime("%d %b %Y")
+
+
+def format_display_datetime(value):
+    parsed_datetime = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if parsed_datetime.tzinfo is None:
+        parsed_datetime = parsed_datetime.replace(tzinfo=timezone.utc)
+    return parsed_datetime.astimezone(timezone.utc).strftime("%d %b %Y, %H:%M")
+
+
+def parse_slot_start_time(value):
+    if not isinstance(value, str):
+        raise ValueError("Slot start time must be a UTC timestamp.")
+    try:
+        slot_start = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError("Slot start time must be a valid UTC timestamp.") from error
+    if slot_start.tzinfo is None or slot_start.utcoffset() != timezone.utc.utcoffset(
+        slot_start
+    ):
+        raise ValueError("Slot start time must be a UTC timestamp.")
+    return slot_start.astimezone(timezone.utc)
+
+
+app.jinja_env.filters["display_date"] = format_display_date
+app.jinja_env.filters["display_datetime"] = format_display_datetime
 
 
 @app.before_request
@@ -72,6 +111,14 @@ def role_required(role, profile_path, missing_profile_message):
                 or not refresh_token
                 or session.get("role") != role
             ):
+                app.logger.info(
+                    "Redirecting to sign-in: expected_role=%s session_role=%s "
+                    "access_token_present=%s refresh_token_present=%s",
+                    role,
+                    session.get("role"),
+                    bool(access_token),
+                    bool(refresh_token),
+                )
                 return redirect(url_for("auth", mode="login", role=role))
 
             try:
@@ -80,13 +127,19 @@ def role_required(role, profile_path, missing_profile_message):
                     profile_path,
                 )
             except ApiError as error:
-                if error.status_code in {401, 403}:
+                if error.status_code == 401:
                     session.clear()
                     flash(
                         "Your session is invalid or has expired. Please sign in again.",
                         "error",
                     )
                     return redirect(url_for("auth", mode="login", role=role))
+                if error.status_code == 403:
+                    app.logger.warning(
+                        "Portal session was denied after refresh: role=%s",
+                        role,
+                    )
+                    return "You are not authorized to access this page.", 403
                 if (
                     error.status_code == 404
                     and str(error) == missing_profile_message
@@ -135,7 +188,8 @@ def refresh_access_token():
     refresh_token = session.get("refresh_token")
 
     if not refresh_token:
-        return False
+        app.logger.warning("Access token refresh requested without a refresh token")
+        raise ApiError("Your session has expired. Please sign in again.", 401)
 
     try:
         result = requests.post(
@@ -145,26 +199,72 @@ def refresh_access_token():
             },
             timeout=15,
         )
-
-        if not result.ok:
-            return False
-
-        payload = result.json()
-
-        session["access_token"] = payload["access_token"]
-        session.modified = True
-
-        app.logger.info(
-            "Access token refreshed successfully"
-        )
-
-        return True
-
-    except requests.RequestException:
+    except requests.RequestException as error:
         app.logger.exception(
-            "Failed to refresh access token"
+            "MediSlot API request failed: "
+            "method=POST path=auth/refresh outcome=FAILED "
+            "failure_type=%s failure_reason=%s",
+            type(error).__name__,
+            str(error),
         )
-        return False
+        raise ApiError("Session refresh is temporarily unavailable. Please try again.", 503)
+
+    if result.status_code in {401, 403}:
+        app.logger.warning(
+            "MediSlot API request completed: "
+            "method=POST path=auth/refresh outcome=FAILED "
+            "status=%s failure_reason=Refresh token was rejected",
+            result.status_code,
+        )
+        session.clear()
+        raise ApiError("Your session has expired. Please sign in again.", 401)
+    if not result.ok:
+        app.logger.error(
+            "MediSlot API request completed: "
+            "method=POST path=auth/refresh outcome=FAILED "
+            "status=%s failure_reason=Refresh endpoint returned an unsuccessful response "
+            "response=%s",
+            result.status_code,
+            result.text[:300],
+        )
+        raise ApiError("Session refresh is temporarily unavailable. Please try again.", 503)
+
+    try:
+        payload = result.json()
+    except ValueError as error:
+        app.logger.error(
+            "MediSlot API request completed: "
+            "method=POST path=auth/refresh outcome=FAILED "
+            "status=%s failure_reason=Refresh endpoint returned invalid JSON "
+            "content_type=%s",
+            result.status_code,
+            result.headers.get("content-type", "unknown"),
+        )
+        raise ApiError("Session refresh returned an invalid response.", 503) from error
+
+    access_token = payload.get("access_token") if isinstance(payload, dict) else None
+    if not isinstance(access_token, str) or not access_token.strip():
+        app.logger.error(
+            "MediSlot API request completed: "
+            "method=POST path=auth/refresh outcome=FAILED "
+            "status=%s failure_reason=Refresh endpoint did not return an access token "
+            "response_keys=%s",
+            result.status_code,
+            sorted(payload.keys()) if isinstance(payload, dict) else [],
+        )
+        raise ApiError("Session refresh returned an invalid response.", 503)
+
+    session["access_token"] = access_token
+    session.modified = True
+    app.logger.info(
+        "MediSlot API request completed: "
+        "method=POST path=auth/refresh outcome=SUCCESS "
+        "status=%s response_keys=%s elapsed_ms=%.2f",
+        result.status_code,
+        sorted(payload.keys()) if isinstance(payload, dict) else [],
+        result.elapsed.total_seconds() * 1000,
+    )
+    return True
 
 def api_request(
     method,
@@ -172,9 +272,14 @@ def api_request(
     *,
     json_body=None,
     params=None,
+    request_headers=None,
     authenticated=True
 ):
-    headers = {}
+    headers = dict(request_headers or {})
+    safe_params = {
+        key: "[REDACTED]" if key in {"search", "name", "email"} else value
+        for key, value in (params or {}).items()
+    }
 
     if authenticated:
         headers["Authorization"] = (
@@ -195,9 +300,15 @@ def api_request(
         )
     except requests.RequestException as error:
         app.logger.exception(
-            "MediSlot API request failed: method=%s path=%s",
+            "MediSlot API request failed: "
+            "method=%s path=%s outcome=FAILED "
+            "failure_type=%s failure_reason=%s "
+            "query_params=%s",
             method,
             path,
+            type(error).__name__,
+            str(error),
+            safe_params,
         )
         raise ApiError(
             f"MediSlot API connection failed ({type(error).__name__}: {error})"
@@ -206,17 +317,15 @@ def api_request(
     #
     # Access token expired
     #
-    if (
-        authenticated
-        and result.status_code == 401
-        and session.get("refresh_token")
-    ):
+    if authenticated and result.status_code in {401, 403}:
 
         app.logger.info(
-            "Received 401. Attempting token refresh."
+            "Received authentication failure: status=%s. Attempting token refresh.",
+            result.status_code,
         )
 
-        if refresh_access_token():
+        if session.get("refresh_token"):
+            refresh_access_token()
 
             headers["Authorization"] = (
                 f"Bearer {session['access_token']}"
@@ -236,7 +345,13 @@ def api_request(
                 )
             except requests.RequestException as error:
                 app.logger.exception(
-                    "Retry request failed after token refresh"
+                    "MediSlot API retry failed: "
+                    "method=%s path=%s outcome=FAILED "
+                    "failure_type=%s failure_reason=%s",
+                    method,
+                    path,
+                    type(error).__name__,
+                    str(error),
                 )
                 raise ApiError(
                     f"MediSlot API connection failed "
@@ -249,11 +364,6 @@ def api_request(
         payload = {}
 
     if not result.ok:
-        request_id = (
-            result.headers.get("x-amzn-requestid")
-            or result.headers.get("x-amz-apigw-id")
-            or "not provided"
-        )
         message = None
         if isinstance(payload, dict):
             message = (
@@ -270,17 +380,21 @@ def api_request(
                 response_detail = f", response={response_text[:300]}"
             message = (
                 f"API returned HTTP {result.status_code} without an error message "
-                f"(content-type={content_type}, request_id={request_id}"
-                f"{response_detail})"
+                f"(content-type={content_type}{response_detail})"
             )
         app.logger.warning(
             "MediSlot API returned an error: "
-            "method=%s path=%s status=%s request_id=%s message=%s",
+            "method=%s path=%s outcome=FAILED "
+            "status=%s failure_reason=%s "
+            "response_content_type=%s response_keys=%s "
+            "query_params=%s",
             method,
             path,
             result.status_code,
-            request_id,
             message,
+            result.headers.get("content-type", "unknown"),
+            sorted(payload.keys()) if isinstance(payload, dict) else [],
+            safe_params,
         )
 
         raise ApiError(
@@ -288,12 +402,38 @@ def api_request(
             result.status_code,
         )
 
+    if isinstance(payload, list):
+        response_details = f"response_type=list response_count={len(payload)}"
+    elif isinstance(payload, dict):
+        response_details = (
+            f"response_type=object response_keys={sorted(payload.keys())}"
+        )
+        for key in (
+            "appointment_id",
+            "patient_id",
+            "doctor_id",
+            "slot_id",
+            "status",
+            "payment_status",
+            "message",
+        ):
+            if key in payload:
+                response_details += f" {key}={payload[key]}"
+    else:
+        response_details = f"response_type={type(payload).__name__}"
+
     app.logger.info(
         "MediSlot API request completed: "
-        "method=%s path=%s status=%s",
+        "method=%s path=%s outcome=SUCCESS "
+        "status=%s content_type=%s %s "
+        "elapsed_ms=%.2f query_params=%s",
         method,
         path,
         result.status_code,
+        result.headers.get("content-type", "unknown"),
+        response_details,
+        result.elapsed.total_seconds() * 1000,
+        safe_params,
     )
 
     return payload
@@ -312,6 +452,7 @@ def with_api_errors(handler):
             )
 
             if error.status_code == 401:
+                role = session.get("role")
                 session.clear()
                 flash(
                     "Your session expired. Please sign in again.",
@@ -320,7 +461,8 @@ def with_api_errors(handler):
                 return redirect(
                     url_for(
                         "auth",
-                        mode="login"
+                        mode="login",
+                        role=role if role in {"DOCTOR", "PATIENT"} else None,
                     )
                 )
 
@@ -468,6 +610,48 @@ def doctor_dashboard():
             schedule = {"slots": [], "date": schedule_date}
         else:
             raise
+    today_utc = datetime.now(timezone.utc).date().isoformat()
+    next_schedule_slots = schedule.get("slots", [])
+    if schedule.get("date") == today_utc:
+        now_utc = datetime.now(timezone.utc)
+        next_schedule_slots = [
+            slot
+            for slot in next_schedule_slots
+            if parse_slot_start_time(slot["start_time"]) > now_utc
+        ]
+    schedule_filter = request.args.get("status", "all")
+    if schedule_filter not in {"all", "booked", "blocked", "open"}:
+        schedule_filter = "all"
+    appointments_offset = max(
+        request.args.get("appointments_offset", 0, type=int) or 0,
+        0,
+    )
+    appointments_date = request.args.get("appointments_date", "")
+    appointments_status = request.args.get("appointments_status", "all")
+    if appointments_status not in {
+        "all",
+        "booked",
+        "cancelled",
+        "completed",
+        "no_show",
+    }:
+        appointments_status = "all"
+    appointments_search = request.args.get("appointments_search", "").strip()
+    appointments_result = api_request(
+        "GET",
+        "/appointments",
+        params={
+            "limit": 50,
+            "offset": appointments_offset,
+            "appointment_date": appointments_date,
+            "appointment_status": appointments_status,
+            "search": appointments_search,
+        },
+    )
+    if not isinstance(appointments_result, dict) or not isinstance(
+        appointments_result.get("appointments"), list
+    ):
+        raise ApiError("Appointments API returned an invalid response.")
     return render_template(
         "dashboard.html",
         profile=profile,
@@ -478,6 +662,16 @@ def doctor_dashboard():
         patterns=availability,
         blackouts=blackouts,
         schedule=schedule,
+        next_schedule_slots=next_schedule_slots,
+        schedule_display_date=format_display_date(schedule["date"]),
+        schedule_filter=schedule_filter,
+        appointments=appointments_result["appointments"],
+        appointments_offset=appointments_offset,
+        appointments_has_more=bool(appointments_result.get("has_more")),
+        appointments_next_offset=appointments_result.get("next_offset"),
+        appointments_date=appointments_date,
+        appointments_status=appointments_status,
+        appointments_search=appointments_search,
     )
 
 
@@ -491,7 +685,77 @@ def old_doctor_dashboard():
 def patient_dashboard():
     profile_response = g.authorized_profile_response
     profile = profile_response.get("profile") if profile_response else None
-    return render_template("patient_dashboard.html", profile=profile)
+    appointments_offset = max(
+        request.args.get("appointments_offset", 0, type=int) or 0,
+        0,
+    )
+    appointments, appointments_error, has_more, next_offset = get_patient_appointments(
+        appointments_offset
+    )
+    if appointments_error and appointments_error.status_code in {401, 403}:
+        return patient_api_error(appointments_error)
+    if appointments_error:
+        flash(f"Appointments could not be loaded: {appointments_error}", "error")
+    doctor_search_filters = {
+        field: ""
+        for field in ("name", "hospital", "specialization", "city")
+    }
+    try:
+        doctor_search_results = api_request(
+            "GET",
+            "/doctors/search",
+            params={**doctor_search_filters, "page": 1, "limit": 10},
+        )
+    except ApiError as error:
+        if error.status_code in {401, 403}:
+            return patient_api_error(error)
+        flash(f"Could not load doctors: {error}", "error")
+        doctor_search_results = {
+            "doctors": [],
+            "pagination": {"page": 1, "limit": 10, "total": 0, "total_pages": 0},
+        }
+    if not isinstance(doctor_search_results, dict) or not isinstance(
+        doctor_search_results.get("doctors"), list
+    ):
+        raise ApiError("Doctor search API returned an invalid response.")
+    return render_template(
+        "patient_dashboard.html",
+        profile=profile,
+        appointments=appointments,
+        appointments_error=appointments_error,
+        appointments_offset=appointments_offset,
+        appointments_has_more=has_more,
+        appointments_next_offset=next_offset,
+        doctor_search=doctor_search_results,
+        doctor_search_filters=doctor_search_filters,
+        today_display_date=format_display_date(datetime.now(timezone.utc).date()),
+    )
+
+
+def get_patient_appointments(offset=0):
+    try:
+        result = api_request(
+            "GET",
+            "/appointments",
+            params={"limit": 50, "offset": offset},
+        )
+    except ApiError as error:
+        return [], error, False, None
+    if not isinstance(result, dict) or not isinstance(
+        result.get("appointments"), list
+    ):
+        return (
+            [],
+            ApiError("Appointments API returned an invalid response."),
+            False,
+            None,
+        )
+    return (
+        result["appointments"],
+        None,
+        bool(result.get("has_more")),
+        result.get("next_offset"),
+    )
 
 
 def patient_api_error(error):
@@ -501,7 +765,16 @@ def patient_api_error(error):
         return redirect(url_for("auth", mode="login", role="PATIENT"))
     if error.status_code == 403:
         flash("You are not allowed to access this patient profile.", "error")
-        return render_template("patient_dashboard.html", profile=None), 403
+        return render_template(
+            "patient_dashboard.html",
+            profile=None,
+            appointments=[],
+            appointments_error=error,
+            appointments_offset=0,
+            appointments_has_more=False,
+            appointments_next_offset=None,
+            today_display_date=format_display_date(datetime.now(timezone.utc).date()),
+        ), 403
     else:
         flash(str(error), "error")
     return redirect(url_for("patient_dashboard"))
@@ -533,11 +806,23 @@ def patient_doctor_search():
 
     profile_response = g.authorized_profile_response
     profile = profile_response.get("profile") if profile_response else None
+
+    appointments, appointments_error, has_more, next_offset = get_patient_appointments()
+    if appointments_error and appointments_error.status_code in {401, 403}:
+        return patient_api_error(appointments_error)
+    if appointments_error:
+        flash(f"Appointments could not be loaded: {appointments_error}", "error")
     return render_template(
         "patient_dashboard.html",
         profile=profile,
+        appointments=appointments,
+        appointments_error=appointments_error,
+        appointments_offset=0,
+        appointments_has_more=has_more,
+        appointments_next_offset=next_offset,
         doctor_search=results,
         doctor_search_filters=filters,
+        today_display_date=format_display_date(datetime.now(timezone.utc).date()),
     )
 
 
@@ -560,6 +845,38 @@ def patient_doctor_availability(doctor_id):
     availability = None
     error_message = None
     status_code = 200
+    page_size = 12
+    page = max(request.args.get("page", 1, type=int) or 1, 1)
+    availability_total = 0
+    availability_total_pages = 0
+    consultation_type = request.args.get("consultation_type", "").strip()
+    consultation_types = []
+
+    try:
+        public_profile_response = api_request(
+            "GET",
+            f"/doctors/{doctor_id}/profile",
+            authenticated=False,
+        )
+        if not isinstance(public_profile_response, dict) or not isinstance(
+            public_profile_response.get("profile"), dict
+        ):
+            raise ApiError("Doctor profile API returned an invalid response.")
+        public_profile = public_profile_response["profile"]
+        consultation_types = public_profile.get("consultation_details", [])
+        if not isinstance(consultation_types, list) or any(
+            not isinstance(item, dict)
+            or not isinstance(item.get("consultation_type"), str)
+            for item in consultation_types
+        ):
+            raise ApiError("Doctor consultation types API returned an invalid response.")
+    except ApiError as error:
+        app.logger.warning(
+            "Could not load consultation types for availability filter: "
+            "doctor_id=%s status=%s",
+            doctor_id,
+            error.status_code,
+        )
 
     try:
         payload = api_request(
@@ -571,12 +888,66 @@ def patient_doctor_availability(doctor_id):
             payload.get("slots"), list
         ):
             raise ApiError("Availability API returned an invalid response.")
-        availability = payload["slots"]
+        now = datetime.now(timezone.utc)
+        try:
+            availability = [
+                slot
+                for slot in payload["slots"]
+                if parse_slot_start_time(slot.get("start_time")) > now
+            ]
+        except (AttributeError, ValueError) as error:
+            raise ApiError(
+                "Availability API returned a slot with an invalid start time."
+            ) from error
+        if not consultation_types:
+            consultation_types = [
+                {"consultation_type": name}
+                for name in sorted(
+                    {
+                        slot.get("consultation_type", "")
+                        for slot in availability
+                        if slot.get("consultation_type")
+                    }
+                )
+            ]
+        if consultation_type:
+            availability = [
+                slot
+                for slot in availability
+                if slot.get("consultation_type") == consultation_type
+            ]
+        availability_total = len(availability)
+        availability_total_pages = (
+            (availability_total + page_size - 1) // page_size
+        )
+        page = min(page, availability_total_pages) if availability_total_pages else 1
+        start_index = (page - 1) * page_size
+        availability = availability[start_index : start_index + page_size]
     except ApiError as error:
         if error.status_code in {401, 403}:
             return patient_api_error(error)
         error_message = str(error)
         status_code = error.status_code if error.status_code >= 400 else 502
+
+    availability_by_date = []
+    if availability:
+        slots_by_date = {}
+        for slot in availability:
+            slot_date = slot["start_time"][:10]
+            slots_by_date.setdefault(slot_date, []).append(slot)
+        availability_by_date = [
+            {"date": slot_date, "slots": slots_by_date[slot_date]}
+            for slot_date in sorted(slots_by_date)
+        ]
+
+    stored_keys = session.setdefault("appointment_idempotency_keys", {})
+    idempotency_keys = {}
+    for slot in availability or []:
+        key = f"{doctor_id}:{slot['start_time']}"
+        if key not in stored_keys:
+            stored_keys[key] = uuid.uuid4().hex
+        idempotency_keys[slot["start_time"]] = stored_keys[key]
+    session["appointment_idempotency_keys"] = stored_keys
 
     return render_template(
         "patient_availability.html",
@@ -584,9 +955,310 @@ def patient_doctor_availability(doctor_id):
         doctor_id=doctor_id,
         start_date=start_date,
         end_date=end_date,
+        consultation_types=consultation_types,
+        selected_consultation_type=consultation_type,
         availability=availability,
+        availability_by_date=availability_by_date,
+        availability_page=page,
+        availability_page_size=page_size,
+        availability_total=availability_total,
+        availability_total_pages=availability_total_pages,
+        idempotency_keys=idempotency_keys,
         error_message=error_message,
     ), status_code
+
+
+@app.post("/patient/appointments/book")
+@patient_required
+def book_appointment():
+    doctor_id = request.form.get("doctor_id", type=int)
+    slot_start_time = request.form.get("slot_start_time", "").strip()
+    start_date = request.form.get("start_date", "").strip()
+    end_date = request.form.get("end_date", "").strip()
+    availability_page = max(request.form.get("page", 1, type=int) or 1, 1)
+    consultation_type = request.form.get("consultation_type", "").strip()
+    payment_method = request.form.get("payment_method", "UPI").strip().upper()
+    idempotency_key = request.form.get("idempotency_key", "").strip()
+    if not doctor_id or doctor_id <= 0 or not slot_start_time:
+        flash("Choose a valid appointment slot before booking.", "error")
+        return redirect(url_for("patient_dashboard"))
+    try:
+        if parse_slot_start_time(slot_start_time) <= datetime.now(timezone.utc):
+            flash(
+                "This appointment slot has already started. Choose a future slot.",
+                "error",
+            )
+            return redirect(
+                url_for(
+                    "patient_doctor_availability",
+                    doctor_id=doctor_id,
+                    **({"start_date": start_date} if start_date else {}),
+                    **({"end_date": end_date} if end_date else {}),
+                    **({"page": availability_page} if availability_page > 1 else {}),
+                    **(
+                        {"consultation_type": consultation_type}
+                        if consultation_type
+                        else {}
+                    ),
+                )
+            )
+    except ValueError:
+        flash("Choose a valid appointment slot.", "error")
+        return redirect(url_for("patient_dashboard"))
+    if not idempotency_key:
+        flash("Booking request is missing its idempotency key. Please retry.", "error")
+        return redirect(
+            url_for(
+                "patient_doctor_availability",
+                doctor_id=doctor_id,
+                **({"start_date": start_date} if start_date else {}),
+                **({"end_date": end_date} if end_date else {}),
+                **({"page": availability_page} if availability_page > 1 else {}),
+                **(
+                    {"consultation_type": consultation_type}
+                    if consultation_type
+                    else {}
+                ),
+            )
+        )
+
+
+    try:
+        result = api_request(
+            "POST",
+            "/appointments/book",
+            json_body={
+                "doctor_id": doctor_id,
+                "slot_start_time": slot_start_time,
+                "payment_method": payment_method,
+            },
+            request_headers={"Idempotency-Key": idempotency_key},
+        )
+    except ApiError as error:
+        if error.status_code in {401, 403}:
+            return patient_api_error(error)
+        if error.status_code == 402:
+            session_keys = session.get("appointment_idempotency_keys", {})
+            session_keys.pop(f"{doctor_id}:{slot_start_time}", None)
+            session["appointment_idempotency_keys"] = session_keys
+            flash(
+                "Payment failed. The slot is available again; you can retry booking.",
+                "error",
+            )
+        else:
+            flash(str(error), "error")
+    else:
+        if not isinstance(result, dict) or not result.get("appointment_id"):
+            app.logger.error("Appointment booking API returned an invalid response.")
+            flash(
+                "Appointment booking response was invalid. "
+                "Please check availability again.",
+                "error",
+            )
+            return redirect(
+                url_for(
+                    "patient_doctor_availability",
+                    doctor_id=doctor_id,
+                    **({"start_date": start_date} if start_date else {}),
+                    **({"end_date": end_date} if end_date else {}),
+                    **({"page": availability_page} if availability_page > 1 else {}),
+                    **(
+                        {"consultation_type": consultation_type}
+                        if consultation_type
+                        else {}
+                    ),
+                )
+            )
+        appointment_id = result["appointment_id"]
+        session_keys = session.get("appointment_idempotency_keys", {})
+        session_keys.pop(f"{doctor_id}:{slot_start_time}", None)
+        session["appointment_idempotency_keys"] = session_keys
+        if result.get("payment_status") == "FAILED":
+            flash(
+                f"Payment failed for appointment {appointment_id}. The slot is available again.",
+                "error",
+            )
+        else:
+            flash(
+                f"Appointment booked successfully. Reference: {appointment_id}.",
+                "success",
+            )
+
+    return redirect(
+        url_for(
+            "patient_doctor_availability",
+            doctor_id=doctor_id,
+            **({"start_date": start_date} if start_date else {}),
+            **({"end_date": end_date} if end_date else {}),
+            **({"page": availability_page} if availability_page > 1 else {}),
+            **(
+                {"consultation_type": consultation_type}
+                if consultation_type
+                else {}
+            ),
+        )
+    )
+
+
+@app.post("/patient/appointments/<int:appointment_id>/cancel")
+@patient_required
+def cancel_patient_appointment(appointment_id):
+    try:
+        api_request("POST", f"/appointments/{appointment_id}/cancel")
+    except ApiError as error:
+        return patient_api_error(error)
+    flash(f"Appointment {appointment_id} cancelled.", "success")
+    return redirect(
+        url_for("patient_dashboard", view="patient-appointments-view")
+        + "#my-appointments"
+    )
+
+
+@app.post("/doctor/appointments/<int:appointment_id>/cancel")
+@doctor_required
+@with_api_errors
+def cancel_doctor_appointment(appointment_id):
+    single_appointment = (
+        request.form.get("cancel_scope") == "single_appointment"
+    )
+    api_request(
+        "POST",
+        f"/appointments/{appointment_id}/cancel",
+        json_body={"single_appointment": True} if single_appointment else None,
+    )
+    if single_appointment:
+        flash(f"Appointment {appointment_id} cancelled.", "success")
+        status_filter = request.form.get("appointments_status", "all")
+        if status_filter not in {
+            "all",
+            "booked",
+            "cancelled",
+            "completed",
+            "no_show",
+        }:
+            status_filter = "all"
+        try:
+            appointments_offset = max(
+                int(request.form.get("appointments_offset", "0")),
+                0,
+            )
+        except ValueError:
+            appointments_offset = 0
+        return redirect(
+            url_for(
+                "doctor_dashboard",
+                view="appointments-view",
+                appointments_offset=appointments_offset,
+                appointments_date=request.form.get("appointments_date", "") or None,
+                appointments_status=status_filter,
+                appointments_search=request.form.get("appointments_search", "") or None,
+            )
+        )
+    flash(
+        "The slot and all appointments booked for it have been cancelled.",
+        "success",
+    )
+    return redirect_to_doctor_schedule()
+
+@app.post("/doctor/appointments/<int:appointment_id>/no-show")
+@doctor_required
+@with_api_errors
+def mark_doctor_appointment_no_show(appointment_id):
+    result = api_request(
+        "POST",
+        f"/appointments/{appointment_id}/no-show",
+    )
+    if (
+        not isinstance(result, dict)
+        or result.get("success") is not True
+        or result.get("status") != "NO_SHOW"
+    ):
+        raise ApiError("No-show API returned an invalid response.")
+
+    flash(f"Appointment {appointment_id} marked as no-show.", "success")
+    status_filter = request.form.get("appointments_status", "all")
+    if status_filter not in {
+        "all",
+        "booked",
+        "cancelled",
+        "completed",
+        "no_show",
+    }:
+        status_filter = "all"
+    try:
+        appointments_offset = max(
+            int(request.form.get("appointments_offset", "0")),
+            0,
+        )
+    except ValueError:
+        appointments_offset = 0
+    return redirect(
+        url_for(
+            "doctor_dashboard",
+            view="appointments-view",
+            appointments_offset=appointments_offset,
+            appointments_date=request.form.get("appointments_date", "") or None,
+            appointments_status=status_filter,
+            appointments_search=request.form.get("appointments_search", "") or None,
+        )
+    )
+
+
+def redirect_to_doctor_schedule():
+    schedule_date = request.form.get("schedule_date", "").strip()
+    status_filter = request.form.get("status_filter", "all")
+    if status_filter not in {"all", "booked", "blocked", "open"}:
+        status_filter = "all"
+    return redirect(
+        url_for(
+            "doctor_dashboard",
+            date=schedule_date,
+            status=status_filter,
+            view="schedule-view",
+        )
+        + "#schedule-view"
+    )
+
+
+@app.post("/doctor/appointments/bulk-cancel")
+@doctor_required
+@with_api_errors
+def bulk_cancel_doctor_appointments():
+    raw_ids = request.form.getlist("appointment_id")
+    try:
+        appointment_ids = list(dict.fromkeys(int(value) for value in raw_ids))
+    except (TypeError, ValueError):
+        flash("The selected appointments could not be identified.", "error")
+        return redirect_to_doctor_schedule()
+    if not appointment_ids or len(appointment_ids) > 50 or any(
+        appointment_id <= 0 for appointment_id in appointment_ids
+    ):
+        flash("Select between 1 and 50 valid booked slots.", "error")
+        return redirect_to_doctor_schedule()
+
+    cancelled = 0
+    failures = []
+    for appointment_id in appointment_ids:
+        try:
+            api_request("POST", f"/appointments/{appointment_id}/cancel")
+        except ApiError as error:
+            failures.append(appointment_id)
+            app.logger.warning(
+                "Bulk slot cancellation failed: appointment_id=%s status=%s",
+                appointment_id,
+                error.status_code,
+            )
+        else:
+            cancelled += 1
+
+    if failures:
+        flash(
+            f"{cancelled} slot(s) cancelled; {len(failures)} could not be cancelled.",
+            "error" if not cancelled else "warning",
+        )
+    else:
+        flash(f"{cancelled} slot(s) and their bookings cancelled.", "success")
+    return redirect_to_doctor_schedule()
 
 
 @app.get("/doctors/<int:doctor_id>")

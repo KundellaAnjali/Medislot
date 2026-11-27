@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MediSlot | Account access</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script src="{{ url_for('static', filename='notifications.js') }}" defer></script>
 </head>
 <body class="auth-page">
   <main class="auth-shell">
@@ -22,7 +23,7 @@
         <p class="eyebrow" id="auth-kicker">Welcome back</p>
         <h2 id="auth-heading">Sign in to MediSlot</h2>
         {% with messages = get_flashed_messages(with_categories=true) %}
-          {% for category, message in messages %}<p class="notice {{ category }}">{{ message }}</p>{% endfor %}
+          {% for category, message in messages %}<p class="notice {{ category }}" data-auto-dismiss>{{ message }}</p>{% endfor %}
         {% endwith %}
         <div class="auth-mode-switch" role="tablist" aria-label="Account action">
           <button type="button" class="mode-button" data-mode="login" role="tab">Login</button>

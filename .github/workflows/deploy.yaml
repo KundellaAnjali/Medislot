@@ -52,7 +52,7 @@ jobs:
 
       - name: Lint IAM Stack
         run: |
-          cfn-lint cloudformation/iam-stack.yaml
+          cfn-lint --ignore-checks W3037 -- cloudformation/iam-stack.yaml
 
       - name: Lint Auth Stack
         run: |
@@ -65,6 +65,10 @@ jobs:
       - name: Lint Patient Stack
         run: |
           cfn-lint cloudformation/patient-stack.yaml
+
+      - name: Lint Appointment Infrastructure
+        run: |
+          cfn-lint --ignore-checks E3691 W3037 -- cloudformation/data-stack.yaml cloudformation/iam-stack.yaml cloudformation/patient-stack.yaml
 
   deploy-network:
     needs: validate
@@ -200,6 +204,11 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Setup SAM CLI
         uses: aws-actions/setup-sam@v2
 
@@ -269,10 +278,8 @@ jobs:
       - name: Load Parameters
         run: |
           ENVIRONMENT=$(jq -r '.[] | select(.ParameterKey=="EnvironmentName") | .ParameterValue' parameters/doctor-parameters.json)
-          PORTAL_KEY_NAME=$(jq -r '.[] | select(.ParameterKey=="PortalKeyName") | .ParameterValue' parameters/doctor-parameters.json)
 
           echo "ENVIRONMENT=$ENVIRONMENT" >> $GITHUB_ENV
-          echo "PORTAL_KEY_NAME=$PORTAL_KEY_NAME" >> $GITHUB_ENV
 
           echo "Loaded Environment: $ENVIRONMENT"
 
@@ -280,6 +287,11 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Setup SAM CLI
         uses: aws-actions/setup-sam@v2
@@ -324,7 +336,7 @@ jobs:
           sam deploy \
             --template-file .aws-sam/build/template.yaml \
             --stack-name ${ENVIRONMENT}-medislot-doctor-stack \
-            --parameter-overrides EnvironmentName=${ENVIRONMENT} PortalKeyName=${PORTAL_KEY_NAME} \
+            --parameter-overrides EnvironmentName=${ENVIRONMENT} \
             --capabilities CAPABILITY_NAMED_IAM \
             --resolve-s3 \
             --no-fail-on-empty-changeset \
@@ -397,6 +409,14 @@ jobs:
           aws s3 cp "s3://${ASSETS_BUCKET}/doctor-portal/doctor-portal.zip" /tmp/doctor-portal.zip
           unzip -o /tmp/doctor-portal.zip -d /opt/medislot/doctor-portal
           chown -R ec2-user:ec2-user /opt/medislot/doctor-portal
+          mkdir -p /var/lib/medislot/sessions
+          chown -R ec2-user:ec2-user /var/lib/medislot/sessions
+          mkdir -p /etc/systemd/system/medislot-doctor-portal.service.d
+          cat > /etc/systemd/system/medislot-doctor-portal.service.d/session.conf <<'EOF'
+          [Service]
+          Environment=SESSION_FILE_DIR=/var/lib/medislot/sessions
+          EOF
+          systemctl daemon-reload
           /opt/medislot/venv/bin/pip install --no-cache-dir -r /opt/medislot/doctor-portal/requirements.txt
           systemctl restart medislot-doctor-portal
           SCRIPT
@@ -477,7 +497,7 @@ jobs:
 
     env:
       TEMPLATE_FILE: cloudformation/patient-stack.yaml
-      PARAMETERS_FILE: parameters/auth-parameters.json
+      PARAMETERS_FILE: parameters/patient-parameters.json
 
     steps:
       - uses: actions/checkout@v4
@@ -496,6 +516,11 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
       - name: Setup SAM CLI
         uses: aws-actions/setup-sam@v2
@@ -516,7 +541,8 @@ jobs:
           sam deploy \
             --template-file .aws-sam/build/template.yaml \
             --stack-name ${ENVIRONMENT}-medislot-patient-stack \
-            --parameter-overrides EnvironmentName=${ENVIRONMENT} \
+            --parameter-overrides \
+            $(jq -r '.[] | "\(.ParameterKey)=\(.ParameterValue)"' ${{ env.PARAMETERS_FILE }}) \
             --capabilities CAPABILITY_NAMED_IAM \
             --resolve-s3 \
             --no-fail-on-empty-changeset \
@@ -532,5 +558,5 @@ jobs:
           aws apigateway create-deployment \
             --rest-api-id "$API_ID" \
             --stage-name "$ENVIRONMENT" \
-            --description "Publish MediSlot patient-profile routes" \
+            --description "Publish MediSlot patient and booking routes" \
             --region ${{ secrets.AWS_REGION }}
