@@ -507,20 +507,11 @@ Resources:
     Properties:
       TopicName: !Sub "${EnvironmentName}-appointment-notifications"
 
-  AppointmentNotificationsDeadLetterQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: !Sub "${EnvironmentName}-appointment-notifications-dlq"
-      MessageRetentionPeriod: 1209600
-
   AppointmentNotificationsQueue:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: !Sub "${EnvironmentName}-appointment-notifications"
       VisibilityTimeout: 180
-      RedrivePolicy:
-        deadLetterTargetArn: !GetAtt AppointmentNotificationsDeadLetterQueue.Arn
-        maxReceiveCount: 5
 
   AppointmentNotificationsQueuePolicy:
     Type: AWS::SQS::QueuePolicy
