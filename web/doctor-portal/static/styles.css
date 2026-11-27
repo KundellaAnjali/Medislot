@@ -612,11 +612,34 @@ input:focus, select:focus {
 .patient-availability { margin-top: 18px; }
 .availability-form { padding: 18px; margin-bottom: 20px; border: 1px solid #e8efeb; border-radius: 11px; background: #f8fbf9; }
 .availability-form input { min-width: 190px; }
+.availability-day-heading {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 13px;
+  border: 1px solid #e1eae5;
+  border-radius: 9px;
+  background: #f7faf8;
+}
+.availability-results {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 16px;
+}
 .availability-slot {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
   padding: 20px;
   border-color: #e1eae5;
   border-radius: 12px;
   background: linear-gradient(145deg, #fff, #fbfdfc);
+}
+.availability-slot-card:hover,
+.availability-slot-card:focus-within {
+  transform: translateY(-3px);
+  border-color: #a9cec2;
+  box-shadow: 0 14px 30px rgb(22 55 46 / 10%);
 }
 .availability-slot-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .availability-slot h2, .availability-slot h3 { font-size: 16px; }
@@ -625,7 +648,18 @@ input:focus, select:focus {
 .availability-slot-details > div { min-width: 0; padding: 12px; border-radius: 8px; background: #f4f8f6; }
 .availability-slot-details dt { margin-bottom: 5px; color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; }
 .availability-slot-details dd { margin: 0; overflow-wrap: anywhere; color: #30454a; font-size: 12px; font-weight: 700; }
+.availability-slot .appointment-booking-form,
+.availability-slot .waitlist-join-form { margin-top: auto; border-color: #ebf0ed; }
+.availability-slot .appointment-booking-form .button,
+.availability-slot .waitlist-join-form .button { min-width: 0; flex: 1 1 100%; }
+.availability-slot .waitlist-join-form { display: flex; padding-top: 10px; }
+.availability-slot .appointment-booking-form label { flex-basis: 100%; }
+.availability-slot .appointment-booking-form select { width: 100%; }
 .appointment-booking-form { border-color: #ebf0ed; }
+
+@media (max-width: 1000px) {
+  .availability-results { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 
 .doctor-app { background: #f2f6f4; }
 .doctor-sidebar {
@@ -688,6 +722,8 @@ input:focus, select:focus {
   .doctor-search-form > .button { width: 100%; }
   .availability-form { padding: 14px; }
   .availability-form input { min-width: 0; }
+  .availability-results { grid-template-columns: 1fr; gap: 12px; }
+  .availability-slot { padding: 17px; }
   .availability-slot-heading { align-items: flex-start; flex-direction: column; }
   .availability-slot-details { grid-template-columns: 1fr; gap: 8px; }
   .doctor-search-card { min-height: 0; }
@@ -1204,6 +1240,19 @@ input:focus, select:focus {
 
 @media (max-width: 420px) {
   .doctor-app #appointments-view .patient-appointment-details { grid-template-columns: 1fr; }
+}
+
+.patient-waitlist-panel { margin-bottom: 18px; }
+.patient-waitlist-panel .patient-appointment-card { align-items: center; }
+.patient-waitlist-panel .patient-appointment-card form { margin: 0; }
+.patient-waitlist-panel .patient-appointment-card form .button { min-width: 150px; }
+.patient-dashboard-page #patient-waitlists-view { scroll-margin-top: 94px; }
+
+@media (max-width: 680px) {
+  .patient-waitlist-panel .patient-appointment-card { align-items: stretch; }
+  .patient-waitlist-panel .patient-appointment-card form,
+  .patient-waitlist-panel .patient-appointment-card form .button { width: 100%; }
+  .patient-dashboard-page #patient-waitlists-view { scroll-margin-top: 110px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

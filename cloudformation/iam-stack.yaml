@@ -314,6 +314,104 @@ Resources:
                 Resource:
                   - !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/default"
 
+  PatientMilestone6LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${EnvironmentName}-patient-milestone6-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: PatientMilestone6Access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/medislot/${EnvironmentName}/*"
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:TransactWriteItems
+                Resource:
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-slots-v2"
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-idempotency-keys"
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-waitlist"
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-waitlist/index/*"
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-waitlist-offers"
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-waitlist-offers/index/*"
+              - Effect: Allow
+                Action:
+                  - events:PutEvents
+                Resource:
+                  - !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/default"
+              - Effect: Allow
+                Action:
+                  - states:StartExecution
+                Resource:
+                  - !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${EnvironmentName}-appointment-reschedule"
+              - Effect: Allow
+                Action:
+                  - sqs:ReceiveMessage
+                  - sqs:DeleteMessage
+                  - sqs:ChangeMessageVisibility
+                  - sqs:GetQueueAttributes
+                Resource:
+                  - !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${EnvironmentName}-appointment-notifications"
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource:
+                  - !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:${EnvironmentName}-appointment-notifications"
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: "*"
+
+  RescheduleStateMachineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${EnvironmentName}-appointment-reschedule-sfn-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeRescheduleTasks
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource:
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${EnvironmentName}-reschedule-validate-claim"
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${EnvironmentName}-reschedule-update-appointment"
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${EnvironmentName}-reschedule-release-original"
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${EnvironmentName}-reschedule-publish-events"
+                  - !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${EnvironmentName}-reschedule-compensate"
+
   DoctorPortalInstanceRole:
     Type: AWS::IAM::Role
     Properties:
@@ -402,6 +500,16 @@ Outputs:
     Value: !GetAtt AppointmentLambdaRole.Arn
     Export:
       Name: !Sub "${EnvironmentName}-AppointmentLambdaRoleArn"
+
+  PatientMilestone6LambdaRoleArn:
+    Value: !GetAtt PatientMilestone6LambdaRole.Arn
+    Export:
+      Name: !Sub "${EnvironmentName}-PatientMilestone6LambdaRoleArn"
+
+  RescheduleStateMachineRoleArn:
+    Value: !GetAtt RescheduleStateMachineRole.Arn
+    Export:
+      Name: !Sub "${EnvironmentName}-RescheduleStateMachineRoleArn"
 
   DoctorPortalInstanceProfileName:
     Value: !Ref DoctorPortalInstanceProfile

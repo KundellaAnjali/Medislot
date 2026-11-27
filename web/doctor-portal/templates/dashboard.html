@@ -323,7 +323,7 @@
                   <option value="no_show" {{ 'selected' if appointments_status == 'no_show' else '' }}>No Show</option>
                 </select>
               </label>
-              <button class="button secondary" type="button" id="clear-doctor-appointment-filters">Clear filters</button>
+              <button class="button secondary" type="button" id="clear-doctor-appointment-filters">Clear search</button>
             </form>
             <p class="schedule-filter-count" id="doctor-appointment-count" aria-live="polite"></p>
             <div class="patient-appointment-list">
@@ -382,6 +382,15 @@
                         data-refund-amount="{{ appointment.refund_amount if appointment.refund_amount is not none else '' }}"
                         data-transaction-id="{{ appointment.transaction_id or '' }}">View Payment Details</button>
                       {% if is_booked %}
+                        {% if appointment.is_ended %}
+                          <form method="post" action="{{ url_for('mark_doctor_appointment_completed', appointment_id=appointment.appointment_id) }}" class="doctor-appointment-complete-form" data-doctor-appointment-complete-form>
+                            <input type="hidden" name="appointments_date" value="{{ appointments_date }}">
+                            <input type="hidden" name="appointments_status" value="{{ appointments_status }}">
+                            <input type="hidden" name="appointments_search" value="{{ appointments_search }}">
+                            <input type="hidden" name="appointments_offset" value="{{ appointments_offset }}">
+                            <button class="button secondary" type="button" data-open-doctor-complete>Mark Completed</button>
+                          </form>
+                        {% endif %}
                         <form method="post" action="{{ url_for('mark_doctor_appointment_no_show', appointment_id=appointment.appointment_id) }}" class="doctor-appointment-no-show-form" data-doctor-appointment-no-show-form>
                           <input type="hidden" name="appointments_date" value="{{ appointments_date }}">
                           <input type="hidden" name="appointments_status" value="{{ appointments_status }}">
@@ -453,6 +462,17 @@
             <button class="button danger-button" type="button" id="confirm-doctor-appointment-no-show">Confirm</button>
           </div>
         </dialog>
+        <dialog class="schedule-dialog cancel-confirm-dialog" id="doctor-appointment-complete-dialog" aria-labelledby="doctor-appointment-complete-title">
+          <div class="schedule-dialog-header">
+            <div><p class="eyebrow">Please confirm</p><h2 id="doctor-appointment-complete-title">Mark appointment completed?</h2></div>
+            <button class="icon-button" type="button" data-close-doctor-complete aria-label="Close completion confirmation">&times;</button>
+          </div>
+          <p class="cancel-warning">Confirm that the patient attended the consultation.</p>
+          <div class="schedule-dialog-actions">
+            <button class="button secondary" type="button" data-close-doctor-complete>Close</button>
+            <button class="button primary" type="button" id="confirm-doctor-appointment-complete">Confirm</button>
+          </div>
+        </dialog>
       </section>
 
       <section class="dashboard-view" id="consulting-view" data-view hidden>
@@ -474,7 +494,7 @@
                 <input name="capacity" id="consultation-capacity" type="number" min="1" max="10" value="1" required>
               </label>
               <input name="duration_minutes" id="consultation-duration" type="hidden" value="15">
-              <button class="button primary consultation-add-button" type="submit">Add consultation</button>
+              <button class="button primary consultation-add-button" type="submit">Add</button>
             </fieldset>
           </form>
           {% if not profile.is_verified %}<p class="form-hint">Complete your profile verification to add or edit consultation types.</p>{% endif %}
@@ -830,6 +850,23 @@
       activeDoctorAppointmentNoShowForm.elements.appointments_search.value = submittedDoctorAppointmentSearch;
       activeDoctorAppointmentNoShowForm.elements.appointments_offset.value = doctorAppointmentOffset?.value || '0';
       activeDoctorAppointmentNoShowForm.requestSubmit();
+    });
+    const doctorAppointmentCompleteDialog = document.getElementById('doctor-appointment-complete-dialog');
+    let activeDoctorAppointmentCompleteForm = null;
+    document.querySelectorAll('[data-open-doctor-complete]').forEach(button => button.addEventListener('click', () => {
+      activeDoctorAppointmentCompleteForm = button.closest('[data-doctor-appointment-complete-form]');
+      doctorAppointmentCompleteDialog.showModal();
+    }));
+    document.querySelectorAll('[data-close-doctor-complete]').forEach(button => button.addEventListener('click', () => {
+      doctorAppointmentCompleteDialog.close();
+    }));
+    document.getElementById('confirm-doctor-appointment-complete')?.addEventListener('click', () => {
+      if (!activeDoctorAppointmentCompleteForm) return;
+      activeDoctorAppointmentCompleteForm.elements.appointments_date.value = doctorAppointmentsDate?.value || '';
+      activeDoctorAppointmentCompleteForm.elements.appointments_status.value = doctorAppointmentStatus?.value || 'all';
+      activeDoctorAppointmentCompleteForm.elements.appointments_search.value = submittedDoctorAppointmentSearch;
+      activeDoctorAppointmentCompleteForm.elements.appointments_offset.value = doctorAppointmentOffset?.value || '0';
+      activeDoctorAppointmentCompleteForm.requestSubmit();
     });
     document.querySelectorAll('[data-confirm-slot]').forEach(button => button.addEventListener('click', () => {
       activeCancellationForm = button.closest('form');

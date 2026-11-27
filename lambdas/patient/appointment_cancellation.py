@@ -74,6 +74,10 @@ class AppointmentCancellationService:
                     for key, value in cancellation.items()
                     if key not in {"refund_tier", "_notification"}
                 }
+                cancellation_event["cancelled_by"] = role
+                cancellation_event["notification_id"] = (
+                    f"appointment-cancelled-{cancellation['appointment_id']}-{role.lower()}"
+                )
                 cancellation_event["patient_email"] = cancellation[
                     "_notification"
                 ]["email"]
@@ -126,12 +130,14 @@ class AppointmentCancellationService:
         if role != "DOCTOR":
             raise CancellationError(403, "Only the assigned doctor can mark a no-show.")
         try:
-            return self.repository.mark_no_show(
+            result = self.repository.mark_no_show(
                 user_id=user_id,
                 appointment_id=appointment_id,
                 refund_service=self.refund_service,
                 now=datetime.now(timezone.utc),
             )
+            publish_outcome_events(result)
+            return result
         except RefundServiceError as error:
             logger.exception("Could not calculate no-show refund")
             raise CancellationError(
@@ -140,11 +146,37 @@ class AppointmentCancellationService:
         except AppointmentRepositoryError as error:
             raise CancellationError(error.status_code, str(error)) from error
 
+    def mark_completed(self, role, user_id, appointment_id):
+        if role != "DOCTOR":
+            raise CancellationError(403, "Only the assigned doctor can complete an appointment.")
+        try:
+            result = self.repository.mark_completed(
+                user_id=user_id,
+                appointment_id=appointment_id,
+                now=datetime.now(timezone.utc),
+            )
+            publish_completed_event(result)
+            return result
+        except AppointmentRepositoryError as error:
+            raise CancellationError(error.status_code, str(error)) from error
+
 
 def release_cancelled_seat(cancellation):
     appointment_id = str(cancellation["appointment_id"])
     marker_key = f"seat-release:{appointment_id}"
     now = datetime.now(timezone.utc)
+    start_time = slot_key_value(cancellation["slot_start_time"])
+    current_slot = slots_table.get_item(
+        Key={
+            "doctor_id": int(cancellation["doctor_id"]),
+            "slot_start_time": start_time,
+        },
+        ConsistentRead=True,
+    ).get("Item")
+    if not current_slot:
+        raise CancellationError(
+            503, "The cancelled appointment slot could not be located."
+        )
     try:
         ddb_client.transact_write_items(
             TransactItems=[
@@ -191,7 +223,7 @@ def release_cancelled_seat(cancellation):
                         "ConditionExpression": (
                             "attribute_exists(doctor_id) "
                             "AND attribute_exists(slot_start_time) "
-                            "AND booked_count >= :one"
+                            "AND booked_count >= :one "
                         ),
                         "ExpressionAttributeValues": {
                             ":one": {"N": "1"}
@@ -216,7 +248,7 @@ def release_cancelled_seat(cancellation):
     slot = slots_table.get_item(
         Key={
             "doctor_id": int(cancellation["doctor_id"]),
-            "slot_start_time": slot_key_value(cancellation["slot_start_time"]),
+            "slot_start_time": start_time,
         },
         ConsistentRead=True,
     ).get("Item")
@@ -228,6 +260,19 @@ def release_cancelled_seat(cancellation):
 
 
 def publish_cancellation_events(cancellation_event, seat_event):
+    refund_event = {
+        "notification_id": (
+            f"refund-recorded-{cancellation_event['appointment_id']}"
+        ),
+        "appointment_id": cancellation_event["appointment_id"],
+        "patient_id": cancellation_event["patient_id"],
+        "doctor_id": cancellation_event["doctor_id"],
+        "refund_amount": cancellation_event["refund_amount"],
+        "deduction_amount": cancellation_event["deduction_amount"],
+        "refund_percentage": cancellation_event["refund_percentage"],
+        "refund_reason": cancellation_event["refund_reason"],
+        "status": "RECORDED",
+    }
     result = eventbridge.put_events(
         Entries=[
             {
@@ -242,16 +287,90 @@ def publish_cancellation_events(cancellation_event, seat_event):
                 "DetailType": "SlotSeatFreed",
                 "Detail": json.dumps(seat_event, separators=(",", ":")),
             },
+            {
+                "EventBusName": EVENT_BUS_NAME,
+                "Source": "medislot.appointments",
+                "DetailType": "RefundRecorded",
+                "Detail": json.dumps(refund_event, separators=(",", ":")),
+            },
         ]
     )
     entries = result.get("Entries", [])
     if (
         result.get("FailedEntryCount", 0)
-        or len(entries) != 2
+        or len(entries) != 3
         or any(not entry.get("EventId") for entry in entries)
     ):
         raise CancellationError(
             503, "Cancellation was saved, but its events could not be published."
+        )
+
+
+def publish_outcome_events(result):
+    appointment_event = {
+        "notification_id": f"appointment-no-show-{result['appointment_id']}",
+        "appointment_id": str(result["appointment_id"]),
+        "patient_id": str(result["patient_id"]),
+        "doctor_id": str(result["doctor_id"]),
+        "slot_id": str(result["slot_id"]),
+        "slot_start_time": result["slot_start_time"],
+        "status": "NO_SHOW",
+        "refund_amount": str(result["refund_amount"]),
+        "refund_reason": result["refund_reason"],
+    }
+    refund_event = {
+        "notification_id": f"refund-recorded-no-show-{result['appointment_id']}",
+        "appointment_id": str(result["appointment_id"]),
+        "patient_id": str(result["patient_id"]),
+        "doctor_id": str(result["doctor_id"]),
+        "refund_amount": str(result["refund_amount"]),
+        "refund_reason": result["refund_reason"],
+        "status": "NOT_REQUIRED",
+    }
+    entries = [
+        {
+            "EventBusName": EVENT_BUS_NAME,
+            "Source": "medislot.appointments",
+            "DetailType": detail_type,
+            "Detail": json.dumps(detail, separators=(",", ":")),
+        }
+        for detail_type, detail in (
+            ("AppointmentNoShow", appointment_event),
+            ("RefundRecorded", refund_event),
+        )
+    ]
+    response = eventbridge.put_events(Entries=entries)
+    if response.get("FailedEntryCount", 0) or len(response.get("Entries", [])) != 2:
+        raise CancellationError(
+            503, "No-show was saved, but its events could not be published."
+        )
+
+
+def publish_completed_event(result):
+    detail = {
+        "notification_id": f"appointment-completed-{result['appointment_id']}",
+        "appointment_id": str(result["appointment_id"]),
+        "patient_id": str(result["patient_id"]),
+        "doctor_id": str(result["doctor_id"]),
+        "slot_id": str(result["slot_id"]),
+        "slot_start_time": result["slot_start_time"],
+        "status": "COMPLETED",
+    }
+    response = eventbridge.put_events(
+        Entries=[
+            {
+                "EventBusName": EVENT_BUS_NAME,
+                "Source": "medislot.appointments",
+                "DetailType": "AppointmentCompleted",
+                "Detail": json.dumps(detail, separators=(",", ":")),
+            }
+        ]
+    )
+    if response.get("FailedEntryCount", 0) or not response.get("Entries", [{}])[0].get(
+        "EventId"
+    ):
+        raise CancellationError(
+            503, "Appointment was completed, but its event could not be published."
         )
 
 

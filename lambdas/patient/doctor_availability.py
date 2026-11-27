@@ -129,7 +129,7 @@ def get_slots(doctor_id, start_date, end_date):
                 "end_time": slot["slot_end_time"],
                 "capacity": capacity,
                 "booked_count": booked_count,
-                "available_seats": capacity - booked_count,
+                "available_seats": max(capacity - booked_count, 0),
                 "is_full": booked_count >= capacity,
             }
         )

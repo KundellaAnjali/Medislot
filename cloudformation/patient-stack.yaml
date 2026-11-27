@@ -159,7 +159,7 @@ Resources:
     Properties:
       Description: Complete appointments after their consultation duration ends
       ScheduleExpression: rate(5 minutes)
-      State: ENABLED
+      State: DISABLED
       Targets:
         - Id: AppointmentCompletionTarget
           Arn: !GetAtt AppointmentCompletionFunction.Arn
@@ -171,6 +171,506 @@ Resources:
       FunctionName: !Ref AppointmentCompletionFunction
       Principal: events.amazonaws.com
       SourceArn: !GetAtt AppointmentCompletionSchedule.Arn
+
+  RescheduleApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-appointment-reschedule-api"
+      Handler: reschedule_api.lambda_handler
+      CodeUri: ../lambdas/patient/
+      Role:
+        Fn::ImportValue: !Sub "${EnvironmentName}-PatientMilestone6LambdaRoleArn"
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+          RESCHEDULE_STATE_MACHINE_ARN: !GetAtt AppointmentRescheduleStateMachine.Arn
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetAId"
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+  RescheduleValidateClaimFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-reschedule-validate-claim"
+      Handler: reschedule_workflow.validate_and_claim
+      CodeUri: ../lambdas/patient/
+      Role:
+        Fn::ImportValue: !Sub "${EnvironmentName}-PatientMilestone6LambdaRoleArn"
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots-v2"
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetAId"
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+  RescheduleUpdateAppointmentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-reschedule-update-appointment"
+      Handler: reschedule_workflow.update_appointment
+      CodeUri: ../lambdas/patient/
+      Role:
+        Fn::ImportValue: !Sub "${EnvironmentName}-PatientMilestone6LambdaRoleArn"
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetAId"
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+  RescheduleReleaseOriginalFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-reschedule-release-original"
+      Handler: reschedule_workflow.release_original
+      CodeUri: ../lambdas/patient/
+      Role:
+        Fn::ImportValue: !Sub "${EnvironmentName}-PatientMilestone6LambdaRoleArn"
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots-v2"
+          IDEMPOTENCY_TABLE_NAME: !Sub "${EnvironmentName}-idempotency-keys"
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetAId"
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+  RescheduleCompensateFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-reschedule-compensate"
+      Handler: reschedule_workflow.compensate
+      CodeUri: ../lambdas/patient/
+      Role:
+        Fn::ImportValue: !Sub "${EnvironmentName}-PatientMilestone6LambdaRoleArn"
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots-v2"
+          IDEMPOTENCY_TABLE_NAME: !Sub "${EnvironmentName}-idempotency-keys"
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetAId"
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+  ReschedulePublishEventsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-reschedule-publish-events"
+      Handler: reschedule_workflow.publish_rescheduled
+      CodeUri: ../lambdas/patient/
+      Role:
+        Fn::ImportValue: !Sub "${EnvironmentName}-PatientMilestone6LambdaRoleArn"
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetAId"
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+  AppointmentRescheduleStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub "${EnvironmentName}-appointment-reschedule"
+      StateMachineType: STANDARD
+      RoleArn:
+        Fn::ImportValue: !Sub "${EnvironmentName}-RescheduleStateMachineRoleArn"
+      DefinitionString: !Sub
+        - |
+          {
+            "StartAt": "ValidateAndClaim",
+            "States": {
+              "ValidateAndClaim": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "Parameters": {
+                  "FunctionName": "${ValidateFunctionArn}",
+                  "Payload.$": "$"
+                },
+                "ResultSelector": {"claim.$": "$.Payload"},
+                "ResultPath": "$.claimState",
+                "Next": "UpdateAppointment"
+              },
+              "UpdateAppointment": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "Parameters": {
+                  "FunctionName": "${UpdateFunctionArn}",
+                  "Payload": {"claim.$": "$.claimState.claim"}
+                },
+                "ResultSelector": {"saved.$": "$.Payload"},
+                "ResultPath": "$.updateState",
+                "Next": "ReleaseOriginal",
+                "Catch": [
+                  {
+                    "ErrorEquals": ["States.ALL"],
+                    "ResultPath": "$.error",
+                    "Next": "Compensate"
+                  }
+                ]
+              },
+              "ReleaseOriginal": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "Parameters": {
+                  "FunctionName": "${ReleaseFunctionArn}",
+                  "Payload": {"claim.$": "$.claimState.claim"}
+                },
+                "ResultPath": "$.releaseState",
+                "Next": "PublishEvents",
+                "Catch": [
+                  {
+                    "ErrorEquals": ["States.ALL"],
+                    "ResultPath": "$.error",
+                    "Next": "Compensate"
+                  }
+                ]
+              },
+              "PublishEvents": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "Parameters": {
+                  "FunctionName": "${PublishFunctionArn}",
+                  "Payload": {"claim.$": "$.claimState.claim"}
+                },
+                "ResultSelector": {"result.$": "$.Payload"},
+                "Retry": [
+                  {
+                    "ErrorEquals": ["States.ALL"],
+                    "IntervalSeconds": 2,
+                    "MaxAttempts": 3,
+                    "BackoffRate": 2
+                  }
+                ],
+                "End": true
+              },
+              "Compensate": {
+                "Type": "Task",
+                "Resource": "arn:aws:states:::lambda:invoke",
+                "Parameters": {
+                  "FunctionName": "${CompensateFunctionArn}",
+                  "Payload.$": "$"
+                },
+                "ResultSelector": {"result.$": "$.Payload"},
+                "End": true
+              }
+            }
+          }
+        - ValidateFunctionArn: !GetAtt RescheduleValidateClaimFunction.Arn
+          UpdateFunctionArn: !GetAtt RescheduleUpdateAppointmentFunction.Arn
+          ReleaseFunctionArn: !GetAtt RescheduleReleaseOriginalFunction.Arn
+          PublishFunctionArn: !GetAtt ReschedulePublishEventsFunction.Arn
+          CompensateFunctionArn: !GetAtt RescheduleCompensateFunction.Arn
+
+  WaitlistApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-patient-waitlists"
+      Handler: waitlist_api.lambda_handler
+      CodeUri: ../lambdas/patient/
+      Role:
+        Fn::ImportValue: !Sub "${EnvironmentName}-PatientMilestone6LambdaRoleArn"
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+          WAITLIST_TABLE_NAME: !Sub "${EnvironmentName}-waitlist"
+          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots-v2"
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetAId"
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+  WaitlistOfferApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-patient-waitlist-offers"
+      Handler: waitlist_offer_api.lambda_handler
+      CodeUri: ../lambdas/patient/
+      Role:
+        Fn::ImportValue: !Sub "${EnvironmentName}-PatientMilestone6LambdaRoleArn"
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+          WAITLIST_TABLE_NAME: !Sub "${EnvironmentName}-waitlist"
+          WAITLIST_OFFERS_TABLE_NAME: !Sub "${EnvironmentName}-waitlist-offers"
+          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots-v2"
+          IDEMPOTENCY_TABLE_NAME: !Sub "${EnvironmentName}-idempotency-keys"
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetAId"
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+  WaitlistPromotionFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-waitlist-promotion"
+      Handler: waitlist_jobs.promotion_lambda_handler
+      CodeUri: ../lambdas/patient/
+      Role:
+        Fn::ImportValue: !Sub "${EnvironmentName}-PatientMilestone6LambdaRoleArn"
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+          WAITLIST_TABLE_NAME: !Sub "${EnvironmentName}-waitlist"
+          WAITLIST_OFFERS_TABLE_NAME: !Sub "${EnvironmentName}-waitlist-offers"
+          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots-v2"
+          IDEMPOTENCY_TABLE_NAME: !Sub "${EnvironmentName}-idempotency-keys"
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetAId"
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+  WaitlistExpiryFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-waitlist-expiry"
+      Handler: waitlist_jobs.expiry_lambda_handler
+      CodeUri: ../lambdas/patient/
+      Role:
+        Fn::ImportValue: !Sub "${EnvironmentName}-PatientMilestone6LambdaRoleArn"
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+          WAITLIST_TABLE_NAME: !Sub "${EnvironmentName}-waitlist"
+          WAITLIST_OFFERS_TABLE_NAME: !Sub "${EnvironmentName}-waitlist-offers"
+          SLOTS_TABLE_NAME: !Sub "${EnvironmentName}-slots-v2"
+          IDEMPOTENCY_TABLE_NAME: !Sub "${EnvironmentName}-idempotency-keys"
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetAId"
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+  ReminderDispatcherFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-appointment-reminder-dispatcher"
+      Handler: milestone6_scheduled_jobs.reminder_lambda_handler
+      CodeUri: ../lambdas/patient/
+      Role:
+        Fn::ImportValue: !Sub "${EnvironmentName}-PatientMilestone6LambdaRoleArn"
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetAId"
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+  NoShowSweeperFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-appointment-no-show-sweeper"
+      Handler: milestone6_scheduled_jobs.no_show_lambda_handler
+      CodeUri: ../lambdas/patient/
+      Role:
+        Fn::ImportValue: !Sub "${EnvironmentName}-PatientMilestone6LambdaRoleArn"
+      Environment:
+        Variables:
+          ENVIRONMENT_NAME: !Ref EnvironmentName
+      VpcConfig:
+        SecurityGroupIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-LambdaSecurityGroupId"
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetAId"
+          - Fn::ImportValue: !Sub "${EnvironmentName}-PrivateSubnetBId"
+
+  AppointmentNotificationsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${EnvironmentName}-appointment-notifications"
+
+  AppointmentNotificationsDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${EnvironmentName}-appointment-notifications-dlq"
+      MessageRetentionPeriod: 1209600
+
+  AppointmentNotificationsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${EnvironmentName}-appointment-notifications"
+      VisibilityTimeout: 180
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt AppointmentNotificationsDeadLetterQueue.Arn
+        maxReceiveCount: 5
+
+  AppointmentNotificationsQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref AppointmentNotificationsQueue
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt AppointmentNotificationsQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:rule/${EnvironmentName}-appointment-notification-events"
+
+  AppointmentNotificationEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "${EnvironmentName}-appointment-notification-events"
+      Description: Buffer appointment and waitlist notification events
+      EventPattern:
+        source:
+          - medislot.appointments
+        detail-type:
+          - AppointmentBooked
+          - AppointmentRescheduled
+          - AppointmentCancelled
+          - AppointmentCompleted
+          - AppointmentNoShow
+          - RefundRecorded
+          - WaitlistHoldOfferIssued
+          - OfferExpired
+          - WaitlistJoined
+          - WaitlistLeft
+          - WaitlistPromotionAccepted
+          - AppointmentReminder
+      State: ENABLED
+      Targets:
+        - Id: AppointmentNotificationsQueueTarget
+          Arn: !GetAtt AppointmentNotificationsQueue.Arn
+
+  SlotSeatFreedPromotionRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Promote the first patient when an appointment seat is released
+      EventPattern:
+        source:
+          - medislot.appointments
+        detail-type:
+          - SlotSeatFreed
+      State: ENABLED
+      Targets:
+        - Id: WaitlistPromotionTarget
+          Arn: !GetAtt WaitlistPromotionFunction.Arn
+
+  WaitlistPromotionInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref WaitlistPromotionFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt SlotSeatFreedPromotionRule.Arn
+
+  WaitlistExpirySchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Expire waitlist offers and promote the next patient
+      ScheduleExpression:
+        Fn::Sub:
+          - "rate(${SweepMinutes} minutes)"
+          - SweepMinutes:
+              Fn::ImportValue: !Sub "${EnvironmentName}-OfferExpirySweepIntervalMinutes"
+      State: ENABLED
+      Targets:
+        - Id: WaitlistExpiryTarget
+          Arn: !GetAtt WaitlistExpiryFunction.Arn
+
+  WaitlistExpiryInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref WaitlistExpiryFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt WaitlistExpirySchedule.Arn
+
+  ReminderDispatcherSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Publish appointment reminders within the configured windows
+      ScheduleExpression:
+        Fn::Sub:
+          - "rate(${SweepMinutes} minutes)"
+          - SweepMinutes:
+              Fn::ImportValue: !Sub "${EnvironmentName}-ReminderSweepIntervalMinutes"
+      State: ENABLED
+      Targets:
+        - Id: ReminderDispatcherTarget
+          Arn: !GetAtt ReminderDispatcherFunction.Arn
+
+  ReminderDispatcherInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref ReminderDispatcherFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ReminderDispatcherSchedule.Arn
+
+  NoShowSweeperSchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Mark appointments without a recorded outcome as no-show
+      ScheduleExpression:
+        Fn::Sub:
+          - "rate(${SweepMinutes} minutes)"
+          - SweepMinutes:
+              Fn::ImportValue: !Sub "${EnvironmentName}-NoShowSweepIntervalMinutes"
+      State: ENABLED
+      Targets:
+        - Id: NoShowSweeperTarget
+          Arn: !GetAtt NoShowSweeperFunction.Arn
+
+  NoShowSweeperInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref NoShowSweeperFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt NoShowSweeperSchedule.Arn
+
+  AppointmentNotificationDispatcherFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${EnvironmentName}-appointment-notification-dispatcher"
+      Handler: notification_dispatcher.lambda_handler
+      CodeUri: ../lambdas/patient/
+      Role:
+        Fn::ImportValue: !Sub "${EnvironmentName}-PatientMilestone6LambdaRoleArn"
+      Environment:
+        Variables:
+          IDEMPOTENCY_TABLE_NAME: !Sub "${EnvironmentName}-idempotency-keys"
+          NOTIFICATION_TOPIC_ARN: !Ref AppointmentNotificationsTopic
+      Events:
+        AppointmentNotificationMessages:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt AppointmentNotificationsQueue.Arn
+            BatchSize: 10
 
   AppointmentEmailNotificationsTable:
     Type: AWS::DynamoDB::Table
@@ -238,7 +738,7 @@ Resources:
           - medislot.appointments
         detail-type:
           - AppointmentBooked
-      State: ENABLED
+      State: DISABLED
       Targets:
         - Id: AppointmentBookedEmailTarget
           Arn: !GetAtt AppointmentNotificationFunction.Arn
@@ -252,7 +752,7 @@ Resources:
           - medislot.appointments
         detail-type:
           - AppointmentCancelled
-      State: ENABLED
+      State: DISABLED
       Targets:
         - Id: AppointmentCancelledEmailTarget
           Arn: !GetAtt AppointmentNotificationFunction.Arn
@@ -392,6 +892,56 @@ Resources:
         Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
       ParentId: !Ref AppointmentIdResource
       PathPart: no-show
+
+  AppointmentCompleteResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ParentId: !Ref AppointmentIdResource
+      PathPart: complete
+
+  WaitlistsResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ParentId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiRootResourceId"
+      PathPart: waitlists
+
+  WaitlistIdResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ParentId: !Ref WaitlistsResource
+      PathPart: "{waitlist_id}"
+
+  WaitlistOffersResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ParentId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiRootResourceId"
+      PathPart: waitlist-offers
+
+  WaitlistOfferIdResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ParentId: !Ref WaitlistOffersResource
+      PathPart: "{offer_id}"
+
+  WaitlistOfferAcceptResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ParentId: !Ref WaitlistOfferIdResource
+      PathPart: accept
 
   PatientRefundsResource:
     Type: AWS::ApiGateway::Resource
@@ -554,6 +1104,104 @@ Resources:
         IntegrationHttpMethod: POST
         Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AppointmentsFunction.Arn}/invocations"
 
+  AppointmentCompleteMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ResourceId: !Ref AppointmentCompleteResource
+      HttpMethod: POST
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref PatientApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AppointmentsFunction.Arn}/invocations"
+
+  AppointmentRescheduleMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ResourceId: !Ref AppointmentIdResource
+      HttpMethod: PATCH
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref PatientApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${RescheduleApiFunction.Arn}/invocations"
+
+  WaitlistsGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ResourceId: !Ref WaitlistsResource
+      HttpMethod: GET
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref PatientApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WaitlistApiFunction.Arn}/invocations"
+
+  WaitlistsPostMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ResourceId: !Ref WaitlistsResource
+      HttpMethod: POST
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref PatientApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WaitlistApiFunction.Arn}/invocations"
+
+  WaitlistDeleteMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ResourceId: !Ref WaitlistIdResource
+      HttpMethod: DELETE
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref PatientApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WaitlistApiFunction.Arn}/invocations"
+
+  WaitlistOffersGetMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ResourceId: !Ref WaitlistOffersResource
+      HttpMethod: GET
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref PatientApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WaitlistOfferApiFunction.Arn}/invocations"
+
+  WaitlistOfferAcceptMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId:
+        Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+      ResourceId: !Ref WaitlistOfferAcceptResource
+      HttpMethod: POST
+      AuthorizationType: CUSTOM
+      AuthorizerId: !Ref PatientApiAuthorizer
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${WaitlistOfferApiFunction.Arn}/invocations"
+
   PatientRefundsGetMethod:
     Type: AWS::ApiGateway::Method
     Properties:
@@ -661,6 +1309,54 @@ Resources:
       SourceArn:
         Fn::Sub:
           - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*/POST/appointments/*/no-show"
+          - ApiId:
+              Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+
+  AppointmentCompleteInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AppointmentsFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub:
+          - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*/POST/appointments/*/complete"
+          - ApiId:
+              Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+
+  RescheduleApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref RescheduleApiFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub:
+          - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*/PATCH/appointments/*"
+          - ApiId:
+              Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+
+  WaitlistApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref WaitlistApiFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub:
+          - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*/*/waitlists*"
+          - ApiId:
+              Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
+
+  WaitlistOfferApiInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref WaitlistOfferApiFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn:
+        Fn::Sub:
+          - "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiId}/*/*/waitlist-offers*"
           - ApiId:
               Fn::ImportValue: !Sub "${EnvironmentName}-MedislotApiId"
 

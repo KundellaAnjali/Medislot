@@ -15,6 +15,7 @@
       <button class="patient-sidebar-link is-active" type="button" data-patient-view-target="patient-dashboard-view" aria-current="page"><span aria-hidden="true">&#9638;</span>Dashboard</button>
       <button class="patient-sidebar-link" type="button" data-patient-view-target="doctor-search-view"><span aria-hidden="true">&#9906;</span>Doctors search</button>
       <button class="patient-sidebar-link" type="button" data-patient-view-target="patient-appointments-view"><span aria-hidden="true">&#9776;</span>Appointments</button>
+      <button class="patient-sidebar-link" type="button" data-patient-view-target="patient-waitlists-view"><span aria-hidden="true">&#9829;</span>Waitlists</button>
     </nav>
     <div class="patient-sidebar-bottom">
       <button class="patient-sidebar-link" type="button" data-patient-view-target="patient-profile-view"><span aria-hidden="true">&#9679;</span>Profile</button>
@@ -105,7 +106,7 @@
             <option value="no_show">Not visited</option>
             <option value="completed">Completed</option>
           </select>
-          <button class="button secondary" type="button" id="clear-appointment-filters">Clear filters</button>
+          <button class="button secondary" type="button" id="clear-appointment-filters">Clear search</button>
         </div>
         <p class="schedule-filter-count" id="patient-appointment-count" aria-live="polite"></p>
         <div class="patient-appointment-list">
@@ -140,6 +141,7 @@
                   data-refund-reference="{{ appointment.refund_transaction_id or '' }}">View Payment Details</button></p>
               </div>
               {% if upcoming_active %}
+                <a class="button secondary" href="{{ url_for('patient_doctor_availability', doctor_id=appointment.doctor_id, reschedule_appointment_id=appointment.appointment_id) }}">Reschedule</a>
                 <form method="post" action="{{ url_for('cancel_patient_appointment', appointment_id=appointment.appointment_id) }}" class="patient-cancel-form" data-patient-cancel-form data-appointment-id="{{ appointment.appointment_id }}" data-doctor-name="Dr. {{ appointment.doctor_name }}" data-appointment-time="{{ appointment.slot_start_time }}">
                   <button class="button secondary danger-text" type="button" data-open-cancel-dialog>Cancel appointment</button>
                 </form>
@@ -162,6 +164,61 @@
       {% else %}
         <div class="schedule-empty-state patient-empty-state"><span class="schedule-empty-icon" aria-hidden="true">&#9829;</span><h2>No appointments found</h2><p>Your booked appointments will appear here. Search for a doctor to get started.</p><button class="button primary" type="button" data-patient-go-view="doctor-search-view">Find a doctor</button></div>
       {% endif %}
+        </section>
+      </section>
+
+      <section class="patient-dashboard-view" id="patient-waitlists-view" data-patient-view hidden>
+        <section class="view-heading patient-view-heading">
+          <div><p class="eyebrow">Stay in line for care</p><h1>Waitlists &amp; offers</h1><p class="view-subtitle">Track full appointment slots and accept time-limited offers.</p></div>
+          <button class="button secondary" type="button" data-refresh-waitlists>Refresh</button>
+        </section>
+        {% if waitlists_error %}
+          <p class="notice error" role="alert">Your waitlists and offers could not be loaded.</p>
+        {% endif %}
+        <section class="dashboard-panel patient-waitlist-panel">
+          <div class="patient-profile-heading"><div><p class="eyebrow">Time-sensitive</p><h2>Pending offers</h2></div><span class="count-label">{{ (patient_waitlist_offers|default([]))|selectattr('status', 'equalto', 'ACTIVE')|list|length }} active</span></div>
+          {% set active_offers = (patient_waitlist_offers|default([]))|selectattr('status', 'equalto', 'ACTIVE')|list %}
+          {% if active_offers %}
+            <div class="patient-appointment-list">
+              {% for offer in active_offers %}
+                <article class="patient-appointment-card">
+                  <div class="patient-appointment-details">
+                    <div class="appointment-card-heading"><div><span class="schedule-field-label">Offer expires</span><h3><time data-offer-expiry="{{ offer.expires_at }}">{{ offer.expires_at }}</time></h3></div><span class="status-badge status-booked">Action required</span></div>
+                    <p><strong>Date and time</strong><time class="patient-appointment-time" datetime="{{ offer.slot_start_time }}">{{ offer.slot_start_time }}</time></p>
+                    <p><strong>Consultation</strong><span>{{ offer.consultation_type_id }}</span></p>
+                  </div>
+                  <form method="post" action="{{ url_for('accept_patient_waitlist_offer', offer_id=offer.offer_id) }}">
+                    <button class="button primary" type="submit">Accept offer</button>
+                  </form>
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="schedule-empty-state patient-empty-state"><span class="schedule-empty-icon" aria-hidden="true">&#9829;</span><h2>No offers waiting</h2><p>When a seat opens for a slot on your waitlist, an offer will appear here.</p></div>
+          {% endif %}
+        </section>
+        <section class="dashboard-panel patient-waitlist-panel">
+          <div class="patient-profile-heading"><div><p class="eyebrow">Your queue</p><h2>Active waitlists</h2></div><span class="count-label">{{ (patient_waitlists|default([]))|length }} entries</span></div>
+          {% if patient_waitlists %}
+            <div class="patient-appointment-list">
+              {% for waitlist in patient_waitlists %}
+                <article class="patient-appointment-card">
+                  <div class="patient-appointment-details">
+                    <div class="appointment-card-heading"><div><span class="schedule-field-label">Joined</span><h3>{{ waitlist.joined_at[:10] }}</h3></div><span class="status-badge {{ 'status-booked' if waitlist.status == 'OFFERED' else 'status-pending' }}">{{ waitlist.status|title }}</span></div>
+                    <p><strong>Date and time</strong><time class="patient-appointment-time" datetime="{{ waitlist.slot_start_time }}">{{ waitlist.slot_start_time }}</time></p>
+                    <p><strong>Consultation</strong><span>{{ waitlist.consultation_type_id }}</span></p>
+                  </div>
+                  {% if waitlist.status == 'WAITING' %}
+                    <form method="post" action="{{ url_for('leave_patient_waitlist', waitlist_id=waitlist.waitlist_id) }}" data-confirm-message="Leave this appointment waitlist?">
+                      <button class="button secondary danger-text" type="submit">Leave waitlist</button>
+                    </form>
+                  {% endif %}
+                </article>
+              {% endfor %}
+            </div>
+          {% else %}
+            <div class="schedule-empty-state patient-empty-state"><span class="schedule-empty-icon" aria-hidden="true">&#9776;</span><h2>No active waitlists</h2><p>Join the queue for a full slot from the doctor’s availability page.</p></div>
+          {% endif %}
         </section>
       </section>
 
@@ -204,7 +261,7 @@
             </label>
             <input type="hidden" name="limit" value="{{ doctor_search.pagination.limit if doctor_search else 10 }}">
             <button class="button primary" type="submit">Search doctors</button>
-            <a class="button secondary" href="{{ url_for('patient_doctor_search') }}">Clear filters</a>
+            <a class="button secondary" href="{{ url_for('patient_doctor_search') }}">Clear search</a>
           </form>
 
           {% if doctor_search %}
@@ -434,6 +491,16 @@
         }).format(parsed);
       }
     });
+    document.querySelectorAll('[data-offer-expiry]').forEach(element => {
+      const parsed = new Date(Number(element.dataset.offerExpiry) * 1000);
+      if (!Number.isNaN(parsed.getTime())) {
+        element.textContent = new Intl.DateTimeFormat('en-GB', {
+          day: '2-digit', month: 'short', year: 'numeric',
+          hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
+        }).format(parsed);
+      }
+    });
+    document.querySelector('[data-refresh-waitlists]')?.addEventListener('click', () => window.location.reload());
 
     const patientCancelDialog = document.getElementById('patient-cancel-dialog');
     let patientCancelForm = null;

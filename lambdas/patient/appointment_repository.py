@@ -11,7 +11,6 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 ENVIRONMENT = os.environ["ENVIRONMENT_NAME"]
-MAX_ACTIVE_APPOINTMENTS_PER_DOCTOR = 3
 ssm = boto3.client("ssm")
 parameter_cache = {}
 
@@ -93,10 +92,15 @@ class AppointmentRepository:
                     (patient_id, doctor_id),
                 )
                 active_count = int(cursor.fetchone()["active_count"])
-                if active_count >= MAX_ACTIVE_APPOINTMENTS_PER_DOCTOR:
+                max_active_appointments = int(
+                    get_parameter(
+                        f"/medislot/{ENVIRONMENT}/patient-booking/max-active-bookings"
+                    )
+                )
+                if active_count >= max_active_appointments:
                     raise AppointmentRepositoryError(
                         409,
-                        f"You can have up to {MAX_ACTIVE_APPOINTMENTS_PER_DOCTOR} upcoming active appointments with this doctor.",
+                        f"You can have up to {max_active_appointments} upcoming active appointments with this doctor.",
                     )
 
                 cursor.execute(
@@ -717,11 +721,93 @@ class AppointmentRepository:
             connection.commit()
             return {
                 "appointment_id": appointment_id,
+                "patient_id": int(appointment["patient_id"]),
+                "doctor_id": int(appointment["doctor_id"]),
+                "slot_id": int(appointment["slot_id"]),
+                "slot_start_time": appointment_datetime.isoformat(),
                 "status": "NO_SHOW",
                 "refund_amount": refund["refund_amount"],
                 "deduction_amount": refund["deduction_amount"],
                 "refund_percentage": refund["refund_percentage"],
                 "refund_reason": refund["refund_reason"],
+            }
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def mark_completed(self, user_id, appointment_id, now):
+        connection = self.connection_factory()
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT a.appointment_id, a.patient_id, a.doctor_id,
+                           a.slot_id, a.status, a.appointment_status,
+                           COALESCE(a.slot_start_time, a.appointment_datetime)
+                               AS appointment_datetime,
+                           ct.duration_minutes
+                    FROM appointments a
+                    JOIN consultation_types ct
+                      ON ct.consultation_type_id = a.consultation_type_id
+                    WHERE a.appointment_id = %s
+                    FOR UPDATE
+                    """,
+                    (appointment_id,),
+                )
+                appointment = cursor.fetchone()
+                if not appointment:
+                    raise AppointmentRepositoryError(
+                        404, "Appointment was not found."
+                    )
+                cursor.execute(
+                    "SELECT doctor_id FROM doctors WHERE user_id = %s",
+                    (user_id,),
+                )
+                doctor = cursor.fetchone()
+                if not doctor:
+                    raise AppointmentRepositoryError(
+                        404, "Doctor profile was not found."
+                    )
+                if int(doctor["doctor_id"]) != int(appointment["doctor_id"]):
+                    raise AppointmentRepositoryError(404, "Appointment was not found.")
+                if appointment["status"] != "BOOKED" or (
+                    appointment["appointment_status"] != "CONFIRMED"
+                ):
+                    raise AppointmentRepositoryError(
+                        409, "Only a booked appointment can be marked completed."
+                    )
+                appointment_start = appointment["appointment_datetime"]
+                if appointment_start.tzinfo is None:
+                    appointment_start = appointment_start.replace(tzinfo=timezone.utc)
+                if appointment_start + timedelta(
+                    minutes=int(appointment["duration_minutes"])
+                ) > now:
+                    raise AppointmentRepositoryError(
+                        409, "An appointment cannot be completed before its slot ends."
+                    )
+                cursor.execute(
+                    """
+                    UPDATE appointments
+                    SET status = 'COMPLETED', appointment_status = 'COMPLETED'
+                    WHERE appointment_id = %s AND status = 'BOOKED'
+                      AND appointment_status = 'CONFIRMED'
+                    """,
+                    (appointment_id,),
+                )
+                if cursor.rowcount != 1:
+                    raise AppointmentRepositoryError(
+                        409, "Appointment changed while completion was processing."
+                    )
+            connection.commit()
+            return {
+                "appointment_id": appointment_id,
+                "patient_id": int(appointment["patient_id"]),
+                "doctor_id": int(appointment["doctor_id"]),
+                "slot_id": int(appointment["slot_id"]),
+                "slot_start_time": appointment_start.isoformat(),
+                "status": "COMPLETED",
             }
         except Exception:
             connection.rollback()
@@ -839,7 +925,6 @@ class AppointmentRepository:
         appointment_status=None,
         search=None,
     ):
-        self.complete_elapsed_appointments()
         connection = self.connection_factory()
         try:
             with connection.cursor() as cursor:

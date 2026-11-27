@@ -71,7 +71,7 @@ class AppointmentCompletionTests(unittest.TestCase):
         self.assertFalse(connection.rolled_back)
         self.assertTrue(connection.closed)
 
-    def test_listing_reconciles_elapsed_appointments_before_reading(self):
+    def test_listing_leaves_confirmed_appointments_for_outcome_processing(self):
         connection = FakeConnection()
         repository = AppointmentRepository(connection_factory=lambda: connection)
 
@@ -81,7 +81,7 @@ class AppointmentCompletionTests(unittest.TestCase):
         ) as complete_elapsed:
             result = repository.list_appointments("ADMIN", 1)
 
-        complete_elapsed.assert_called_once_with()
+        complete_elapsed.assert_not_called()
         self.assertEqual(result["appointments"], [])
         self.assertIn("FROM appointments a", connection.cursor_instance.query)
         self.assertTrue(connection.closed)

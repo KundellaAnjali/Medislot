@@ -696,6 +696,9 @@ def patient_dashboard():
         return patient_api_error(appointments_error)
     if appointments_error:
         flash(f"Appointments could not be loaded: {appointments_error}", "error")
+    waitlists, offers, waitlists_error = get_patient_waitlist_data()
+    if waitlists_error and waitlists_error.status_code in {401, 403}:
+        return patient_api_error(waitlists_error)
     doctor_search_filters = {
         field: ""
         for field in ("name", "hospital", "specialization", "city")
@@ -726,6 +729,9 @@ def patient_dashboard():
         appointments_offset=appointments_offset,
         appointments_has_more=has_more,
         appointments_next_offset=next_offset,
+        patient_waitlists=waitlists,
+        patient_waitlist_offers=offers,
+        waitlists_error=waitlists_error,
         doctor_search=doctor_search_results,
         doctor_search_filters=doctor_search_filters,
         today_display_date=format_display_date(datetime.now(timezone.utc).date()),
@@ -756,6 +762,22 @@ def get_patient_appointments(offset=0):
         bool(result.get("has_more")),
         result.get("next_offset"),
     )
+
+
+def get_patient_waitlist_data():
+    try:
+        waitlist_result = api_request("GET", "/waitlists")
+        offer_result = api_request("GET", "/waitlist-offers")
+    except ApiError as error:
+        return [], [], error
+    if (
+        not isinstance(waitlist_result, dict)
+        or not isinstance(waitlist_result.get("waitlists"), list)
+        or not isinstance(offer_result, dict)
+        or not isinstance(offer_result.get("offers"), list)
+    ):
+        return [], [], ApiError("Waitlist API returned an invalid response.")
+    return waitlist_result["waitlists"], offer_result["offers"], None
 
 
 def patient_api_error(error):
@@ -812,6 +834,9 @@ def patient_doctor_search():
         return patient_api_error(appointments_error)
     if appointments_error:
         flash(f"Appointments could not be loaded: {appointments_error}", "error")
+    waitlists, offers, waitlists_error = get_patient_waitlist_data()
+    if waitlists_error and waitlists_error.status_code in {401, 403}:
+        return patient_api_error(waitlists_error)
     return render_template(
         "patient_dashboard.html",
         profile=profile,
@@ -820,6 +845,9 @@ def patient_doctor_search():
         appointments_offset=0,
         appointments_has_more=has_more,
         appointments_next_offset=next_offset,
+        patient_waitlists=waitlists,
+        patient_waitlist_offers=offers,
+        waitlists_error=waitlists_error,
         doctor_search=results,
         doctor_search_filters=filters,
         today_display_date=format_display_date(datetime.now(timezone.utc).date()),
@@ -850,6 +878,11 @@ def patient_doctor_availability(doctor_id):
     availability_total = 0
     availability_total_pages = 0
     consultation_type = request.args.get("consultation_type", "").strip()
+    reschedule_appointment_id = request.args.get(
+        "reschedule_appointment_id", type=int
+    )
+    if reschedule_appointment_id is not None and reschedule_appointment_id < 1:
+        reschedule_appointment_id = None
     consultation_types = []
 
     try:
@@ -964,6 +997,7 @@ def patient_doctor_availability(doctor_id):
         availability_total=availability_total,
         availability_total_pages=availability_total_pages,
         idempotency_keys=idempotency_keys,
+        reschedule_appointment_id=reschedule_appointment_id,
         error_message=error_message,
     ), status_code
 
@@ -1100,6 +1134,105 @@ def book_appointment():
     )
 
 
+@app.post("/patient/appointments/<int:appointment_id>/reschedule")
+@patient_required
+def reschedule_patient_appointment(appointment_id):
+    slot_start_time = request.form.get("slot_start_time", "").strip()
+    doctor_id = request.args.get("doctor_id", type=int)
+    if not slot_start_time:
+        flash("Choose a valid target appointment slot.", "error")
+        return redirect(url_for("patient_dashboard", view="patient-appointments-view"))
+    try:
+        target_time = parse_slot_start_time(slot_start_time)
+        if target_time <= datetime.now(timezone.utc):
+            raise ValueError("The target appointment must be in the future.")
+        result = api_request(
+            "PATCH",
+            f"/appointments/{appointment_id}",
+            json_body={"slot_start_time": target_time.isoformat().replace("+00:00", "Z")},
+        )
+    except ApiError as error:
+        return patient_api_error(error)
+    except ValueError as error:
+        flash(str(error), "error")
+        return redirect(url_for("patient_dashboard", view="patient-appointments-view"))
+    if not isinstance(result, dict) or result.get("status") != "PROCESSING":
+        raise ApiError("Reschedule API returned an invalid response.")
+    flash(
+        "Your reschedule request is processing. Refresh your appointments in a moment.",
+        "success",
+    )
+    return redirect(
+        url_for(
+            "patient_doctor_availability",
+            doctor_id=doctor_id or request.form.get("doctor_id", type=int),
+        )
+    )
+
+
+@app.post("/patient/waitlists/join")
+@patient_required
+def join_patient_waitlist():
+    try:
+        request_payload = {
+            "doctor_id": int(request.form.get("doctor_id", "")),
+            "slot_id": int(request.form.get("slot_id", "")),
+            "slot_start_time": request.form.get("slot_start_time", "").strip(),
+            "consultation_type_id": int(
+                request.form.get("consultation_type_id", "")
+            ),
+        }
+        if not request_payload["slot_start_time"]:
+            raise ValueError
+    except (TypeError, ValueError):
+        flash("Choose a valid appointment slot for the waitlist.", "error")
+        return redirect(url_for("patient_dashboard"))
+    try:
+        result = api_request("POST", "/waitlists", json_body=request_payload)
+    except ApiError as error:
+        return patient_api_error(error)
+    if not isinstance(result, dict) or not result.get("waitlist_id"):
+        raise ApiError("Waitlist API returned an invalid response.")
+    flash("You have joined the waitlist for this appointment slot.", "success")
+    return redirect(
+        url_for(
+            "patient_doctor_availability",
+            doctor_id=request_payload["doctor_id"],
+        )
+    )
+
+
+@app.post("/patient/waitlists/<waitlist_id>/leave")
+@patient_required
+def leave_patient_waitlist(waitlist_id):
+    try:
+        api_request("DELETE", f"/waitlists/{waitlist_id}")
+    except ApiError as error:
+        return patient_api_error(error)
+    flash("You have left the waitlist.", "success")
+    return redirect(url_for("patient_dashboard", view="patient-waitlists-view"))
+
+
+@app.post("/patient/waitlist-offers/<int:offer_id>/accept")
+@patient_required
+def accept_patient_waitlist_offer(offer_id):
+    try:
+        result = api_request(
+            "POST",
+            f"/waitlist-offers/{offer_id}/accept",
+            json_body={},
+        )
+    except ApiError as error:
+        return patient_api_error(error)
+    if not isinstance(result, dict) or result.get("status") != "ACCEPTED":
+        raise ApiError("Waitlist offer API returned an invalid response.")
+    flash(
+        f"Waitlist offer accepted. Appointment reference: {result['appointment_id']}.",
+        "success",
+    )
+    return redirect(url_for("patient_dashboard", view="patient-appointments-view"))
+
+
 @app.post("/patient/appointments/<int:appointment_id>/cancel")
 @patient_required
 def cancel_patient_appointment(appointment_id):
@@ -1176,6 +1309,50 @@ def mark_doctor_appointment_no_show(appointment_id):
         raise ApiError("No-show API returned an invalid response.")
 
     flash(f"Appointment {appointment_id} marked as no-show.", "success")
+    status_filter = request.form.get("appointments_status", "all")
+    if status_filter not in {
+        "all",
+        "booked",
+        "cancelled",
+        "completed",
+        "no_show",
+    }:
+        status_filter = "all"
+    try:
+        appointments_offset = max(
+            int(request.form.get("appointments_offset", "0")),
+            0,
+        )
+    except ValueError:
+        appointments_offset = 0
+    return redirect(
+        url_for(
+            "doctor_dashboard",
+            view="appointments-view",
+            appointments_offset=appointments_offset,
+            appointments_date=request.form.get("appointments_date", "") or None,
+            appointments_status=status_filter,
+            appointments_search=request.form.get("appointments_search", "") or None,
+        )
+    )
+
+
+@app.post("/doctor/appointments/<int:appointment_id>/complete")
+@doctor_required
+@with_api_errors
+def mark_doctor_appointment_completed(appointment_id):
+    result = api_request(
+        "POST",
+        f"/appointments/{appointment_id}/complete",
+    )
+    if (
+        not isinstance(result, dict)
+        or result.get("success") is not True
+        or result.get("status") != "COMPLETED"
+    ):
+        raise ApiError("Appointment completion API returned an invalid response.")
+
+    flash(f"Appointment {appointment_id} marked as completed.", "success")
     status_filter = request.form.get("appointments_status", "all")
     if status_filter not in {
         "all",

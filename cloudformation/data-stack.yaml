@@ -185,7 +185,6 @@ Resources:
               KeyType: HASH
           Projection:
             ProjectionType: ALL
-
       TimeToLiveSpecification:
         AttributeName: expires_at
         Enabled: true
@@ -373,6 +372,90 @@ Resources:
       Type: String
       Value: "0"
 
+  RescheduleCutoffHoursParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/RESCHEDULE_CUTOFF_HOURS"
+      Type: String
+      Value: "6"
+
+  RescheduleMaxAttemptsParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/RESCHEDULE_MAX_ATTEMPTS"
+      Type: String
+      Value: "2"
+
+  MaxActiveWaitlistsParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/MAX_ACTIVE_WAITLISTS"
+      Type: String
+      Value: "5"
+
+  WaitlistOfferDurationMinutesParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/WAITLIST_OFFER_DURATION_MINUTES"
+      Type: String
+      Value: "15"
+
+  NoShowGraceMinutesParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/NO_SHOW_GRACE_MINUTES"
+      Type: String
+      Value: "30"
+
+  Reminder24HoursBeforeParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/REMINDER_24_HOURS_BEFORE"
+      Type: String
+      Value: "24"
+
+  Reminder2HoursBeforeParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/REMINDER_2_HOURS_BEFORE"
+      Type: String
+      Value: "2"
+
+  OfferExpirySweepIntervalMinutesParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/OFFER_EXPIRY_SWEEP_INTERVAL_MINUTES"
+      Type: String
+      Value: "1"
+
+  ReminderSweepIntervalMinutesParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/REMINDER_SWEEP_INTERVAL_MINUTES"
+      Type: String
+      Value: "5"
+
+  NoShowSweepIntervalMinutesParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/NO_SHOW_SWEEP_INTERVAL_MINUTES"
+      Type: String
+      Value: "15"
+
+  NotificationDispatchTtlDaysParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/NOTIFICATION_DISPATCH_TTL_DAYS"
+      Type: String
+      Value: "90"
+
+  RescheduleIdempotencyTtlDaysParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub "/medislot/${EnvironmentName}/RESCHEDULE_IDEMPOTENCY_TTL_DAYS"
+      Type: String
+      Value: "90"
+
 Outputs:
 
   DBSubnetGroupName:
@@ -417,6 +500,36 @@ Outputs:
     Value: !Ref SlotsTable
     Export:
       Name: !Sub "${EnvironmentName}-SlotsTable"
+
+  RescheduleCutoffHours:
+    Value: !GetAtt RescheduleCutoffHoursParameter.Value
+    Export:
+      Name: !Sub "${EnvironmentName}-RescheduleCutoffHours"
+
+  RescheduleMaxAttempts:
+    Value: !GetAtt RescheduleMaxAttemptsParameter.Value
+    Export:
+      Name: !Sub "${EnvironmentName}-RescheduleMaxAttempts"
+
+  WaitlistOfferDurationMinutes:
+    Value: !GetAtt WaitlistOfferDurationMinutesParameter.Value
+    Export:
+      Name: !Sub "${EnvironmentName}-WaitlistOfferDurationMinutes"
+
+  OfferExpirySweepIntervalMinutes:
+    Value: !GetAtt OfferExpirySweepIntervalMinutesParameter.Value
+    Export:
+      Name: !Sub "${EnvironmentName}-OfferExpirySweepIntervalMinutes"
+
+  ReminderSweepIntervalMinutes:
+    Value: !GetAtt ReminderSweepIntervalMinutesParameter.Value
+    Export:
+      Name: !Sub "${EnvironmentName}-ReminderSweepIntervalMinutes"
+
+  NoShowSweepIntervalMinutes:
+    Value: !GetAtt NoShowSweepIntervalMinutesParameter.Value
+    Export:
+      Name: !Sub "${EnvironmentName}-NoShowSweepIntervalMinutes"
 
   NotificationsTableName:
     Value: !Ref NotificationsTable

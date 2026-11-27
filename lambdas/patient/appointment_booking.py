@@ -196,7 +196,11 @@ def validate_slot(slot):
         raise BookingError(409, "This appointment slot is not active.")
     if slot_start <= now:
         raise BookingError(409, "This appointment slot is in the past.")
-    if capacity < 1 or booked_count < 0 or version < 0:
+    if (
+        capacity < 1
+        or booked_count < 0
+        or version < 0
+    ):
         raise RuntimeError("Slot record contains invalid booking values.")
     if booked_count >= capacity:
         raise BookingError(409, "This appointment slot is fully booked.")

@@ -123,6 +123,26 @@ def lambda_handler(event, context):
                 200,
                 {"success": True, "status": result["status"]},
             )
+        if method == "POST" and resource == "/appointments/{appointment_id}/complete":
+            if role != "DOCTOR":
+                return response(
+                    403,
+                    {"message": "Only the assigned doctor can complete an appointment."},
+                )
+            raw_id = (event.get("pathParameters") or {}).get(
+                "appointment_id", ""
+            )
+            if not re.fullmatch(r"[1-9][0-9]{0,9}", str(raw_id)):
+                return response(400, {"message": "Invalid appointment_id."})
+            result = AppointmentCancellationService().mark_completed(
+                role,
+                user_id,
+                int(raw_id),
+            )
+            return response(
+                200,
+                {"success": True, "status": result["status"]},
+            )
         if method == "GET" and resource == "/patients/refunds":
             if role != "PATIENT":
                 return response(
