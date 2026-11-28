@@ -26,6 +26,7 @@ dynamodb = boto3.resource("dynamodb")
 slots_table = dynamodb.Table(SLOT_TABLE_NAME)
 parameter_cache = {}
 METRIC_NAMESPACE = "MediSlot/Doctor"
+INDIA_TIMEZONE = timezone(timedelta(hours=5, minutes=30))
 
 CONSULTATION_RULES = {
     "Quick Consult": (15, 1),
@@ -112,8 +113,8 @@ def lock_unbooked_slots_for_blackout(doctor_id, start_utc, end_utc):
         while True:
             result = slots_table.query(**query_args)
             for slot in result.get("Items", []):
-                slot_start = parse_utc_datetime(slot["slot_start_time"])
-                slot_end = parse_utc_datetime(slot["slot_end_time"])
+                slot_start = parse_india_datetime(slot["slot_start_time"])
+                slot_end = parse_india_datetime(slot["slot_end_time"])
                 if slot_start >= end_utc or slot_end <= start_utc:
                     continue
 
@@ -418,28 +419,23 @@ def parse_sql_time(value):
     return (datetime.min + timedelta(seconds=seconds)).time()
 
 
-def utc_iso(value):
-    return value.astimezone(timezone.utc).isoformat(timespec="seconds").replace(
-        "+00:00", "Z"
-    )
+def india_iso(value):
+    return value.astimezone(INDIA_TIMEZONE).isoformat(timespec="seconds")
 
 
 def india_day_bounds(day):
-    india_timezone = timezone(timedelta(hours=5, minutes=30))
-    start = datetime.combine(day, time.min, tzinfo=india_timezone)
+    start = datetime.combine(day, time.min, tzinfo=INDIA_TIMEZONE)
     end = datetime.combine(
         day + timedelta(days=1),
         time.min,
-        tzinfo=india_timezone,
+        tzinfo=INDIA_TIMEZONE,
     )
-    return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
+    return start, end
 
 
-def parse_utc_datetime(value):
-    parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+def parse_india_datetime(value):
+    parsed = datetime.fromisoformat(str(value).replace("Z", "+05:30"))
+    return parsed.replace(tzinfo=INDIA_TIMEZONE)
 
 
 def slots_for_availability_pattern(
@@ -454,7 +450,7 @@ def slots_for_availability_pattern(
         for slot in result.get("Items", []):
             if int(slot.get("consultation_type_id", -1)) != consultation_id:
                 continue
-            slot_start = parse_utc_datetime(slot["slot_start_time"])
+            slot_start = parse_india_datetime(slot["slot_start_time"])
             local_day = slot.get("local_date")
             if isinstance(local_day, str):
                 local_day = date.fromisoformat(local_day)
@@ -572,8 +568,8 @@ def delete_slots_for_blackout(doctor_id, start_utc, end_utc):
 
         for slot in result.get("Items", []):
 
-            slot_start = parse_utc_datetime(slot["slot_start_time"])
-            slot_end = parse_utc_datetime(slot["slot_end_time"])
+            slot_start = parse_india_datetime(slot["slot_start_time"])
+            slot_end = parse_india_datetime(slot["slot_end_time"])
 
             if slot_start < end_utc and slot_end > start_utc:
                 remove_or_block_blackout_slot(doctor_id, slot)
@@ -1122,7 +1118,7 @@ def availability_route(connection, cursor, doctor_id, method, body):
     )
     if not 1 <= window_days <= 90:
         raise ValueError("booking-window-days must be between 1 and 90")
-    start_day = datetime.now(timezone.utc).date()
+    start_day = datetime.now(INDIA_TIMEZONE).date()
     queue_slot_materialization(
         start_day,
         start_day + timedelta(days=window_days - 1),
@@ -1141,19 +1137,18 @@ def blackouts_route(connection, cursor, doctor_id, method, tail, body):
             (doctor_id,),
         )
         blackouts = cursor.fetchall()
-        india_timezone = timezone(timedelta(hours=5, minutes=30))
         for blackout in blackouts:
             blackout["start_display"] = blackout["start_datetime"].replace(
-                tzinfo=timezone.utc
-            ).astimezone(india_timezone).strftime("%d %b %Y %H:%M IST")
+                tzinfo=INDIA_TIMEZONE
+            ).strftime("%d %b %Y %H:%M IST")
             blackout["end_display"] = blackout["end_datetime"].replace(
-                tzinfo=timezone.utc
-            ).astimezone(india_timezone).strftime("%d %b %Y %H:%M IST")
+                tzinfo=INDIA_TIMEZONE
+            ).strftime("%d %b %Y %H:%M IST")
         return response(200, {"blackouts": blackouts})
     if not tail and method == "POST":
         if body.get("start_datetime") and body.get("end_datetime"):
-            start_utc = parse_utc_datetime(body["start_datetime"])
-            end_utc = parse_utc_datetime(body["end_datetime"])
+            start_utc = parse_india_datetime(body["start_datetime"])
+            end_utc = parse_india_datetime(body["end_datetime"])
         else:
             start_day = date.fromisoformat(
                 body.get("start_date", body.get("date", ""))
@@ -1265,8 +1260,8 @@ def get_day_schedule(cursor, doctor_id, query):
     slots = query_slots_in_range(
         slots_table,
         doctor_id,
-        utc_iso(start_utc),
-        utc_iso(end_utc - timedelta(seconds=1)),
+        india_iso(start_utc),
+        india_iso(end_utc - timedelta(seconds=1)),
     )
     consultation_ids = {
         int(item["consultation_type_id"]) for item in slots

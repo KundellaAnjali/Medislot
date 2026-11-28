@@ -21,7 +21,7 @@ class RescheduleCursor:
     def __init__(self):
         self.appointment = {
             "slot_id": 22,
-            "slot_start_time": "2026-11-02T11:00:00Z",
+            "slot_start_time": "2026-11-02T11:00:00+05:30",
             "status": "BOOKED",
             "appointment_status": "CONFIRMED",
         }
@@ -143,9 +143,9 @@ class Milestone6IntegrationTests(unittest.TestCase):
             "doctor_id": 5,
             "attempt": 1,
             "original_slot_id": 11,
-            "original_slot_start_time": "2026-11-02T10:00:00Z",
+            "original_slot_start_time": "2026-11-02T10:00:00+05:30",
             "target_slot_id": 22,
-            "target_slot_start_time": "2026-11-02T11:00:00Z",
+            "target_slot_start_time": "2026-11-02T11:00:00+05:30",
         }
 
         with patch.object(
@@ -173,7 +173,7 @@ class Milestone6IntegrationTests(unittest.TestCase):
         release_slot.assert_called_once_with(
             claim,
             slot_id=22,
-            start_time="2026-11-02T11:00:00Z",
+            start_time="2026-11-02T11:00:00+05:30",
             marker_kind="compensation",
         )
 
@@ -193,21 +193,21 @@ class Milestone6IntegrationTests(unittest.TestCase):
                     "patient_id": 1,
                     "consultation_type_id": 2,
                     "waitlist_id": "first",
-                    "joined_at": "2026-11-01T10:00:00Z",
+                    "joined_at": "2026-11-01T10:00:00+05:30",
                     "status": "WAITING",
                 },
                 {
                     "patient_id": 2,
                     "consultation_type_id": 2,
                     "waitlist_id": "second",
-                    "joined_at": "2026-11-01T10:01:00Z",
+                    "joined_at": "2026-11-01T10:01:00+05:30",
                     "status": "WAITING",
                 },
                 {
                     "patient_id": 3,
                     "consultation_type_id": 2,
                     "waitlist_id": "third",
-                    "joined_at": "2026-11-01T10:02:00Z",
+                    "joined_at": "2026-11-01T10:02:00+05:30",
                     "status": "WAITING",
                 },
             ],
@@ -217,7 +217,7 @@ class Milestone6IntegrationTests(unittest.TestCase):
         event = {
             "doctor_id": 5,
             "slot_id": 9,
-            "slot_start_time": "2026-11-02T10:00:00Z",
+            "slot_start_time": "2026-11-02T10:00:00+05:30",
             "status": "SEAT_FREED",
         }
 

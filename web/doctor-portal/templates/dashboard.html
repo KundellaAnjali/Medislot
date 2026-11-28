@@ -158,7 +158,7 @@
         </section>
       </section>
 
-      <section class="dashboard-view" id="schedule-view" data-view data-timezone="UTC" hidden>
+      <section class="dashboard-view" id="schedule-view" data-view data-timezone="Asia/Kolkata" hidden>
         <div class="view-heading schedule-view-heading">
           <div><p class="eyebrow">Appointments</p><h1>Schedule</h1><p class="view-subtitle">Schedule for {{ schedule_display_date }}.</p></div>
           <form class="date-picker schedule-controls" method="get" action="{{ url_for('doctor_dashboard') }}">
@@ -723,14 +723,14 @@
     const cancellationDialog = document.getElementById('cancel-slot-dialog');
     const bulkCancellationDialog = document.getElementById('bulk-cancel-dialog');
     let activeCancellationForm = null;
-    const parseUtcDateTime = value => new Date(
+    const parseIndiaDateTime = value => new Date(
       /(?:Z|[+-]\d{2}:\d{2})$/i.test(value)
         ? value
-        : `${value.replace(' ', 'T')}Z`
+        : `${value.replace(' ', 'T')}+05:30`
     );
     const displayDateTime = value => {
       if (!value) return 'Not available';
-      const parsed = parseUtcDateTime(value);
+      const parsed = parseIndiaDateTime(value);
       return Number.isNaN(parsed.getTime()) ? value : new Intl.DateTimeFormat('en-GB', {
         day: '2-digit', month: 'short', year: 'numeric',
         hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata',
@@ -740,7 +740,7 @@
       element.textContent = displayDateTime(element.dataset.indiaDatetime);
     });
     document.querySelectorAll('[data-india-time]').forEach(element => {
-      const parsed = parseUtcDateTime(element.dateTime);
+      const parsed = parseIndiaDateTime(element.dateTime);
       if (!Number.isNaN(parsed.getTime())) {
         element.textContent = new Intl.DateTimeFormat('en-GB', {
           hour: '2-digit', minute: '2-digit', hourCycle: 'h23',

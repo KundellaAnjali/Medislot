@@ -61,7 +61,7 @@ class AppointmentCompletionTests(unittest.TestCase):
             "INTERVAL ct.duration_minutes MINUTE",
             connection.cursor_instance.query,
         )
-        self.assertIn("<= UTC_TIMESTAMP(6)", connection.cursor_instance.query)
+        self.assertIn(") <= %s", connection.cursor_instance.query)
         self.assertIn("a.status = 'BOOKED'", connection.cursor_instance.query)
         self.assertIn(
             "a.appointment_status = 'CONFIRMED'",

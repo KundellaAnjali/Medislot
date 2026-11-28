@@ -1,6 +1,7 @@
+import json
 import os
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
 os.environ.setdefault("ENVIRONMENT_NAME", "test")
@@ -18,10 +19,39 @@ from appointment_service import AppointmentService, AppointmentServiceError
 class FrozenDateTime(datetime):
     @classmethod
     def now(cls, tz=None):
-        return cls(2026, 11, 28, 12, 0, 0, 500000, tzinfo=timezone.utc)
+        return cls(
+            2026,
+            11,
+            28,
+            12,
+            0,
+            0,
+            500000,
+            tzinfo=timezone(timedelta(hours=5, minutes=30)),
+        )
 
 
 class AppointmentBookingTimeTests(unittest.TestCase):
+    def test_booking_requests_require_ist_offset(self):
+        body = {
+            "doctor_id": 2,
+            "slot_start_time": "2026-11-29T10:00:00+05:30",
+        }
+        request = {"body": json.dumps(body)}
+        self.assertEqual(
+            appointment_booking.parse_booking_request(request)[:2],
+            (2, "2026-11-29T10:00:00+05:30"),
+        )
+
+        body["slot_start_time"] = "2026-11-29T10:00:00Z"
+        with self.assertRaisesRegex(
+            appointment_booking.BookingError,
+            r"IST ISO-8601 timestamp with \+05:30 offset",
+        ):
+            appointment_booking.parse_booking_request(
+                {"body": json.dumps(body)}
+            )
+
     def test_booking_rejects_past_time_before_idempotency_lookup(self):
         idempotency_table = Mock()
         service = AppointmentService(
@@ -41,14 +71,14 @@ class AppointmentBookingTimeTests(unittest.TestCase):
                     user_id=1,
                     key="request-key",
                     doctor_id=2,
-                    slot_start_time="2026-11-28T11:59:00Z",
+                    slot_start_time="2026-11-28T11:59:00+05:30",
                 )
 
         idempotency_table.get_item.assert_not_called()
 
     def test_dynamodb_cutoff_rounds_up_to_avoid_string_precision_bypass(self):
         slot = {
-            "slot_start_time": "2026-11-28T12:00:00.900000Z",
+            "slot_start_time": "2026-11-28T12:00:00.900000+05:30",
             "capacity": 2,
             "booked_count": 0,
             "version": 1,
@@ -60,13 +90,13 @@ class AppointmentBookingTimeTests(unittest.TestCase):
 
         self.assertEqual(
             cutoff.isoformat(),
-            "2026-11-28T12:00:01+00:00",
+            "2026-11-28T12:00:01+05:30",
         )
-        self.assertLess(slot["slot_start_time"], cutoff.isoformat().replace("+00:00", "Z"))
+        self.assertLess(slot["slot_start_time"], cutoff.isoformat())
 
     def test_booking_validation_rejects_elapsed_slot(self):
         slot = {
-            "slot_start_time": "2026-11-28T11:59:00Z",
+            "slot_start_time": "2026-11-28T11:59:00+05:30",
             "capacity": 2,
             "booked_count": 0,
             "version": 1,

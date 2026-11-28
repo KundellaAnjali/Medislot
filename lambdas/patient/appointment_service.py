@@ -15,6 +15,7 @@ except ImportError:
 IDEMPOTENCY_TTL_DAYS = 90
 EVENT_BUS_NAME = os.environ.get("EVENT_BUS_NAME", "default")
 eventbridge = boto3.client("events")
+INDIA_TIMEZONE = timezone(timedelta(hours=5, minutes=30))
 
 
 class AppointmentServiceError(Exception):
@@ -51,7 +52,7 @@ class AppointmentService:
     ):
         try:
             requested_start = datetime.fromisoformat(
-                slot_start_time.replace("Z", "+00:00")
+                slot_start_time
             )
         except (AttributeError, TypeError, ValueError) as error:
             raise AppointmentServiceError(
@@ -59,7 +60,8 @@ class AppointmentService:
             ) from error
         if (
             requested_start.tzinfo is None
-            or requested_start.astimezone(timezone.utc) <= datetime.now(timezone.utc)
+            or requested_start.replace(tzinfo=INDIA_TIMEZONE)
+            <= datetime.now(INDIA_TIMEZONE)
         ):
             raise AppointmentServiceError(
                 409, "This appointment slot is in the past."

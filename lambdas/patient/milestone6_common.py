@@ -1,7 +1,7 @@
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import boto3
 
@@ -18,6 +18,7 @@ ssm = boto3.client("ssm")
 eventbridge = boto3.client("events")
 cloudwatch = boto3.client("cloudwatch")
 parameter_cache = {}
+INDIA_TIMEZONE = timezone(timedelta(hours=5, minutes=30))
 
 
 def response(status_code, payload):
@@ -118,12 +119,13 @@ def slot_key(value):
     if isinstance(value, datetime):
         parsed = value
     else:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+05:30"))
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    parsed = parsed.astimezone(timezone.utc)
+        parsed = parsed.replace(tzinfo=INDIA_TIMEZONE)
+    else:
+        parsed = parsed.replace(tzinfo=INDIA_TIMEZONE)
     precision = "microseconds" if parsed.microsecond else "seconds"
-    return parsed.isoformat(timespec=precision).replace("+00:00", "Z")
+    return parsed.isoformat(timespec=precision)
 
 
 def active_offer_lock_key(doctor_id, start_time):
@@ -132,3 +134,7 @@ def active_offer_lock_key(doctor_id, start_time):
 
 def utc_now():
     return datetime.now(timezone.utc)
+
+
+def india_now():
+    return datetime.now(INDIA_TIMEZONE)

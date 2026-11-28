@@ -100,14 +100,16 @@ def get_doctor_id(event):
 def get_slots(doctor_id, start_date, end_date):
     start_time = datetime.combine(
         start_date, time.min, tzinfo=INDIA_TIMEZONE
-    ).astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
-    end_time = datetime.combine(
-        end_date + timedelta(days=1), time.min, tzinfo=INDIA_TIMEZONE
-    ).astimezone(timezone.utc)
-    end_time = (end_time - timedelta(seconds=1)).isoformat(
-        timespec="seconds"
-    ).replace("+00:00", "Z")
-    now = datetime.now(timezone.utc)
+    ).isoformat(timespec="seconds")
+    end_time = (
+        datetime.combine(
+            end_date + timedelta(days=1),
+            time.min,
+            tzinfo=INDIA_TIMEZONE,
+        )
+        - timedelta(seconds=1)
+    ).isoformat(timespec="seconds")
+    now = datetime.now(INDIA_TIMEZONE)
     slots = []
     for slot in query_slots_in_range(
         slots_table,
@@ -115,9 +117,7 @@ def get_slots(doctor_id, start_date, end_date):
         start_time,
         end_time,
     ):
-        slot_start = datetime.fromisoformat(
-            slot["slot_start_time"].replace("Z", "+00:00")
-        )
+        slot_start = datetime.fromisoformat(slot["slot_start_time"])
         if slot_start <= now:
             continue
         if int(slot.get("status", 1)) != 1:

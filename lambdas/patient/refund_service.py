@@ -1,6 +1,6 @@
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, DecimalException, ROUND_HALF_UP
 
 import boto3
@@ -8,6 +8,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 
 
 logger = logging.getLogger(__name__)
+INDIA_TIMEZONE = timezone(timedelta(hours=5, minutes=30))
 parameter_cache = {}
 ssm = None
 
@@ -138,8 +139,8 @@ class RefundService:
             tier = "FULL" if percentage == 100 else "PARTIAL" if percentage else "NONE"
             reason = "DOCTOR_SLOT_CANCELLATION"
         else:
-            appointment_time = self._as_utc(appointment_datetime)
-            cancelled_at = self._as_utc(cancellation_time)
+            appointment_time = self._as_india(appointment_datetime)
+            cancelled_at = self._as_india(cancellation_time)
             time_until = appointment_time - cancelled_at
             if time_until.total_seconds() > config["48_hour_threshold"] * 3600:
                 percentage = config["more_than_48_hours_percent"]
@@ -178,9 +179,7 @@ class RefundService:
         }
 
     @staticmethod
-    def _as_utc(value):
+    def _as_india(value):
         if not isinstance(value, datetime):
             raise TypeError("Appointment and cancellation times must be datetimes.")
-        if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=INDIA_TIMEZONE)

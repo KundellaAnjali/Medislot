@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import uuid
+from datetime import datetime
 
 import boto3
 
@@ -16,6 +17,9 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 stepfunctions = boto3.client("stepfunctions")
 STATE_MACHINE_ARN = os.environ["RESCHEDULE_STATE_MACHINE_ARN"]
+IST_SLOT_TIME_PATTERN = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?\+05:30$"
+)
 
 
 def lambda_handler(event, context):
@@ -33,10 +37,23 @@ def lambda_handler(event, context):
         not isinstance(body, dict)
         or set(body) != {"slot_start_time"}
         or not isinstance(body["slot_start_time"], str)
+        or not IST_SLOT_TIME_PATTERN.fullmatch(body["slot_start_time"])
     ):
         return response(
             400,
-            {"message": "Request must contain only slot_start_time."},
+            {
+                "message": (
+                    "Request must contain only slot_start_time as a valid "
+                    "IST ISO-8601 timestamp with +05:30 offset."
+                )
+            },
+        )
+    try:
+        datetime.fromisoformat(body["slot_start_time"])
+    except ValueError:
+        return response(
+            400,
+            {"message": "slot_start_time must be a valid IST ISO-8601 timestamp."},
         )
     try:
         execution = stepfunctions.start_execution(

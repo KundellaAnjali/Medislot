@@ -1,6 +1,6 @@
 import os
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, Mock, patch
 
 os.environ.setdefault("ENVIRONMENT_NAME", "test")
@@ -26,12 +26,19 @@ class WaitlistBookingExclusivityTests(unittest.TestCase):
 
         with (
             patch.object(waitlist_api, "get_connection", return_value=connection),
-            patch.object(waitlist_api, "utc_now") as now,
+            patch.object(waitlist_api, "india_now") as now,
             patch.object(waitlist_api.slots, "get_item") as get_slot,
             patch.object(waitlist_api, "get_parameter", return_value=5),
             patch.object(waitlist_api.client, "transact_write_items") as transact,
         ):
-            now.return_value = datetime(2026, 11, 28, 12, 0, tzinfo=timezone.utc)
+            now.return_value = datetime(
+                2026,
+                11,
+                28,
+                12,
+                0,
+                tzinfo=timezone(timedelta(hours=5, minutes=30)),
+            )
             get_slot.return_value = {
                 "Item": {
                     "slot_id": 88,
@@ -51,7 +58,7 @@ class WaitlistBookingExclusivityTests(unittest.TestCase):
                     {
                         "doctor_id": 5,
                         "slot_id": 88,
-                        "slot_start_time": "2026-11-29T10:00:00Z",
+                        "slot_start_time": "2026-11-29T10:00:00+05:30",
                     },
                 )
 

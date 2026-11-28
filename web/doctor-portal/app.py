@@ -53,40 +53,34 @@ def format_display_date(value):
 
 
 def format_display_datetime(value):
-    parsed_datetime = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    if parsed_datetime.tzinfo is None:
-        parsed_datetime = parsed_datetime.replace(tzinfo=timezone.utc)
-    return parsed_datetime.astimezone(INDIA_TIMEZONE).strftime("%d %b %Y, %H:%M")
+    parsed_datetime = datetime.fromisoformat(str(value).replace("Z", "+05:30"))
+    return parsed_datetime.replace(tzinfo=INDIA_TIMEZONE).strftime(
+        "%d %b %Y, %H:%M"
+    )
 
 
 def format_display_india_date(value):
-    parsed_datetime = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    if parsed_datetime.tzinfo is None:
-        parsed_datetime = parsed_datetime.replace(tzinfo=timezone.utc)
-    return parsed_datetime.astimezone(INDIA_TIMEZONE).strftime("%Y-%m-%d")
+    parsed_datetime = datetime.fromisoformat(str(value).replace("Z", "+05:30"))
+    return parsed_datetime.replace(tzinfo=INDIA_TIMEZONE).strftime("%Y-%m-%d")
 
 
-def parse_india_datetime_to_utc(value):
+def parse_india_datetime(value):
     parsed_datetime = datetime.fromisoformat(value)
-    if parsed_datetime.tzinfo is not None:
-        raise ValueError("Blackout times must be entered as India local time.")
-    return parsed_datetime.replace(tzinfo=INDIA_TIMEZONE).astimezone(
-        timezone.utc
-    ).isoformat(timespec="seconds").replace("+00:00", "Z")
+    if parsed_datetime.tzinfo is None:
+        parsed_datetime = parsed_datetime.replace(tzinfo=INDIA_TIMEZONE)
+    else:
+        parsed_datetime = parsed_datetime.replace(tzinfo=INDIA_TIMEZONE)
+    return parsed_datetime.isoformat(timespec="seconds")
 
 
 def parse_slot_start_time(value):
     if not isinstance(value, str):
-        raise ValueError("Slot start time must be a UTC timestamp.")
+        raise ValueError("Slot start time must be an IST timestamp.")
     try:
         slot_start = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError as error:
-        raise ValueError("Slot start time must be a valid UTC timestamp.") from error
-    if slot_start.tzinfo is None or slot_start.utcoffset() != timezone.utc.utcoffset(
-        slot_start
-    ):
-        raise ValueError("Slot start time must be a UTC timestamp.")
-    return slot_start.astimezone(timezone.utc)
+        raise ValueError("Slot start time must be a valid IST timestamp.") from error
+    return slot_start.replace(tzinfo=INDIA_TIMEZONE)
 
 
 app.jinja_env.filters["display_date"] = format_display_date
@@ -633,7 +627,7 @@ def doctor_dashboard():
     today_india = datetime.now(INDIA_TIMEZONE).date().isoformat()
     next_schedule_slots = schedule.get("slots", [])
     if schedule.get("date") == today_india:
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(INDIA_TIMEZONE)
         next_schedule_slots = [
             slot
             for slot in next_schedule_slots
@@ -941,7 +935,7 @@ def patient_doctor_availability(doctor_id):
             payload.get("slots"), list
         ):
             raise ApiError("Availability API returned an invalid response.")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(INDIA_TIMEZONE)
         try:
             availability = [
                 slot
@@ -1037,7 +1031,7 @@ def book_appointment():
         flash("Choose a valid appointment slot before booking.", "error")
         return redirect(url_for("patient_dashboard"))
     try:
-        if parse_slot_start_time(slot_start_time) <= datetime.now(timezone.utc):
+        if parse_slot_start_time(slot_start_time) <= datetime.now(INDIA_TIMEZONE):
             flash(
                 "This appointment slot has already started. Choose a future slot.",
                 "error",
@@ -1164,17 +1158,17 @@ def reschedule_patient_appointment(appointment_id):
         return redirect(url_for("patient_dashboard", view="patient-appointments-view"))
     try:
         target_time = parse_slot_start_time(slot_start_time)
-        if target_time <= datetime.now(timezone.utc):
+        if target_time <= datetime.now(INDIA_TIMEZONE):
             raise ValueError("The target appointment must be in the future.")
         result = api_request(
             "PATCH",
             f"/appointments/{appointment_id}",
-            json_body={"slot_start_time": target_time.isoformat().replace("+00:00", "Z")},
+            json_body={"slot_start_time": target_time.isoformat()},
         )
     except ApiError as error:
         return patient_api_error(error)
-    except ValueError as error:
-        flash(str(error), "error")
+    except ValueError:
+        flash("Blackout times must be valid India local date and time values.", "error")
         return redirect(url_for("patient_dashboard", view="patient-appointments-view"))
     if not isinstance(result, dict) or result.get("status") != "PROCESSING":
         raise ApiError("Reschedule API returned an invalid response.")
@@ -1644,10 +1638,10 @@ def save_availability():
 @with_api_errors
 def add_blackout():
     try:
-        start_datetime = parse_india_datetime_to_utc(
+        start_datetime = parse_india_datetime(
             request.form.get("start_datetime", "")
         )
-        end_datetime = parse_india_datetime_to_utc(
+        end_datetime = parse_india_datetime(
             request.form.get("end_datetime", "")
         )
     except ValueError as error:

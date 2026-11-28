@@ -12,6 +12,7 @@ try:
         get_parameter,
         publish_event,
         publish_metric,
+        india_now,
         slot_key,
         utc_now,
     )
@@ -21,6 +22,7 @@ except ImportError:
         get_parameter,
         publish_event,
         publish_metric,
+        india_now,
         slot_key,
         utc_now,
     )
@@ -68,8 +70,8 @@ def validate_and_claim(event, context):
                 or appointment["appointment_status"] != "CONFIRMED"
             ):
                 raise RescheduleError("Only confirmed appointments can be rescheduled.")
-            old_start = as_utc(appointment["slot_start_time"])
-            now = utc_now()
+            old_start = as_india(appointment["slot_start_time"])
+            now = india_now()
             cutoff_hours = get_parameter("RESCHEDULE_CUTOFF_HOURS")
             max_attempts = get_parameter("RESCHEDULE_MAX_ATTEMPTS")
             if old_start - now <= timedelta(hours=cutoff_hours):
@@ -88,7 +90,7 @@ def validate_and_claim(event, context):
         ).get("Item")
         if not target_slot or int(target_slot.get("status", 0)) != 1:
             raise RescheduleError("The target slot is not available.")
-        if as_utc(target_start) <= now:
+        if as_india(target_start) <= now:
             raise RescheduleError("Past appointment slots cannot be selected.")
         if int(target_slot.get("consultation_type_id", -1)) != int(
             appointment["consultation_type_id"]
@@ -179,7 +181,7 @@ def claim_target_slot(doctor_id, start_time, slot):
             ":active": 1,
             ":booked": booked,
             ":version": int(slot["version"]),
-            ":now": slot_key(utc_now()),
+            ":now": slot_key(india_now()),
         },
     )
 
@@ -415,15 +417,13 @@ def publish_rescheduled(event, context):
     }
 
 
-def as_utc(value):
+def as_india(value):
     if isinstance(value, datetime):
         parsed = value
     else:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+05:30"))
+    return parsed.replace(tzinfo=timezone(timedelta(hours=5, minutes=30)))
 
 
 def as_db_datetime(value):
-    return as_utc(value).replace(tzinfo=None)
+    return as_india(value).replace(tzinfo=None)

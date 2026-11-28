@@ -2,7 +2,7 @@ import logging
 import os
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -14,6 +14,7 @@ try:
     from .milestone6_common import (
         active_offer_lock_key,
         get_parameter,
+        india_now,
         parse_body,
         patient_actor,
         patient_id_for_user,
@@ -28,6 +29,7 @@ except ImportError:
     from milestone6_common import (
         active_offer_lock_key,
         get_parameter,
+        india_now,
         parse_body,
         patient_actor,
         patient_id_for_user,
@@ -94,7 +96,7 @@ def lambda_handler(event, context):
 
 
 def accept_offer(patient_id, offer_id, *, connection_factory=None, now=None):
-    now = now or utc_now()
+    now = now or india_now()
     offer = offers.get_item(
         Key={"offer_id": offer_id}, ConsistentRead=True
     ).get("Item")
@@ -107,7 +109,7 @@ def accept_offer(patient_id, offer_id, *, connection_factory=None, now=None):
 
     doctor_id = int(offer["doctor_id"])
     start_time = slot_key(offer["slot_start_time"])
-    start = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+    start = datetime.fromisoformat(start_time)
     connection = (connection_factory or get_connection)()
     appointment_id = None
     try:
@@ -127,11 +129,15 @@ def accept_offer(patient_id, offer_id, *, connection_factory=None, now=None):
                 SELECT COUNT(*) AS active_count
                 FROM appointments
                 WHERE patient_id = %s AND doctor_id = %s
-                  AND slot_start_time > UTC_TIMESTAMP(6)
+                  AND slot_start_time > %s
                   AND status = 'BOOKED'
                   AND appointment_status = 'CONFIRMED'
                 """,
-                (patient_id, doctor_id),
+                (
+                    patient_id,
+                    doctor_id,
+                    now.replace(tzinfo=None),
+                ),
             )
             max_active = get_parameter("patient-booking/max-active-bookings")
             if int(cursor.fetchone()["active_count"]) >= max_active:
@@ -150,7 +156,7 @@ def accept_offer(patient_id, offer_id, *, connection_factory=None, now=None):
             consultation = cursor.fetchone()
             if not consultation:
                 raise OfferError(409, "The consultation is no longer available.")
-            appointment_time = start.astimezone(timezone.utc).replace(tzinfo=None)
+            appointment_time = start.replace(tzinfo=None)
             cursor.execute(
                 """
                 INSERT INTO appointments

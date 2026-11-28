@@ -13,6 +13,19 @@ logger.setLevel(logging.INFO)
 ENVIRONMENT = os.environ["ENVIRONMENT_NAME"]
 ssm = boto3.client("ssm")
 parameter_cache = {}
+INDIA_TIMEZONE = timezone(timedelta(hours=5, minutes=30))
+
+
+def india_datetime(value):
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value.replace("Z", "+05:30"))
+    return value.replace(tzinfo=INDIA_TIMEZONE)
+
+
+def india_iso(value):
+    parsed = india_datetime(value)
+    precision = "microseconds" if parsed.microsecond else "seconds"
+    return parsed.isoformat(timespec=precision)
 
 
 class AppointmentRepositoryError(Exception):
@@ -86,10 +99,14 @@ class AppointmentRepository:
                     FROM appointments
                     WHERE patient_id = %s
                       AND doctor_id = %s
-                      AND slot_start_time > UTC_TIMESTAMP(6)
+                      AND slot_start_time > %s
                       AND (status = 'BOOKED' OR appointment_status = 'CONFIRMED')
                     """,
-                    (patient_id, doctor_id),
+                    (
+                        patient_id,
+                        doctor_id,
+                        datetime.now(INDIA_TIMEZONE).replace(tzinfo=None),
+                    ),
                 )
                 active_count = int(cursor.fetchone()["active_count"])
                 max_active_appointments = int(
@@ -123,7 +140,7 @@ class AppointmentRepository:
 
                 reserved_slot = reserve_slot()
                 appointment_start = datetime.fromisoformat(
-                    slot_start_time.replace("Z", "+00:00")
+                    slot_start_time.replace("Z", "+05:30")
                 ).replace(tzinfo=None)
                 transaction_id = f"PAY-{uuid.uuid4().hex.upper()}"
                 appointment_status = (
@@ -273,7 +290,7 @@ class AppointmentRepository:
                     appointment_time = selected["slot_start_time"]
                     if appointment_time is not None and appointment_time.tzinfo is None:
                         appointment_time = appointment_time.replace(
-                            tzinfo=timezone.utc
+                            tzinfo=INDIA_TIMEZONE
                         )
                     if appointment_time is not None and appointment_time <= now:
                         raise AppointmentRepositoryError(
@@ -417,17 +434,17 @@ class AppointmentRepository:
                         appointment_time = appointment["slot_start_time"]
                         if appointment_time.tzinfo is None:
                             appointment_time = appointment_time.replace(
-                                tzinfo=timezone.utc
+                                tzinfo=INDIA_TIMEZONE
                             )
                         slot_start_time = appointment_time.astimezone(
-                            timezone.utc
+                            INDIA_TIMEZONE
                         ).isoformat(
                             timespec=(
                                 "microseconds"
                                 if appointment_time.microsecond
                                 else "seconds"
                             )
-                        ).replace("+00:00", "Z")
+                        )
                         percentage = existing_refund["refund_percentage"]
                         tier = (
                             "FULL"
@@ -546,17 +563,17 @@ class AppointmentRepository:
                             """,
                             (appointment["appointment_id"],),
                         )
-                    slot_start_utc = appointment_time.replace(
-                        tzinfo=timezone.utc
+                    slot_start_ist = appointment_time.replace(
+                        tzinfo=INDIA_TIMEZONE
                     )
                     time_precision = (
                         "microseconds"
-                        if slot_start_utc.microsecond
+                        if slot_start_ist.microsecond
                         else "seconds"
                     )
-                    slot_start_time = slot_start_utc.isoformat(
+                    slot_start_time = slot_start_ist.isoformat(
                         timespec=time_precision
-                    ).replace("+00:00", "Z")
+                    )
                     cancellation_event = {
                         "appointment_id": str(appointment["appointment_id"]),
                         "patient_id": str(appointment["patient_id"]),
@@ -656,7 +673,7 @@ class AppointmentRepository:
                 appointment_datetime = appointment["appointment_datetime"]
                 if appointment_datetime.tzinfo is None:
                     appointment_datetime = appointment_datetime.replace(
-                        tzinfo=timezone.utc
+                        tzinfo=INDIA_TIMEZONE
                     )
                 if appointment_datetime > now:
                     raise AppointmentRepositoryError(
@@ -780,7 +797,7 @@ class AppointmentRepository:
                     )
                 appointment_start = appointment["appointment_datetime"]
                 if appointment_start.tzinfo is None:
-                    appointment_start = appointment_start.replace(tzinfo=timezone.utc)
+                    appointment_start = appointment_start.replace(tzinfo=INDIA_TIMEZONE)
                 if appointment_start + timedelta(
                     minutes=int(appointment["duration_minutes"])
                 ) > now:
@@ -856,8 +873,9 @@ class AppointmentRepository:
                       AND DATE_ADD(
                           COALESCE(a.slot_start_time, a.appointment_datetime),
                           INTERVAL ct.duration_minutes MINUTE
-                      ) <= UTC_TIMESTAMP(6)
-                    """
+                      ) <= %s
+                    """,
+                    (datetime.now(INDIA_TIMEZONE).replace(tzinfo=None),),
                 )
                 completed_count = cursor.rowcount
             connection.commit()
@@ -1036,20 +1054,17 @@ class AppointmentRepository:
                 rows = cursor.fetchall()
                 has_more = len(rows) > limit
                 items = rows[:limit]
-                now = datetime.now(timezone.utc)
+                now = datetime.now(INDIA_TIMEZONE)
                 for item in items:
                     slot_start = item.get("slot_start_time")
-                    if isinstance(slot_start, str):
-                        try:
-                            slot_start = datetime.fromisoformat(
-                                slot_start.replace("Z", "+00:00")
-                            )
-                        except ValueError:
-                            slot_start = None
+                    try:
+                        if slot_start is not None:
+                            slot_start = india_datetime(slot_start)
+                    except (TypeError, ValueError):
+                        slot_start = None
                     if slot_start is not None:
-                        if slot_start.tzinfo is None:
-                            slot_start = slot_start.replace(tzinfo=timezone.utc)
                         item["is_past"] = slot_start <= now
+                        item["slot_start_time"] = india_iso(slot_start)
                         duration_minutes = item.get("duration_minutes")
                         item["is_ended"] = (
                             slot_start + timedelta(minutes=duration_minutes) <= now
@@ -1109,7 +1124,12 @@ class AppointmentRepository:
                     """,
                     (*params, appointment_id),
                 )
-                return cursor.fetchone()
+                appointment = cursor.fetchone()
+                if appointment and appointment.get("slot_start_time") is not None:
+                    appointment["slot_start_time"] = india_iso(
+                        appointment["slot_start_time"]
+                    )
+                return appointment
         finally:
             connection.close()
 

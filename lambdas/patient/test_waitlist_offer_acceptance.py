@@ -1,6 +1,6 @@
 import os
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("ENVIRONMENT_NAME", "test")
@@ -24,7 +24,7 @@ class WaitlistOfferAcceptanceTests(unittest.TestCase):
             "patient_id": 7,
             "doctor_id": 11,
             "slot_id": 22,
-            "slot_start_time": "2026-12-01T10:00:00Z",
+            "slot_start_time": "2026-12-01T10:00:00+05:30",
             "consultation_type_id": 4,
             "payment_method": "UPI",
             "waitlist_id": "waitlist-abc",
@@ -45,7 +45,9 @@ class WaitlistOfferAcceptanceTests(unittest.TestCase):
         cursor_context.__enter__.return_value = cursor
         connection = MagicMock()
         connection.cursor.return_value = cursor_context
-        now = datetime(2026, 11, 28, 12, 0, tzinfo=timezone.utc)
+        now = datetime(
+            2026, 11, 28, 12, 0, tzinfo=timezone(timedelta(hours=5, minutes=30))
+        )
 
         with (
             patch.object(
@@ -85,7 +87,9 @@ class WaitlistOfferAcceptanceTests(unittest.TestCase):
         connection.close.assert_called_once()
 
     def test_commit_offer_deletes_the_correct_active_offer_lock(self):
-        now = datetime(2026, 11, 28, 12, 0, tzinfo=timezone.utc)
+        now = datetime(
+            2026, 11, 28, 12, 0, tzinfo=timezone(timedelta(hours=5, minutes=30))
+        )
         with (
             patch.object(waitlist_offer_api.client, "transact_write_items") as transact,
             patch.object(waitlist_offer_api, "utc_now", return_value=now),
@@ -96,7 +100,7 @@ class WaitlistOfferAcceptanceTests(unittest.TestCase):
         lock_delete = transaction[1]["Delete"]
         self.assertEqual(
             lock_delete["Key"]["idempotency_key"]["S"],
-            active_offer_lock_key(11, "2026-12-01T10:00:00Z"),
+            active_offer_lock_key(11, "2026-12-01T10:00:00+05:30"),
         )
 
 

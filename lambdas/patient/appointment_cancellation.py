@@ -32,6 +32,7 @@ slots_table = ddb.Table(SLOTS_TABLE_NAME)
 IDEMPOTENCY_TTL_DAYS = 90
 cloudwatch = boto3.client("cloudwatch")
 SLOT_DEACTIVATION_RETRIES = 5
+INDIA_TIMEZONE = timezone(timedelta(hours=5, minutes=30))
 
 
 class CancellationError(Exception):
@@ -54,7 +55,7 @@ class AppointmentCancellationService:
                 user_id=user_id,
                 appointment_id=appointment_id,
                 refund_service=self.refund_service,
-                now=datetime.now(timezone.utc),
+                now=datetime.now(INDIA_TIMEZONE),
                 deactivate_slot=deactivate_slot,
                 single_appointment=single_appointment,
             )
@@ -134,7 +135,7 @@ class AppointmentCancellationService:
                 user_id=user_id,
                 appointment_id=appointment_id,
                 refund_service=self.refund_service,
-                now=datetime.now(timezone.utc),
+                now=datetime.now(INDIA_TIMEZONE),
             )
             publish_outcome_events(result)
             return result
@@ -153,7 +154,7 @@ class AppointmentCancellationService:
             result = self.repository.mark_completed(
                 user_id=user_id,
                 appointment_id=appointment_id,
-                now=datetime.now(timezone.utc),
+                now=datetime.now(INDIA_TIMEZONE),
             )
             publish_completed_event(result)
             return result
@@ -164,7 +165,7 @@ class AppointmentCancellationService:
 def release_cancelled_seat(cancellation):
     appointment_id = str(cancellation["appointment_id"])
     marker_key = f"seat-release:{appointment_id}"
-    now = datetime.now(timezone.utc)
+    now = datetime.now(INDIA_TIMEZONE)
     start_time = slot_key_value(cancellation["slot_start_time"])
     current_slot = slots_table.get_item(
         Key={
@@ -422,10 +423,11 @@ def slot_key_value(value):
         slot_start = value
     else:
         slot_start = datetime.fromisoformat(
-            value.replace("Z", "+00:00")
+            value.replace("Z", "+05:30")
         )
     if slot_start.tzinfo is None:
-        slot_start = slot_start.replace(tzinfo=timezone.utc)
-    slot_start = slot_start.astimezone(timezone.utc)
+        slot_start = slot_start.replace(tzinfo=INDIA_TIMEZONE)
+    else:
+        slot_start = slot_start.replace(tzinfo=INDIA_TIMEZONE)
     precision = "microseconds" if slot_start.microsecond else "seconds"
-    return slot_start.isoformat(timespec=precision).replace("+00:00", "Z")
+    return slot_start.isoformat(timespec=precision)

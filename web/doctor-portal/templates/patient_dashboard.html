@@ -478,14 +478,14 @@
       filterPatientAppointments();
     });
     filterPatientAppointments();
-    const parseUtcDateTime = value => new Date(
+    const parseIndiaDateTime = value => new Date(
       /(?:Z|[+-]\d{2}:\d{2})$/i.test(value)
         ? value
-        : `${value.replace(' ', 'T')}Z`
+        : `${value.replace(' ', 'T')}+05:30`
     );
     document.querySelectorAll('[data-india-datetime]').forEach(element => {
       const value = element.dataset.indiaDatetime;
-      const parsed = parseUtcDateTime(value);
+      const parsed = parseIndiaDateTime(value);
       if (!Number.isNaN(parsed.getTime())) {
         element.textContent = new Intl.DateTimeFormat('en-GB', {
           day: '2-digit', month: 'short', year: 'numeric',
@@ -507,7 +507,7 @@
     const patientCancelDialog = document.getElementById('patient-cancel-dialog');
     let patientCancelForm = null;
     const formatAppointmentDateTime = value => {
-      const parsed = parseUtcDateTime(value);
+      const parsed = parseIndiaDateTime(value);
       if (Number.isNaN(parsed.getTime())) return value;
       return new Intl.DateTimeFormat('en-GB', {
         day: '2-digit', month: 'short', year: 'numeric',

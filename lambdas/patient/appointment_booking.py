@@ -28,9 +28,10 @@ SLOTS_TABLE_NAME = os.environ["SLOTS_TABLE_NAME"]
 IDEMPOTENCY_TABLE_NAME = os.environ["IDEMPOTENCY_TABLE_NAME"]
 ENVIRONMENT = os.environ.get("ENVIRONMENT_NAME", "").lower()
 RETRY_DELAYS = (0.05, 0.1, 0.2, 0.4, 0.8)
-UTC_SLOT_TIME_PATTERN = re.compile(
-    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|\+00:00)$"
+IST_SLOT_TIME_PATTERN = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?\+05:30$"
 )
+INDIA_TIMEZONE = timezone(timedelta(hours=5, minutes=30))
 
 dynamodb = boto3.resource("dynamodb")
 cloudwatch = boto3.client("cloudwatch")
@@ -115,26 +116,22 @@ def parse_booking_request(event):
         raise BookingError(400, "doctor_id must be a positive integer.")
 
     value = body["slot_start_time"]
-    if not isinstance(value, str) or not UTC_SLOT_TIME_PATTERN.fullmatch(value):
+    if not isinstance(value, str) or not IST_SLOT_TIME_PATTERN.fullmatch(value):
         raise BookingError(
             400,
-            "slot_start_time must be a UTC ISO-8601 timestamp.",
+            "slot_start_time must be an IST ISO-8601 timestamp with +05:30 offset.",
         )
     try:
-        slot_start = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        slot_start = datetime.fromisoformat(value)
     except ValueError as error:
         raise BookingError(
             400,
-            "slot_start_time must be a valid UTC ISO-8601 timestamp.",
+            "slot_start_time must be a valid IST ISO-8601 timestamp.",
         ) from error
-    if slot_start.utcoffset() != timezone.utc.utcoffset(slot_start):
-        raise BookingError(400, "slot_start_time must be in UTC.")
+    if slot_start.utcoffset() != INDIA_TIMEZONE.utcoffset(slot_start):
+        raise BookingError(400, "slot_start_time must be in India Standard Time.")
     timespec = "microseconds" if slot_start.microsecond else "seconds"
-    slot_start_time = (
-        slot_start.astimezone(timezone.utc)
-        .isoformat(timespec=timespec)
-        .replace("+00:00", "Z")
-    )
+    slot_start_time = slot_start.isoformat(timespec=timespec)
     payment_method = body.get("payment_method", "UPI")
     if (
         not isinstance(payment_method, str)
@@ -178,13 +175,11 @@ def get_slot(doctor_id, slot_start_time):
 
 
 def validate_slot(slot):
-    now = datetime.now(timezone.utc)
+    now = datetime.now(INDIA_TIMEZONE)
     try:
-        slot_start = datetime.fromisoformat(
-            slot["slot_start_time"].replace("Z", "+00:00")
-        )
+        slot_start = datetime.fromisoformat(slot["slot_start_time"])
         if slot_start.tzinfo is None:
-            raise ValueError("Slot start time has no timezone.")
+            slot_start = slot_start.replace(tzinfo=INDIA_TIMEZONE)
         capacity = int(slot["capacity"])
         booked_count = int(slot["booked_count"])
         version = int(slot["version"])
@@ -243,9 +238,7 @@ def reserve_slot(doctor_id, slot_start_time, slot):
                     ":active": 1,
                     ":booked_count": booked_count,
                     ":version": version,
-                    ":now": now.isoformat(timespec="seconds").replace(
-                        "+00:00", "Z"
-                    ),
+                    ":now": now.isoformat(timespec="seconds"),
                 },
                 ReturnValues="ALL_NEW",
             )

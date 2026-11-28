@@ -1,4 +1,5 @@
 import logging
+from datetime import timedelta, timezone
 
 import boto3
 
@@ -6,20 +7,30 @@ try:
     from .appointment_repository import get_connection
     from .milestone6_common import (
         get_parameter,
+        india_now,
         publish_event,
         publish_metric,
-        utc_now,
     )
     from .refund_service import RefundService
 except ImportError:
     from appointment_repository import get_connection
-    from milestone6_common import get_parameter, publish_event, publish_metric, utc_now
+    from milestone6_common import (
+        get_parameter,
+        india_now,
+        publish_event,
+        publish_metric,
+    )
     from refund_service import RefundService
 
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 cloudwatch = boto3.client("cloudwatch")
+INDIA_TIMEZONE = timezone(timedelta(hours=5, minutes=30))
+
+
+def india_iso(value):
+    return value.replace(tzinfo=INDIA_TIMEZONE).isoformat(timespec="seconds")
 
 
 def reminder_lambda_handler(event, context):
@@ -30,6 +41,7 @@ def reminder_lambda_handler(event, context):
     interval = get_parameter("REMINDER_SWEEP_INTERVAL_MINUTES")
     connection = get_connection()
     events = []
+    now = india_now().replace(tzinfo=None)
     try:
         with connection.cursor() as cursor:
             for hours in reminder_windows:
@@ -40,16 +52,16 @@ def reminder_lambda_handler(event, context):
                     FROM appointments a
                     WHERE a.status = 'BOOKED'
                       AND a.appointment_status = 'CONFIRMED'
-                      AND a.slot_start_time > UTC_TIMESTAMP(6)
+                      AND a.slot_start_time > %s
                       AND a.slot_start_time <= DATE_ADD(
-                          UTC_TIMESTAMP(6), INTERVAL %s HOUR
+                          %s, INTERVAL %s HOUR
                       )
                       AND a.slot_start_time > DATE_SUB(
-                          DATE_ADD(UTC_TIMESTAMP(6), INTERVAL %s HOUR),
+                          DATE_ADD(%s, INTERVAL %s HOUR),
                           INTERVAL %s MINUTE
                       )
                     """,
-                    (hours, hours, interval),
+                    (now, now, hours, now, hours, interval),
                 )
                 events.extend(
                     {
@@ -57,7 +69,7 @@ def reminder_lambda_handler(event, context):
                         "patient_id": int(row["patient_id"]),
                         "doctor_id": int(row["doctor_id"]),
                         "slot_id": int(row["slot_id"]),
-                        "slot_start_time": row["slot_start_time"],
+                        "slot_start_time": india_iso(row["slot_start_time"]),
                         "reminder_hours": hours,
                     }
                     for row in cursor.fetchall()
@@ -98,10 +110,13 @@ def no_show_lambda_handler(event, context):
                           INTERVAL ct.duration_minutes MINUTE
                       ),
                       INTERVAL %s MINUTE
-                  ) <= UTC_TIMESTAMP(6)
+                  ) <= %s
                 ORDER BY a.appointment_id
                 """,
-                (grace_minutes,),
+                (
+                    grace_minutes,
+                    india_now().replace(tzinfo=None),
+                ),
             )
             due = cursor.fetchall()
     finally:
@@ -170,7 +185,7 @@ def mark_stale_no_show(appointment, refund_service, grace_minutes):
                 (appointment["appointment_id"],),
             )
             row["paid_amount"] = cursor.fetchone()["paid_amount"]
-            now = utc_now()
+            now = india_now()
             refund = refund_service.calculate(
                 row["appointment_datetime"],
                 now,
@@ -197,7 +212,7 @@ def mark_stale_no_show(appointment, refund_service, grace_minutes):
             "patient_id": str(row["patient_id"]),
             "doctor_id": str(row["doctor_id"]),
             "slot_id": str(row["slot_id"]),
-            "slot_start_time": str(appointment["slot_start_time"]),
+            "slot_start_time": india_iso(appointment["slot_start_time"]),
             "status": "NO_SHOW",
             "refund_amount": str(refund["refund_amount"]),
             "refund_reason": refund["refund_reason"],

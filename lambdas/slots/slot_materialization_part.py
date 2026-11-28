@@ -24,6 +24,7 @@ slots_table = dynamodb.Table(SLOT_TABLE_NAME)
 
 parameter_cache = {}
 METRIC_NAMESPACE = "MediSlot/Doctor"
+INDIA_TIMEZONE = timezone(timedelta(hours=5, minutes=30))
 
 
 def publish_metric(metric_name, value, unit="Count"):
@@ -77,12 +78,8 @@ def parse_sql_time(value):
     return (datetime.min + timedelta(seconds=seconds)).time()
 
 
-def utc_iso(value):
-    return value.astimezone(
-        timezone.utc
-    ).isoformat(
-        timespec="seconds"
-    ).replace("+00:00", "Z")
+def india_iso(value):
+    return value.replace(tzinfo=INDIA_TIMEZONE).isoformat(timespec="seconds")
 
 
 def weekday_name(value):
@@ -174,13 +171,13 @@ def materialize_for_doctor_day(
         availability_start = datetime.combine(
             local_day,
             start_time,
-            tzinfo=timezone.utc
+            tzinfo=INDIA_TIMEZONE
         )
 
         availability_end = datetime.combine(
             local_day,
             end_time,
-            tzinfo=timezone.utc
+            tzinfo=INDIA_TIMEZONE
         )
 
         slot_local = availability_start
@@ -196,11 +193,11 @@ def materialize_for_doctor_day(
             for blackout in blackout_rows:
 
                 blackout_start = blackout["start_datetime"].replace(
-                    tzinfo=timezone.utc
+                    tzinfo=INDIA_TIMEZONE
                 )
 
                 blackout_end = blackout["end_datetime"].replace(
-                    tzinfo=timezone.utc
+                    tzinfo=INDIA_TIMEZONE
                 )
 
                 # Overlap condition
@@ -211,10 +208,10 @@ def materialize_for_doctor_day(
                     is_blackout = True
                     break
 
-            start_iso = utc_iso(slot_local)
+            start_iso = india_iso(slot_local)
             if not is_blackout:
 
-                end_iso = utc_iso(slot_end)
+                end_iso = india_iso(slot_end)
 
                 slot_id = build_slot_id(
                     doctor["doctor_id"],
@@ -340,7 +337,7 @@ def materialize_handler(event, context):
             start_day = (
                 requested_start_date
                 if requested_start_date
-                else datetime.now(timezone.utc).date()
+                else datetime.now(INDIA_TIMEZONE).date()
             )
             days = (
                 (requested_end_date - requested_start_date).days + 1

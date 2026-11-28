@@ -1,7 +1,8 @@
 import logging
 import os
+import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -15,10 +16,10 @@ try:
         patient_actor,
         patient_id_for_user,
         get_connection,
+        india_now,
         response,
         publish_event,
         slot_key,
-        utc_now,
     )
 except ImportError:
     from milestone6_common import (
@@ -27,10 +28,10 @@ except ImportError:
         patient_actor,
         patient_id_for_user,
         get_connection,
+        india_now,
         response,
         publish_event,
         slot_key,
-        utc_now,
     )
 
 
@@ -107,6 +108,11 @@ class WaitlistError(Exception):
         self.status_code = status_code
 
 
+IST_SLOT_TIME_PATTERN = re.compile(
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?\+05:30$"
+)
+
+
 def join_waitlist(patient_id, body):
     required = {"doctor_id", "slot_id", "slot_start_time"}
     allowed = required | {"consultation_type_id", "payment_method"}
@@ -121,9 +127,13 @@ def join_waitlist(patient_id, body):
         raise ValueError("doctor_id and slot_id must be positive integers.") from error
     if doctor_id < 1 or slot_id < 1:
         raise ValueError("doctor_id and slot_id must be positive integers.")
+    if not isinstance(body["slot_start_time"], str) or not IST_SLOT_TIME_PATTERN.fullmatch(
+        body["slot_start_time"]
+    ):
+        raise ValueError("slot_start_time must be an IST timestamp with +05:30 offset.")
     start_time = slot_key(body["slot_start_time"])
-    now = utc_now()
-    parsed_start = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+    now = india_now()
+    parsed_start = datetime.fromisoformat(start_time)
     if parsed_start <= now:
         raise WaitlistError(409, "Past appointment slots cannot be waitlisted.")
 

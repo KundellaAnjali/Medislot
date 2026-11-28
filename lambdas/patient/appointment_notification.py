@@ -98,7 +98,7 @@ def _email_content(detail_type, detail, patient_name, appointment_id, slot_time)
         )
         text = (
             f"{summary}\n\nAppointment reference: #{appointment_id}\n"
-            f"Appointment time: {slot_time} (UTC)\n\n"
+            f"Appointment time: {slot_time} (IST)\n\n"
             "Please keep this reference for your records."
         )
         html_body = (
@@ -108,7 +108,7 @@ def _email_content(detail_type, detail, patient_name, appointment_id, slot_time)
             + html.escape(appointment_id)
             + "</p><p><strong>Appointment time:</strong> "
             + html.escape(slot_time)
-            + " (UTC)</p><p>Please keep this reference for your records.</p>"
+            + " (IST)</p><p>Please keep this reference for your records.</p>"
         )
         return subject, text, html_body
 
@@ -122,7 +122,7 @@ def _email_content(detail_type, detail, patient_name, appointment_id, slot_time)
     summary = f"Hello {patient_name}, your appointment has been cancelled."
     text = (
         f"{summary}\n\nAppointment reference: #{appointment_id}\n"
-        f"Appointment time: {slot_time} (UTC)\n"
+        f"Appointment time: {slot_time} (IST)\n"
         f"{refund_line}\n"
         "MediSlot records simulated payments and refunds; no money is moved "
         "by this application."
@@ -134,7 +134,7 @@ def _email_content(detail_type, detail, patient_name, appointment_id, slot_time)
         + html.escape(appointment_id)
         + "</p><p><strong>Appointment time:</strong> "
         + html.escape(slot_time)
-        + " (UTC)</p>"
+        + " (IST)</p>"
     )
     if refund_amount is not None:
         html_body += (
