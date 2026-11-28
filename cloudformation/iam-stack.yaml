@@ -33,6 +33,23 @@ Resources:
               - sqs:TagQueue
               - sqs:UntagQueue
             Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${EnvironmentName}-appointment-notifications"
+          - Effect: Allow
+            Action:
+              - states:CreateStateMachine
+              - states:DeleteStateMachine
+              - states:DescribeStateMachine
+              - states:ListTagsForResource
+              - states:TagResource
+              - states:UntagResource
+              - states:UpdateStateMachine
+            Resource: !Sub "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${EnvironmentName}-appointment-reschedule"
+          - Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/${EnvironmentName}-appointment-reschedule-sfn-role"
+            Condition:
+              StringEquals:
+                iam:PassedToService: states.amazonaws.com
 
   SchemaInitLambdaRole:
     Type: AWS::IAM::Role
