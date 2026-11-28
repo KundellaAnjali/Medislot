@@ -403,6 +403,11 @@ Resources:
                   - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-waitlist-offers/index/*"
               - Effect: Allow
                 Action:
+                  - dynamodb:ConditionCheckItem
+                Resource:
+                  - !Sub "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${EnvironmentName}-slots-v2"
+              - Effect: Allow
+                Action:
                   - events:PutEvents
                 Resource:
                   - !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/default"

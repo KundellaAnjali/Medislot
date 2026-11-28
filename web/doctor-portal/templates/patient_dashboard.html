@@ -40,9 +40,7 @@
       <section class="patient-dashboard-view" id="patient-dashboard-view" data-patient-view>
         <section class="doctor-welcome patient-welcome">
           <div class="doctor-welcome-copy">
-            <p class="eyebrow">Your patient portal</p>
             <h1>Welcome{{ ', ' ~ profile.get('first_name')|title if profile and profile.get('first_name') else '' }}.</h1>
-            <p>Find trusted care, manage your appointments and keep your health details up to date.</p>
           </div>
           <div class="doctor-welcome-actions">
             <span class="doctor-date-chip"><span aria-hidden="true">&#9719;</span>{{ today_display_date }}</span>
@@ -69,7 +67,6 @@
           </button>
         </div>
         <section class="dashboard-panel patient-overview-panel">
-          <div class="panel-heading"><div><p class="eyebrow">Your care</p><h2>Stay on top of your health</h2></div></div>
           <div class="patient-quick-actions">
             <button class="patient-quick-action" type="button" data-patient-go-view="doctor-search-view"><span class="patient-quick-icon" aria-hidden="true">&#9906;</span><span><strong>Find a doctor</strong><small>Search by name, specialty or location</small></span><span class="patient-action-arrow" aria-hidden="true">&#8594;</span></button>
             <button class="patient-quick-action" type="button" data-patient-go-view="patient-appointments-view"><span class="patient-quick-icon" aria-hidden="true">&#9776;</span><span><strong>Manage appointments</strong><small>Review your bookings and cancellations</small></span><span class="patient-action-arrow" aria-hidden="true">&#8594;</span></button>
@@ -80,7 +77,7 @@
 
       <section class="patient-dashboard-view" id="patient-appointments-view" data-patient-view hidden>
         <section class="view-heading patient-view-heading">
-          <div><p class="eyebrow">Your care</p><h1>Appointments</h1><p class="view-subtitle">Review your booking details and manage upcoming visits.</p></div>
+          <div><h1>Appointments</h1><p class="view-subtitle">Review your booking details and manage upcoming visits.</p></div>
           <button class="button primary" type="button" data-patient-go-view="doctor-search-view">Book an appointment</button>
         </section>
         <section class="patient-appointments dashboard-panel" id="my-appointments">

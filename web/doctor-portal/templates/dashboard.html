@@ -45,7 +45,6 @@
       <section class="dashboard-view" id="dashboard-view" data-view>
         <section class="doctor-welcome">
           <div class="doctor-welcome-copy">
-            <p class="eyebrow">Your practice at a glance</p>
             <h1>Good day, Dr. {{ profile.first_name or 'Doctor' }}</h1>
             <p>Manage your appointments, availability and patient care from one workspace.</p>
           </div>
@@ -91,7 +90,7 @@
       </section>
 
       <section class="dashboard-view" id="availability-view" data-view hidden>
-        <div class="view-heading"><div><p class="eyebrow">Recurring weekly</p><h1>Availability</h1><p class="view-subtitle">Set the consultation hours that generate bookable slots.</p></div>{% if profile.is_verified %}<button class="button primary" type="button" id="add-pattern">+ Add availability</button>{% endif %}</div>
+        <div class="view-heading"><div><p class="eyebrow">Recurring weekly</p><h1>Availability</h1></div>{% if profile.is_verified %}<button class="button primary" type="button" id="add-pattern">+ Add availability</button>{% endif %}</div>
         <section class="dashboard-panel">
           <form method="post" action="{{ url_for('save_availability') }}" id="availability-form">
             <fieldset class="configuration-controls" {{ 'disabled' if not profile.is_verified else '' }}>
@@ -116,12 +115,12 @@
 
       <section class="dashboard-view" id="blackout-view" data-view hidden>
         <div class="view-heading blackout-page-heading">
-          <div><p class="eyebrow">Availability controls</p><h1>Blackout days</h1><p class="view-subtitle">Protect time away from your practice by blocking periods from new bookings.</p></div>
+          <div><h1>Blackout days</h1></div>
           <span class="blackout-summary-chip"><strong>{{ blackouts|length }}</strong> {{ 'window' if blackouts|length == 1 else 'windows' }} configured</span>
         </div>
         <section class="dashboard-panel blackout-create-panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">Plan time away</p><h2>Create a blackout window</h2><p class="panel-description">Choose when the block begins and ends. Appointments cannot be booked during this period.</p></div>
+            <div><h2>Create a blackout window</h2></div>
           </div>
           {% if profile.is_verified %}
             <form class="blackout-form" method="post" action="{{ url_for('add_blackout') }}" id="blackout-form">
@@ -136,7 +135,7 @@
         </section>
         <section class="dashboard-panel blackout-list-panel">
           <div class="panel-heading">
-            <div><p class="eyebrow">Your calendar</p><h2>Scheduled time away</h2><p class="panel-description">Review or remove existing blackout windows.</p></div>
+            <div><h2>Scheduled time away</h2></div>
             {% if blackouts %}<span class="count-label">{{ blackouts|length }} total</span>{% endif %}
           </div>
           {% if blackouts %}
@@ -299,7 +298,7 @@
       </section>
 
       <section class="dashboard-view" id="appointments-view" data-view hidden>
-        <div class="view-heading"><div><p class="eyebrow">Booking history</p><h1>Appointments</h1><p class="view-subtitle">Review booked and cancelled appointments.</p></div></div>
+        <div class="view-heading"><div><p class="eyebrow">Booking history</p><h1>Appointments</h1></div></div>
         <section class="dashboard-panel patient-appointments">
           <div class="panel-heading"><div><p class="eyebrow">Patient bookings</p><h2>All appointments</h2></div></div>
             <form class="patient-appointment-toolbar" id="doctor-appointment-filter-form" method="get" action="{{ url_for('doctor_dashboard') }}">
@@ -481,7 +480,7 @@
           <div class="consulting-summary-chips"><span><strong>{{ consultations|selectattr('is_active')|list|length }}</strong> active</span><span><strong>{{ consultations|length }}</strong> total</span></div>
         </div>
         <section class="dashboard-panel consultation-create-panel">
-          <div class="panel-heading"><div><p class="eyebrow">Build your service menu</p><h2>Add a consultation type</h2><p class="panel-description">Choose a service and set its fee and booking capacity.</p></div></div>
+          <div class="panel-heading"><div><h2>Add a consultation type</h2></div></div>
           <form class="consultation-form" method="post" action="{{ url_for('create_consultation_type') }}">
             <fieldset class="configuration-controls consultation-create-fields" {{ 'disabled' if not profile.is_verified else '' }}>
               <label for="consultation-name">Consultation type
@@ -500,7 +499,7 @@
           {% if not profile.is_verified %}<p class="form-hint">Complete your profile verification to add or edit consultation types.</p>{% endif %}
         </section>
         <section class="dashboard-panel consultation-menu-panel">
-          <div class="panel-heading"><div><p class="eyebrow">Your services</p><h2>Consultation menu</h2><p class="panel-description">Update fees and capacity, or remove a service from your menu.</p></div><span class="count-label">{{ consultations|selectattr('is_active')|list|length }} active</span></div>
+          <div class="panel-heading"><div><h2>Consultation menu</h2></div><span class="count-label">{{ consultations|selectattr('is_active')|list|length }} active</span></div>
           <ul class="consultation-list">
             {% for consultation in consultations %}
               <li class="consultation-card {{ 'inactive-consultation' if not consultation.is_active else '' }}">

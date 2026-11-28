@@ -16,9 +16,7 @@
   <main class="patient-content">
     <a class="button secondary availability-back-link" href="{{ url_for('patient_dashboard') }}">Previous</a>
     <section class="availability-hero">
-      <p class="eyebrow">Find care</p>
       <h1>Choose a time that works for you.</h1>
-      <p>Browse open appointments with Doctor {{ doctor_id }}.</p>
     </section>
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% for category, message in messages %}<p class="notice {{ category }}" role="{{ 'alert' if category == 'error' else 'status' }}" data-auto-dismiss>{{ message }}</p>{% endfor %}
@@ -66,8 +64,8 @@
                       <span class="consultation-badge">{{ 'Booked' if slot.is_full or slot.available_seats <= 0 else slot.available_seats ~ ' seat' ~ ('' if slot.available_seats == 1 else 's') ~ ' available' }}</span>
                     </div>
                     <dl class="availability-slot-details">
-                      <div><dt>Starts</dt><dd>{{ slot.start_time }}</dd></div>
-                      <div><dt>Ends</dt><dd>{{ slot.end_time }}</dd></div>
+                      <div><dt>Starts</dt><dd>{{ slot.start_time[11:16] }}</dd></div>
+                      <div><dt>Ends</dt><dd>{{ slot.end_time[11:16] }}</dd></div>
                       <div><dt>Capacity</dt><dd>{{ slot.booked_count }} of {{ slot.capacity }} booked</dd></div>
                     </dl>
                     {% if reschedule_appointment_id %}

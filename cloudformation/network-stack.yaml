@@ -296,6 +296,19 @@ Resources:
         - !Ref PrivateSubnetA
         - !Ref PrivateSubnetB
 
+  StepFunctionsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.states"
+      SecurityGroupIds:
+        - !Ref VPCEndpointSecurityGroup
+      SubnetIds:
+        - !Ref PrivateSubnetA
+        - !Ref PrivateSubnetB
+
 Outputs:
 
   VpcId:
