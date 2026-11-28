@@ -6,7 +6,33 @@ Parameters:
   EnvironmentName:
     Type: String
 
+  DeploymentRoleName:
+    Type: String
+    Default: MediSlot-Github-Connection
+    Description: Existing GitHub Actions role used to deploy MediSlot stacks
+
 Resources:
+
+  AppointmentNotificationQueueDeploymentPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "${EnvironmentName}-appointment-notification-queue-deployment"
+      Roles:
+        - !Ref DeploymentRoleName
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - sqs:CreateQueue
+              - sqs:DeleteQueue
+              - sqs:GetQueueAttributes
+              - sqs:GetQueueUrl
+              - sqs:ListQueueTags
+              - sqs:SetQueueAttributes
+              - sqs:TagQueue
+              - sqs:UntagQueue
+            Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${EnvironmentName}-appointment-notifications"
 
   SchemaInitLambdaRole:
     Type: AWS::IAM::Role
