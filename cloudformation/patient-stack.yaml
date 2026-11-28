@@ -584,7 +584,7 @@ Resources:
       Description: Expire waitlist offers and promote the next patient
       ScheduleExpression:
         Fn::Sub:
-          - "rate(${SweepMinutes} minutes)"
+          - "cron(*/${SweepMinutes} * * * ? *)"
           - SweepMinutes:
               Fn::ImportValue: !Sub "${EnvironmentName}-OfferExpirySweepIntervalMinutes"
       State: ENABLED
