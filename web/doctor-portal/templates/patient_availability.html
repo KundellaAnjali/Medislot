@@ -99,13 +99,17 @@
                       <button class="button primary" type="submit" {% if slot.is_full or slot.available_seats <= 0 %}disabled{% endif %}>{{ 'Booked' if slot.is_full or slot.available_seats <= 0 else 'Book this appointment' }}</button>
                     </form>
                     {% if slot.is_full or slot.available_seats <= 0 %}
-                      <form method="post" action="{{ url_for('join_patient_waitlist') }}" class="waitlist-join-form">
-                        <input type="hidden" name="doctor_id" value="{{ doctor_id }}">
-                        <input type="hidden" name="slot_id" value="{{ slot.slot_id }}">
-                        <input type="hidden" name="slot_start_time" value="{{ slot.start_time }}">
-                        <input type="hidden" name="consultation_type_id" value="{{ slot.consultation_type_id }}">
-                        <button class="button secondary" type="submit">Join waitlist</button>
-                      </form>
+                      {% if slot.patient_has_active_booking %}
+                        <p class="waitlist-already-booked" role="status">You already have this appointment.</p>
+                      {% else %}
+                        <form method="post" action="{{ url_for('join_patient_waitlist') }}" class="waitlist-join-form">
+                          <input type="hidden" name="doctor_id" value="{{ doctor_id }}">
+                          <input type="hidden" name="slot_id" value="{{ slot.slot_id }}">
+                          <input type="hidden" name="slot_start_time" value="{{ slot.start_time }}">
+                          <input type="hidden" name="consultation_type_id" value="{{ slot.consultation_type_id }}">
+                          <button class="button secondary" type="submit">Join waitlist</button>
+                        </form>
+                      {% endif %}
                     {% endif %}
                     {% endif %}
                   </article>

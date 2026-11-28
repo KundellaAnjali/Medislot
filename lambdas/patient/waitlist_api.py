@@ -14,6 +14,7 @@ try:
         parse_body,
         patient_actor,
         patient_id_for_user,
+        get_connection,
         response,
         publish_event,
         slot_key,
@@ -25,6 +26,7 @@ except ImportError:
         parse_body,
         patient_actor,
         patient_id_for_user,
+        get_connection,
         response,
         publish_event,
         slot_key,
@@ -135,6 +137,11 @@ def join_waitlist(patient_id, body):
         raise WaitlistError(409, "This appointment slot is not active.")
     if not is_full(slot):
         raise WaitlistError(409, "Waitlists are available only for full slots.")
+    if patient_has_active_booking(patient_id, doctor_id, slot_id):
+        raise WaitlistError(
+            409,
+            "You already have an active appointment for this slot.",
+        )
 
     waitlist_id = uuid.uuid4().hex
     joined_at = now.isoformat(timespec="microseconds") + "#" + waitlist_id
@@ -289,6 +296,28 @@ def join_waitlist(patient_id, body):
 
 def is_full(slot):
     return int(slot.get("booked_count", 0)) >= int(slot.get("capacity", 0))
+
+
+def patient_has_active_booking(patient_id, doctor_id, slot_id):
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT 1
+                FROM appointments
+                WHERE patient_id = %s
+                  AND doctor_id = %s
+                  AND slot_id = %s
+                  AND status = 'BOOKED'
+                  AND appointment_status = 'CONFIRMED'
+                LIMIT 1
+                """,
+                (patient_id, doctor_id, slot_id),
+            )
+            return cursor.fetchone() is not None
+    finally:
+        connection.close()
 
 
 def list_waitlists(patient_id):

@@ -655,6 +655,15 @@ input:focus, select:focus {
 .availability-slot .waitlist-join-form { display: flex; padding-top: 10px; }
 .availability-slot .appointment-booking-form label { flex-basis: 100%; }
 .availability-slot .appointment-booking-form select { width: 100%; }
+.availability-slot .waitlist-already-booked {
+  padding: 10px 12px;
+  margin-top: auto;
+  border: 1px solid #dfece5;
+  border-radius: 8px;
+  color: #45675a;
+  background: #f3f8f5;
+  font-weight: 600;
+}
 .appointment-booking-form { border-color: #ebf0ed; }
 
 @media (max-width: 1000px) {

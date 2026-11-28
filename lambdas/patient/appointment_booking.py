@@ -5,7 +5,7 @@ import os
 import re
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import boto3
 from botocore.exceptions import ClientError
@@ -184,7 +184,7 @@ def validate_slot(slot):
             slot["slot_start_time"].replace("Z", "+00:00")
         )
         if slot_start.tzinfo is None:
-            slot_start = slot_start.replace(tzinfo=timezone.utc)
+            raise ValueError("Slot start time has no timezone.")
         capacity = int(slot["capacity"])
         booked_count = int(slot["booked_count"])
         version = int(slot["version"])
@@ -204,7 +204,10 @@ def validate_slot(slot):
         raise RuntimeError("Slot record contains invalid booking values.")
     if booked_count >= capacity:
         raise BookingError(409, "This appointment slot is fully booked.")
-    return capacity, booked_count, version, now
+    reservation_cutoff = now.replace(microsecond=0)
+    if now.microsecond:
+        reservation_cutoff += timedelta(seconds=1)
+    return capacity, booked_count, version, reservation_cutoff
 
 
 def reserve_slot(doctor_id, slot_start_time, slot):

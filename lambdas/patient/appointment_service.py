@@ -49,6 +49,22 @@ class AppointmentService:
         payment_method="UPI",
         payment_outcome="SUCCESS",
     ):
+        try:
+            requested_start = datetime.fromisoformat(
+                slot_start_time.replace("Z", "+00:00")
+            )
+        except (AttributeError, TypeError, ValueError) as error:
+            raise AppointmentServiceError(
+                400, "Appointment slot start time is invalid."
+            ) from error
+        if (
+            requested_start.tzinfo is None
+            or requested_start.astimezone(timezone.utc) <= datetime.now(timezone.utc)
+        ):
+            raise AppointmentServiceError(
+                409, "This appointment slot is in the past."
+            )
+
         idempotency_key = hashlib.sha256(
             f"{user_id}:{key}".encode("utf-8")
         ).hexdigest()

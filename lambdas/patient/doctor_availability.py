@@ -161,6 +161,32 @@ def consultation_names_by_id(consultation_type_ids):
         connection.close()
 
 
+def patient_booked_slot_ids(user_id, doctor_id, slots):
+    if not slots:
+        return set()
+    placeholders = ",".join(["%s"] * len(slots))
+    slot_ids = [int(slot["slot_id"]) for slot in slots]
+    connection = get_connection()
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                SELECT DISTINCT a.slot_id
+                FROM appointments a
+                JOIN patients p ON p.patient_id = a.patient_id
+                WHERE p.user_id = %s
+                  AND a.doctor_id = %s
+                  AND a.slot_id IN ({placeholders})
+                  AND a.status = 'BOOKED'
+                  AND a.appointment_status = 'CONFIRMED'
+                """,
+                (user_id, doctor_id, *slot_ids),
+            )
+            return {int(row["slot_id"]) for row in cursor.fetchall()}
+    finally:
+        connection.close()
+
+
 def lambda_handler(event, context):
     publish_metric("DoctorAvailabilityRequests", 1)
 
@@ -190,6 +216,11 @@ def lambda_handler(event, context):
 
     try:
         slots = get_slots(doctor_id, start_date, end_date)
+        booked_slot_ids = patient_booked_slot_ids(
+            int(authorizer["userId"]),
+            doctor_id,
+            slots,
+        )
         consultation_names = consultation_names_by_id(
             {slot["consultation_type_id"] for slot in slots}
         )
@@ -197,6 +228,9 @@ def lambda_handler(event, context):
             slot["consultation_type"] = consultation_names.get(
                 slot["consultation_type_id"],
                 "Consultation",
+            )
+            slot["patient_has_active_booking"] = (
+                slot["slot_id"] in booked_slot_ids
             )
         publish_metric("DoctorAvailabilitySuccesses", 1)
         publish_metric("DoctorAvailabilitySlotsReturned", len(slots))
