@@ -39,6 +39,7 @@ app.config.update(
 Session(app)
 
 API_BASE_URL = os.environ["MEDISLOT_API_BASE_URL"].rstrip("/") + "/"
+INDIA_TIMEZONE = timezone(timedelta(hours=5, minutes=30))
 
 
 def format_display_date(value):
@@ -55,7 +56,23 @@ def format_display_datetime(value):
     parsed_datetime = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     if parsed_datetime.tzinfo is None:
         parsed_datetime = parsed_datetime.replace(tzinfo=timezone.utc)
-    return parsed_datetime.astimezone(timezone.utc).strftime("%d %b %Y, %H:%M")
+    return parsed_datetime.astimezone(INDIA_TIMEZONE).strftime("%d %b %Y, %H:%M")
+
+
+def format_display_india_date(value):
+    parsed_datetime = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if parsed_datetime.tzinfo is None:
+        parsed_datetime = parsed_datetime.replace(tzinfo=timezone.utc)
+    return parsed_datetime.astimezone(INDIA_TIMEZONE).strftime("%Y-%m-%d")
+
+
+def parse_india_datetime_to_utc(value):
+    parsed_datetime = datetime.fromisoformat(value)
+    if parsed_datetime.tzinfo is not None:
+        raise ValueError("Blackout times must be entered as India local time.")
+    return parsed_datetime.replace(tzinfo=INDIA_TIMEZONE).astimezone(
+        timezone.utc
+    ).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def parse_slot_start_time(value):
@@ -74,6 +91,7 @@ def parse_slot_start_time(value):
 
 app.jinja_env.filters["display_date"] = format_display_date
 app.jinja_env.filters["display_datetime"] = format_display_datetime
+app.jinja_env.filters["display_india_date"] = format_display_india_date
 
 
 @app.before_request
@@ -601,7 +619,9 @@ def doctor_dashboard():
         if item.get("is_active")
     }
     try:
-        schedule_date = request.args.get("date") or datetime.now(timezone.utc).date().isoformat()
+        schedule_date = request.args.get("date") or datetime.now(
+            INDIA_TIMEZONE
+        ).date().isoformat()
         schedule = api_request(
             "GET", "/doctors/me/schedule", params={"date": schedule_date}
         )
@@ -610,9 +630,9 @@ def doctor_dashboard():
             schedule = {"slots": [], "date": schedule_date}
         else:
             raise
-    today_utc = datetime.now(timezone.utc).date().isoformat()
+    today_india = datetime.now(INDIA_TIMEZONE).date().isoformat()
     next_schedule_slots = schedule.get("slots", [])
-    if schedule.get("date") == today_utc:
+    if schedule.get("date") == today_india:
         now_utc = datetime.now(timezone.utc)
         next_schedule_slots = [
             slot
@@ -734,7 +754,7 @@ def patient_dashboard():
         waitlists_error=waitlists_error,
         doctor_search=doctor_search_results,
         doctor_search_filters=doctor_search_filters,
-        today_display_date=format_display_date(datetime.now(timezone.utc).date()),
+        today_display_date=format_display_date(datetime.now(INDIA_TIMEZONE).date()),
     )
 
 
@@ -795,7 +815,7 @@ def patient_api_error(error):
             appointments_offset=0,
             appointments_has_more=False,
             appointments_next_offset=None,
-            today_display_date=format_display_date(datetime.now(timezone.utc).date()),
+            today_display_date=format_display_date(datetime.now(INDIA_TIMEZONE).date()),
         ), 403
     else:
         flash(str(error), "error")
@@ -850,7 +870,7 @@ def patient_doctor_search():
         waitlists_error=waitlists_error,
         doctor_search=results,
         doctor_search_filters=filters,
-        today_display_date=format_display_date(datetime.now(timezone.utc).date()),
+        today_display_date=format_display_date(datetime.now(INDIA_TIMEZONE).date()),
     )
 
 
@@ -860,7 +880,7 @@ def patient_doctor_availability(doctor_id):
     profile_response = g.authorized_profile_response
     profile = profile_response.get("profile") if profile_response else None
     start_date = request.args.get("start_date") or datetime.now(
-        timezone.utc
+        INDIA_TIMEZONE
     ).date().isoformat()
     end_date = request.args.get("end_date")
     if not end_date:
@@ -1623,12 +1643,22 @@ def save_availability():
 @doctor_required
 @with_api_errors
 def add_blackout():
+    try:
+        start_datetime = parse_india_datetime_to_utc(
+            request.form.get("start_datetime", "")
+        )
+        end_datetime = parse_india_datetime_to_utc(
+            request.form.get("end_datetime", "")
+        )
+    except ValueError as error:
+        flash(str(error), "error")
+        return redirect(url_for("doctor_dashboard", view="blackout-view"))
     api_request(
         "POST",
         "/doctors/me/blackouts",
         json_body={
-            "start_datetime": request.form.get("start_datetime", ""),
-            "end_datetime": request.form.get("end_datetime", ""),
+            "start_datetime": start_datetime,
+            "end_datetime": end_datetime,
         },
     )
     flash("Blackout day added.", "success")

@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import re
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 import boto3
 import pymysql
@@ -14,6 +14,7 @@ logger.setLevel(logging.INFO)
 
 METRIC_NAMESPACE = "MediSlot/Patient"
 ENVIRONMENT = os.environ["ENVIRONMENT_NAME"]
+INDIA_TIMEZONE = timezone(timedelta(hours=5, minutes=30))
 
 dynamodb = boto3.resource("dynamodb")
 cloudwatch = boto3.client("cloudwatch")
@@ -98,11 +99,14 @@ def get_doctor_id(event):
 
 def get_slots(doctor_id, start_date, end_date):
     start_time = datetime.combine(
-        start_date, time.min, tzinfo=timezone.utc
-    ).isoformat(timespec="seconds").replace("+00:00", "Z")
+        start_date, time.min, tzinfo=INDIA_TIMEZONE
+    ).astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     end_time = datetime.combine(
-        end_date, time.max.replace(microsecond=0), tzinfo=timezone.utc
-    ).isoformat(timespec="seconds").replace("+00:00", "Z")
+        end_date + timedelta(days=1), time.min, tzinfo=INDIA_TIMEZONE
+    ).astimezone(timezone.utc)
+    end_time = (end_time - timedelta(seconds=1)).isoformat(
+        timespec="seconds"
+    ).replace("+00:00", "Z")
     now = datetime.now(timezone.utc)
     slots = []
     for slot in query_slots_in_range(

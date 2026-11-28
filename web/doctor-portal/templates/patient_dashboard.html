@@ -124,7 +124,7 @@
                   <span class="status-badge {{ appointment_badge }}">{{ appointment_status }}</span>
                 </div>
                 <p><strong>Doctor</strong><a href="{{ url_for('public_doctor_profile', doctor_id=appointment.doctor_id) }}">View Dr. {{ appointment.doctor_name }} profile</a></p>
-                <p><strong>Date and time</strong><time class="patient-appointment-time" datetime="{{ appointment.slot_start_time }}" data-utc-time="{{ appointment.slot_start_time }}">{{ appointment.slot_start_time }}</time></p>
+                <p><strong>Date and time</strong><time class="patient-appointment-time" datetime="{{ appointment.slot_start_time }}" data-india-datetime="{{ appointment.slot_start_time }}">{{ appointment.slot_start_time }}</time></p>
                 <p><strong>Consultation type</strong><span>{{ appointment.consultation_type or 'Not available' }}</span></p>
                 <p><strong>Duration</strong><span>{% if appointment.duration_minutes is not none %}{{ appointment.duration_minutes }} minutes{% else %}Not available{% endif %}</span></p>
                 <p><strong>Payment</strong><button class="button secondary payment-details-button" type="button"
@@ -181,7 +181,7 @@
                 <article class="patient-appointment-card">
                   <div class="patient-appointment-details">
                     <div class="appointment-card-heading"><div><span class="schedule-field-label">Offer expires</span><h3><time data-offer-expiry="{{ offer.expires_at }}">{{ offer.expires_at }}</time></h3></div><span class="status-badge status-booked">Action required</span></div>
-                    <p><strong>Date and time</strong><time class="patient-appointment-time" datetime="{{ offer.slot_start_time }}">{{ offer.slot_start_time }}</time></p>
+                    <p><strong>Date and time</strong><time class="patient-appointment-time" datetime="{{ offer.slot_start_time }}" data-india-datetime="{{ offer.slot_start_time }}">{{ offer.slot_start_time }}</time></p>
                     <p><strong>Consultation</strong><span>{{ offer.consultation_type_id }}</span></p>
                   </div>
                   <form method="post" action="{{ url_for('accept_patient_waitlist_offer', offer_id=offer.offer_id) }}">
@@ -202,7 +202,7 @@
                 <article class="patient-appointment-card">
                   <div class="patient-appointment-details">
                     <div class="appointment-card-heading"><div><span class="schedule-field-label">Joined</span><h3>{{ waitlist.joined_at[:10] }}</h3></div><span class="status-badge {{ 'status-booked' if waitlist.status == 'OFFERED' else 'status-pending' }}">{{ waitlist.status|title }}</span></div>
-                    <p><strong>Date and time</strong><time class="patient-appointment-time" datetime="{{ waitlist.slot_start_time }}">{{ waitlist.slot_start_time }}</time></p>
+                    <p><strong>Date and time</strong><time class="patient-appointment-time" datetime="{{ waitlist.slot_start_time }}" data-india-datetime="{{ waitlist.slot_start_time }}">{{ waitlist.slot_start_time }}</time></p>
                     <p><strong>Consultation</strong><span>{{ waitlist.consultation_type_id }}</span></p>
                   </div>
                   {% if waitlist.status == 'WAITING' %}
@@ -478,14 +478,19 @@
       filterPatientAppointments();
     });
     filterPatientAppointments();
-    document.querySelectorAll('[data-utc-time]').forEach(element => {
-      const value = element.dataset.utcTime;
-      const parsed = new Date(value.endsWith('Z') ? value : `${value.replace(' ', 'T')}Z`);
+    const parseUtcDateTime = value => new Date(
+      /(?:Z|[+-]\d{2}:\d{2})$/i.test(value)
+        ? value
+        : `${value.replace(' ', 'T')}Z`
+    );
+    document.querySelectorAll('[data-india-datetime]').forEach(element => {
+      const value = element.dataset.indiaDatetime;
+      const parsed = parseUtcDateTime(value);
       if (!Number.isNaN(parsed.getTime())) {
         element.textContent = new Intl.DateTimeFormat('en-GB', {
           day: '2-digit', month: 'short', year: 'numeric',
-          hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
-        }).format(parsed);
+          hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata',
+        }).format(parsed) + ' IST';
       }
     });
     document.querySelectorAll('[data-offer-expiry]').forEach(element => {
@@ -493,8 +498,8 @@
       if (!Number.isNaN(parsed.getTime())) {
         element.textContent = new Intl.DateTimeFormat('en-GB', {
           day: '2-digit', month: 'short', year: 'numeric',
-          hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
-        }).format(parsed);
+          hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata',
+        }).format(parsed) + ' IST';
       }
     });
     document.querySelector('[data-refresh-waitlists]')?.addEventListener('click', () => window.location.reload());
@@ -502,12 +507,12 @@
     const patientCancelDialog = document.getElementById('patient-cancel-dialog');
     let patientCancelForm = null;
     const formatAppointmentDateTime = value => {
-      const parsed = new Date(value.endsWith('Z') ? value : `${value.replace(' ', 'T')}Z`);
+      const parsed = parseUtcDateTime(value);
       if (Number.isNaN(parsed.getTime())) return value;
       return new Intl.DateTimeFormat('en-GB', {
         day: '2-digit', month: 'short', year: 'numeric',
-        hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
-      }).format(parsed);
+        hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata',
+      }).format(parsed) + ' IST';
     };
     document.querySelectorAll('[data-open-cancel-dialog]').forEach(button => button.addEventListener('click', () => {
       patientCancelForm = button.closest('[data-patient-cancel-form]');

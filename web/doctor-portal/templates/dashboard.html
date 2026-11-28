@@ -74,7 +74,7 @@
           {% if next_schedule_slots %}
             <div class="schedule-list">
               {% for slot in next_schedule_slots[:4] %}
-                <article class="schedule-row"><time class="slot-time">{{ slot.start_time[11:16] }}</time><div class="slot-main"><strong>{{ slot.consultation_name or 'Consultation' }}</strong><span>{{ slot.appointments|length }} of {{ slot.capacity }} seats booked</span></div><div class="slot-patients">{% for appointment in slot.appointments %}<span>{{ appointment.first_name|title }} {{ appointment.last_name|title }}</span>{% else %}<span class="muted">No patients booked</span>{% endfor %}</div><span class="slot-state">{{ 'Blocked' if slot.status == 0 else ('Booked' if slot.appointments else 'Available') }}</span></article>
+                <article class="schedule-row"><time class="slot-time" data-india-time datetime="{{ slot.start_time }}">{{ slot.start_time[11:16] }}</time><div class="slot-main"><strong>{{ slot.consultation_name or 'Consultation' }}</strong><span>{{ slot.appointments|length }} of {{ slot.capacity }} seats booked</span></div><div class="slot-patients">{% for appointment in slot.appointments %}<span>{{ appointment.first_name|title }} {{ appointment.last_name|title }}</span>{% else %}<span class="muted">No patients booked</span>{% endfor %}</div><span class="slot-state">{{ 'Blocked' if slot.status == 0 else ('Booked' if slot.appointments else 'Available') }}</span></article>
               {% endfor %}
             </div>
           {% else %}<div class="empty-state compact-empty"><span class="empty-symbol">&#9711;</span><p>No upcoming slots on this date</p></div>{% endif %}
@@ -184,11 +184,11 @@
                 {% set available_count = [slot.capacity|int - booked_count, 0]|max %}
                 <article class="schedule-row schedule-card" data-slot-status="{{ slot_filter }}" data-slot-time="{{ slot.start_time }}" data-consultation="{{ slot.consultation_name or 'Consultation' }}" data-consultation-fee="{{ slot.consultation_fee if slot.consultation_fee is not none else '' }}" data-consultation-duration="{{ slot.duration_minutes if slot.duration_minutes is not none else '' }}" data-capacity="{{ booked_count }} of {{ slot.capacity }} booked; {{ available_count }} available">
                   {% if slot_filter == 'booked' %}
-                    <label class="slot-select-label"><input class="slot-select" type="checkbox" value="{{ slot.appointments[0].appointment_id }}" aria-label="Select slot at {{ slot.start_time[11:16] }}"></label>
+                    <label class="slot-select-label"><input class="slot-select" type="checkbox" value="{{ slot.appointments[0].appointment_id }}" aria-label="Select slot at {{ slot.start_time|display_datetime }} IST"></label>
                   {% else %}
                     <span class="slot-select-spacer" aria-hidden="true"></span>
                   {% endif %}
-                  <div class="schedule-card-time"><span class="schedule-field-label">Slot time</span><time datetime="{{ slot.start_time }}">{{ slot.start_time[11:16] }}</time><span class="schedule-date">{{ schedule_display_date }}</span></div>
+                  <div class="schedule-card-time"><span class="schedule-field-label">Slot time</span><time data-india-time datetime="{{ slot.start_time }}">{{ slot.start_time[11:16] }}</time><span class="schedule-date">{{ schedule_display_date }}</span></div>
                   <div class="schedule-card-type"><span class="schedule-field-label">Consultation type</span><strong>{{ slot.consultation_name or 'Consultation' }}</strong><span class="schedule-type-meta">{% if slot.consultation_fee is not none %}Fee {{ '%.2f'|format(slot.consultation_fee|float) }}{% else %}Fee unavailable{% endif %} · {% if slot.duration_minutes is not none %}{{ slot.duration_minutes }} min{% else %}Duration unavailable{% endif %}</span></div>
                   <div class="schedule-card-patients"><span class="schedule-field-label">Patient name</span>
                     {% for appointment in slot.appointments %}
@@ -337,7 +337,7 @@
                 {% set status_filter_value = 'cancelled' if is_cancelled else 'completed' if is_completed else 'no_show' if is_no_show else 'booked' %}
                 {% set status_class = 'status-cancelled' if is_cancelled else 'status-completed' if is_completed else 'status-no-show' if is_no_show else 'status-booked' %}
                 {% if is_booked or is_cancelled or is_completed or is_no_show %}
-                  <article class="patient-appointment-card doctor-appointment-card" data-doctor-appointment-status="{{ status_filter_value }}" data-doctor-appointment-search="{{ appointment.patient_first_name or '' }} {{ appointment.patient_last_name or '' }} #{{ appointment.appointment_id }}" data-appointment-date="{{ appointment.slot_start_time|string|truncate(10, True, '') }}">
+                  <article class="patient-appointment-card doctor-appointment-card" data-doctor-appointment-status="{{ status_filter_value }}" data-doctor-appointment-search="{{ appointment.patient_first_name or '' }} {{ appointment.patient_last_name or '' }} #{{ appointment.appointment_id }}" data-appointment-date="{{ appointment.slot_start_time|display_india_date }}">
                     <div class="doctor-appointment-card-main">
                       <div class="doctor-appointment-card-heading">
                         <div><span class="schedule-field-label">Booking reference</span><h3>#{{ appointment.appointment_id }}</h3></div>
@@ -358,7 +358,7 @@
                         </div>
                         <div class="doctor-appointment-field">
                           <span class="schedule-field-label">Date &amp; time</span>
-                          <time class="patient-appointment-time" datetime="{{ appointment.slot_start_time }}">{{ appointment.slot_start_time }}</time>
+                          <time class="patient-appointment-time" datetime="{{ appointment.slot_start_time }}" data-india-datetime="{{ appointment.slot_start_time }}">{{ appointment.slot_start_time }}</time>
                         </div>
                         <div class="doctor-appointment-field">
                           <span class="schedule-field-label">Consultation type</span>
@@ -723,15 +723,31 @@
     const cancellationDialog = document.getElementById('cancel-slot-dialog');
     const bulkCancellationDialog = document.getElementById('bulk-cancel-dialog');
     let activeCancellationForm = null;
+    const parseUtcDateTime = value => new Date(
+      /(?:Z|[+-]\d{2}:\d{2})$/i.test(value)
+        ? value
+        : `${value.replace(' ', 'T')}Z`
+    );
     const displayDateTime = value => {
       if (!value) return 'Not available';
-      const normalized = value.endsWith('Z') ? value : `${value.replace(' ', 'T')}Z`;
-      const parsed = new Date(normalized);
+      const parsed = parseUtcDateTime(value);
       return Number.isNaN(parsed.getTime()) ? value : new Intl.DateTimeFormat('en-GB', {
         day: '2-digit', month: 'short', year: 'numeric',
-        hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
-      }).format(parsed);
+        hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata',
+      }).format(parsed) + ' IST';
     };
+    document.querySelectorAll('[data-india-datetime]').forEach(element => {
+      element.textContent = displayDateTime(element.dataset.indiaDatetime);
+    });
+    document.querySelectorAll('[data-india-time]').forEach(element => {
+      const parsed = parseUtcDateTime(element.dateTime);
+      if (!Number.isNaN(parsed.getTime())) {
+        element.textContent = new Intl.DateTimeFormat('en-GB', {
+          hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+          timeZone: 'Asia/Kolkata',
+        }).format(parsed) + ' IST';
+      }
+    });
     document.querySelectorAll('[data-open-appointment-details]').forEach(button => button.addEventListener('click', () => {
       document.getElementById('detail-patient-name').textContent = button.dataset.patientName;
       document.getElementById('detail-patient-id').textContent = button.dataset.patientId;

@@ -424,10 +424,15 @@ def utc_iso(value):
     )
 
 
-def utc_day_bounds(day):
-    start = datetime.combine(day, time.min, tzinfo=timezone.utc)
-    end = datetime.combine(day + timedelta(days=1), time.min, tzinfo=timezone.utc)
-    return start, end
+def india_day_bounds(day):
+    india_timezone = timezone(timedelta(hours=5, minutes=30))
+    start = datetime.combine(day, time.min, tzinfo=india_timezone)
+    end = datetime.combine(
+        day + timedelta(days=1),
+        time.min,
+        tzinfo=india_timezone,
+    )
+    return start.astimezone(timezone.utc), end.astimezone(timezone.utc)
 
 
 def parse_utc_datetime(value):
@@ -1136,13 +1141,14 @@ def blackouts_route(connection, cursor, doctor_id, method, tail, body):
             (doctor_id,),
         )
         blackouts = cursor.fetchall()
+        india_timezone = timezone(timedelta(hours=5, minutes=30))
         for blackout in blackouts:
-            blackout["start_display"] = blackout["start_datetime"].strftime(
-                "%d %b %Y %H:%M UTC"
-            )
-            blackout["end_display"] = blackout["end_datetime"].strftime(
-                "%d %b %Y %H:%M UTC"
-            )
+            blackout["start_display"] = blackout["start_datetime"].replace(
+                tzinfo=timezone.utc
+            ).astimezone(india_timezone).strftime("%d %b %Y %H:%M IST")
+            blackout["end_display"] = blackout["end_datetime"].replace(
+                tzinfo=timezone.utc
+            ).astimezone(india_timezone).strftime("%d %b %Y %H:%M IST")
         return response(200, {"blackouts": blackouts})
     if not tail and method == "POST":
         if body.get("start_datetime") and body.get("end_datetime"):
@@ -1157,8 +1163,8 @@ def blackouts_route(connection, cursor, doctor_id, method, tail, body):
             )
             if end_day < start_day:
                 raise ValueError("end_date must be on or after start_date")
-            start_utc, _ = utc_day_bounds(start_day)
-            _, end_utc = utc_day_bounds(end_day)
+            start_utc, _ = india_day_bounds(start_day)
+            _, end_utc = india_day_bounds(end_day)
         if end_utc <= start_utc:
             raise ValueError("Blackout end must be after its start")
         locked_slots = lock_unbooked_slots_for_blackout(
@@ -1255,7 +1261,7 @@ def get_day_schedule(cursor, doctor_id, query):
     if not query.get("date"):
         raise ValueError("date query parameter is required (YYYY-MM-DD)")
     local_day = date.fromisoformat(query["date"])
-    start_utc, end_utc = utc_day_bounds(local_day)
+    start_utc, end_utc = india_day_bounds(local_day)
     slots = query_slots_in_range(
         slots_table,
         doctor_id,

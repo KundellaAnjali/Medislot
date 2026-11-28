@@ -52,20 +52,21 @@
           {% endif %}
         </p>
         {% if availability %}
-          {% for day in availability_by_date %}
-            {% set day_loop = loop %}
-            <section class="availability-day" aria-labelledby="availability-day-{{ loop.index }}">
-              <h2 class="availability-day-heading" id="availability-day-{{ loop.index }}">{{ day.date[8:10] }}-{{ day.date[5:7] }}-{{ day.date[:4] }}</h2>
-              <div class="availability-results">
+          <div id="availability-days">
+            {% for day in availability_by_date %}
+              {% set day_loop = loop %}
+              <section class="availability-day" aria-labelledby="availability-day-{{ loop.index }}">
+                <h2 class="availability-day-heading" id="availability-day-{{ loop.index }}">{{ day.date[8:10] }}-{{ day.date[5:7] }}-{{ day.date[:4] }}</h2>
+                <div class="availability-results">
                 {% for slot in day.slots %}
-                  <article class="availability-slot availability-slot-card">
+                  <article class="availability-slot availability-slot-card" data-slot-start="{{ slot.start_time }}" data-slot-end="{{ slot.end_time }}">
                     <div class="availability-slot-heading">
                       <h3>{{ slot.consultation_type or 'Consultation' }}</h3>
                       <span class="consultation-badge">{{ 'Booked' if slot.is_full or slot.available_seats <= 0 else slot.available_seats ~ ' seat' ~ ('' if slot.available_seats == 1 else 's') ~ ' available' }}</span>
                     </div>
                     <dl class="availability-slot-details">
-                      <div><dt>Starts</dt><dd>{{ slot.start_time[11:16] }}</dd></div>
-                      <div><dt>Ends</dt><dd>{{ slot.end_time[11:16] }}</dd></div>
+                      <div><dt>Starts</dt><dd><time class="slot-local-time" datetime="{{ slot.start_time }}">{{ slot.start_time[11:16] }}</time></dd></div>
+                      <div><dt>Ends</dt><dd><time class="slot-local-time" datetime="{{ slot.end_time }}">{{ slot.end_time[11:16] }}</time></dd></div>
                       <div><dt>Capacity</dt><dd>{{ slot.booked_count }} of {{ slot.capacity }} booked</dd></div>
                     </dl>
                     {% if reschedule_appointment_id %}
@@ -114,9 +115,11 @@
                     {% endif %}
                   </article>
                 {% endfor %}
-              </div>
-            </section>
+                </div>
+              </section>
             {% endfor %}
+          </div>
+          <p id="availability-no-future-slots" class="doctor-search-empty" hidden>No available slots were found in this date range.</p>
         {% else %}
           <p class="doctor-search-empty">No available slots were found in this date range.</p>
         {% endif %}
@@ -135,6 +138,78 @@
     </section>
   </main>
   <script>
+    const availabilityDays = document.getElementById("availability-days");
+    if (availabilityDays) {
+      const indiaDateFormatter = new Intl.DateTimeFormat(undefined, {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        timeZone: "Asia/Kolkata"
+      });
+      const indiaTimeFormatter = new Intl.DateTimeFormat(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+        timeZone: "Asia/Kolkata"
+      });
+      const dateKey = date => {
+        const parts = Object.fromEntries(
+          new Intl.DateTimeFormat("en-CA", {
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            timeZone: "Asia/Kolkata"
+          }).formatToParts(date).map(part => [part.type, part.value])
+        );
+        return `${parts.year}-${parts.month}-${parts.day}`;
+      };
+
+      const refreshAvailability = () => {
+        const cards = [...availabilityDays.querySelectorAll(".availability-slot-card")];
+        const groups = new Map();
+        const now = Date.now();
+
+        cards.forEach(card => {
+          const start = new Date(card.dataset.slotStart);
+          const end = new Date(card.dataset.slotEnd);
+          if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start.getTime() <= now) {
+            card.remove();
+            return;
+          }
+
+          card.querySelectorAll(".slot-local-time").forEach(time => {
+            const value = new Date(time.dateTime);
+            if (!Number.isNaN(value.getTime())) {
+              time.textContent = `${indiaTimeFormatter.format(value)} IST`;
+            }
+          });
+
+          const key = dateKey(start);
+          if (!groups.has(key)) {
+            const section = document.createElement("section");
+            const heading = document.createElement("h2");
+            const results = document.createElement("div");
+            section.className = "availability-day";
+            heading.className = "availability-day-heading";
+            heading.textContent = indiaDateFormatter.format(start);
+            results.className = "availability-results";
+            section.append(heading, results);
+            groups.set(key, section);
+          }
+          groups.get(key).querySelector(".availability-results").append(card);
+        });
+
+        availabilityDays.replaceChildren(...groups.values());
+        const emptyMessage = document.getElementById("availability-no-future-slots");
+        if (emptyMessage) {
+          emptyMessage.hidden = groups.size > 0;
+        }
+      };
+
+      refreshAvailability();
+      window.setInterval(refreshAvailability, 15000);
+    }
+
     document.querySelectorAll(".appointment-booking-form").forEach(form => {
       form.addEventListener("submit", () => {
         const button = form.querySelector('button[type="submit"]');

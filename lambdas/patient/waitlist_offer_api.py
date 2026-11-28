@@ -105,8 +105,8 @@ def accept_offer(patient_id, offer_id, *, connection_factory=None, now=None):
     if int(offer.get("expires_at", 0)) <= int(now.timestamp()):
         raise OfferError(409, "Waitlist offer has expired.")
 
+    doctor_id = int(offer["doctor_id"])
     start_time = slot_key(offer["slot_start_time"])
-    lock_key = active_offer_lock_key(doctor_id, start_time)
     start = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
     connection = (connection_factory or get_connection)()
     appointment_id = None
@@ -131,7 +131,7 @@ def accept_offer(patient_id, offer_id, *, connection_factory=None, now=None):
                   AND status = 'BOOKED'
                   AND appointment_status = 'CONFIRMED'
                 """,
-                (patient_id, int(offer["doctor_id"])),
+                (patient_id, doctor_id),
             )
             max_active = get_parameter("patient-booking/max-active-bookings")
             if int(cursor.fetchone()["active_count"]) >= max_active:
@@ -145,7 +145,7 @@ def accept_offer(patient_id, offer_id, *, connection_factory=None, now=None):
                 WHERE doctor_id = %s AND consultation_type_id = %s
                   AND is_active = TRUE
                 """,
-                (int(offer["doctor_id"]), int(offer["consultation_type_id"])),
+                (doctor_id, int(offer["consultation_type_id"])),
             )
             consultation = cursor.fetchone()
             if not consultation:
@@ -242,6 +242,7 @@ def commit_offer(offer, appointment_id, transaction_id):
     doctor_id = int(offer["doctor_id"])
     slot_id = int(offer["slot_id"])
     start_time = slot_key(offer["slot_start_time"])
+    lock_key = active_offer_lock_key(doctor_id, start_time)
     client.transact_write_items(
         TransactItems=[
             {
